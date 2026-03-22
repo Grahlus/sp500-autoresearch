@@ -75,7 +75,11 @@ if your approach requires fitting (it will be called automatically before `get_s
 - **Slippage**: 0.25 points/side
 - **Max position**: 1 contract
 - **Metric**: Calmar ratio on Z5 contract 2025-09-01 onward (held-out)
-- **Hardware**: CPU only — keep models lightweight
+- **Hardware**: CPU only (Intel i5-12500, 6 cores, 24GB RAM)
+  - Rules-based strategies: run in <1s, no constraint
+  - sklearn ML: keep n_estimators ≤ 50, max_depth ≤ 5
+  - RL via SB3/PPO: max 50k timesteps, network ≤ 64x64 hidden layers — or it will timeout
+- **Experiment timeout**: 15 minutes hard wall clock
 
 ---
 
@@ -133,6 +137,23 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 046 | + roc_60>0 third condition | 0.1653 | No | Third condition too restrictive; cuts good entries |
 | --- | **prepare.py FIXED** — val now Z5-only (109k bars). Exp 035-046 used wrong expanded data. Champion (exp_040 VWAP EMA(8/480)+vol) recalibrated to **1.2210** on correct Z5. | | | New correct baseline: 1.2210 |
 | 047 | VWAP EMA(5/480) + vol_60>vol_240 | 1.3761 | Yes | Faster fast EMA better on correct data |
+| 048 | VWAP EMA(3/480) + vol_60>vol_240 | 1.4657 | Yes | Even faster! Trend toward EMA(3) |
+| 049 | VWAP EMA(2/480) + vol_60>vol_240 | 0.5390 | No | EMA(2) too noisy; EMA(3) is fast sweet spot |
+| 050 | VWAP EMA(3/240) + vol_60>vol_240 | 1.0919 | No | EMA(480) confirmed optimal slow span |
+| 051 | Donchian(480) breakout + vol_60>vol_240 | -0.6380 | No | No exit mechanism; stays long after reversals |
+| 052 | VWAP EMA(3/480) + close>60bar-vwap-mean | -0.1946 | No | Close vs VWAP average too noisy |
+| 053 | VWAP EMA(3/480) + vol + roc_240>0 triple confirm | 0.8595 | No | Third conditions consistently hurt |
+| 054 | VWAP EMA(3/480) bidirectional + vol_rising | 1.4266 | No | Shorting in bull period slightly hurts |
+| 055 | EMA(3) vwap vs SMA(480) vwap + vol | 1.1158 | No | EMA slow beats SMA slow |
+| 056 | close > EMA(480) close + vol | 0.1096 | No | EMA(3) fast smoothing is essential |
+| 057 | KAMA(10,2,30) vwap vs EMA(480) + vol | 1.2128 | No | KAMA adds complexity without benefit |
+| 058 | GBM session-aware (time+RSI+ATR+vol), 15-bar target | 0.2920 | No | GBM doesn't generalize from train to val session patterns |
+| 059 | ATR mean reversion (close < sma_60 - 1.5*ATR) | -0.4026 | No | NQ "oversold" continues lower; mean reversion fails |
+| 060 | Wide bullish candle (hl>1.5ATR + close>open) | -0.8975 | No | Exit on any bearish bar = overtrading |
+| 061 | Intraday session momentum (close > day's first bar) | 0.3502 | No | Some signal but not enough; day-level too coarse |
+| 062 | Day-over-day momentum (close > prior day close) | 0.6331 | No | Decent but well below champion |
+| 063 | Fitted day-of-week effect (Mon/Tue/Wed long) | 1.3967 | No | Tantalizingly close to champion; genuine calendar signal |
+| 064 | Fitted hour-of-day top-12 bullish hours | -0.4550 | No | No useful intraday signal; avg returns near zero by hour |
 
 *(Agent appends rows here after each experiment)*
 
@@ -140,9 +161,10 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-The best strategy found so far is VWAP EMA(8/480) + vol_60>vol_240 → Calmar 1.2210 (on correct Z5 data).
-(Note: validation set expanded to Sep 2025–Mar 2026; EMA(8/480) rescores 0.5893 on new data.)
-This is your baseline to beat. It is already committed. Do not re-run simple EMA/SMA variants.
+VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657
+The trend-following + volume confirmation family is NOW FULLY EXHAUSTED.
+Do not run any more variations of this. The next experiment must use
+a completely different mechanism to generate signals.
 
 ## Banned approaches — already exhausted
 
@@ -154,6 +176,9 @@ The following have been tested to death. Do not attempt any variation of these:
 - RTH session filters
 - Hysteresis on SMA exits
 - Buy and hold
+- EMA crossovers of ANY period combination (exhausted through exp 051)
+- VWAP EMA combinations
+- Volume confirmation on top of EMA/SMA
 
 ## What to try next — genuinely new territory
 
