@@ -3,7 +3,12 @@ prepare.py — FIXED. Do not modify.
 
 Handles:
   - Loading NQ 1-min bar data from .pkl files
-  - Train/validation split (time-based, OOS on Z5 contract)
+  - Skipping first 4 weeks of each contract (low-volume back-month period)
+  - Deduplication by proper futures expiry order (H < M < U < Z, year-aware)
+  - Train/validation/forward-test split
+      Train   = H5 + M5 + U5  (after 4-week skip, front-month bars only)
+      Val     = Z5             (Sep 2025 → Dec 2025, OOS)
+      Forward = H6             (Dec 2025 → Mar 2026, true future)
   - Feature engineering utilities
   - Backtest engine with position tracking
   - Calmar ratio evaluation (the single metric)
@@ -27,10 +32,12 @@ from datetime import datetime
 DATA_DIR = Path(os.environ.get("NQ_DATA_DIR", "./data"))
 EXPERIMENT_TIMEOUT_SECS = 15 * 60  # 15-minute hard wall clock limit
 
-# Z5 contract starts 2025-09-01 — use it exclusively as the OOS validation set
-# Train = H5 + M5 + U5 (Nov 2024 → Aug 2025)
-# Val   = Z5           (Sep 2025 → Dec 2025)
-VALIDATION_START = "2025-09-01"
+# Split boundaries
+# Train        = H5 + M5 + U5  (Nov 2024 → Aug 2025, front-month only, 4-week warmup skipped)
+# Validation   = Z5             (Sep 2025 → Dec 2025, OOS)
+# Forward test = H6             (Dec 2025 rollover → Mar 2026, true future — not used in training loop)
+VALIDATION_START   = "2025-09-01"
+FORWARD_TEST_START = "2025-12-20"
 
 # Backtest parameters
 POINT_VALUE          = 20       # NQ: $20 per point
@@ -38,18 +45,42 @@ COMMISSION_PER_TRADE = 2.50     # per side, in USD
 SLIPPAGE_POINTS      = 0.25     # 1 tick slippage each way
 MAX_POSITION         = 1        # max 1 contract long or short
 
+# ─── CONTRACT UTILITIES ───────────────────────────────────────────────────────
+
+_MONTH_CODE = {'H': 3, 'M': 6, 'U': 9, 'Z': 12}
+
+def _contract_expiry_key(stem: str) -> tuple:
+    """
+    Parse contract expiry from filename stem for sorting.
+    e.g. 'NQH5_TRADES_...' → month_code='H', year_digit='5'
+    Returns (year_int, month_int) so contracts sort in expiry order.
+
+    Year digit is relative: 5 → 2025, 6 → 2026 etc.
+    H5 (Mar 2025) < M5 (Jun 2025) < U5 (Sep 2025) < Z5 (Dec 2025) < H6 (Mar 2026)
+    """
+    # Contract code is always at position 2-3 in stem (NQ + code)
+    code  = stem[2:4]          # e.g. 'H5', 'Z5', 'H6'
+    month = _MONTH_CODE.get(code[0], 99)
+    year  = int(code[1]) if code[1].isdigit() else 99
+    return (year, month)
+
+
 # ─── DATA LOADING ─────────────────────────────────────────────────────────────
 
 def load_data() -> pd.DataFrame:
     """
-    Load all NQ 1-min pkl files from DATA_DIR, return sorted DataFrame.
+    Load all NQ 1-min pkl files from DATA_DIR.
 
-    Each pkl is a DataFrame with a DatetimeIndex named 'date' and columns:
-    open, close, high, low, volume.
+    Per-contract processing:
+      - Skip first 4 weeks (low-volume back-month overlap period)
+      - Tag with expiry sort key
 
-    Contracts overlap (e.g. H5 and M5 both have Feb 2025 bars).
-    We deduplicate by keeping the front-month bar at each timestamp
-    (earliest contract alphabetically = soonest expiry).
+    Deduplication:
+      - At each timestamp, keep the bar from the front-month contract
+        (lowest expiry key = soonest expiry)
+
+    Returns a clean, sorted, deduplicated DataFrame covering the full
+    date range across all contracts.
     """
     import pickle
 
@@ -61,23 +92,37 @@ def load_data() -> pd.DataFrame:
     for f in files:
         with open(f, "rb") as fh:
             df = pickle.load(fh)
-        df.columns = [c.lower() for c in df.columns]
+
+        df.columns    = [c.lower() for c in df.columns]
         df.index.name = "timestamp"
-        df = df.reset_index()
+        df            = df.reset_index()
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df["_contract"] = f.stem
+
+        # ── Skip first 4 weeks (low-volume back-month period) ──
+        warmup_end = df["timestamp"].min() + pd.Timedelta(weeks=4)
+        df = df[df["timestamp"] >= warmup_end].copy()
+
+        # ── Tag with expiry sort key for deduplication ──
+        ey, em = _contract_expiry_key(f.stem)
+        df["_expiry_year"]  = ey
+        df["_expiry_month"] = em
         frames.append(df)
 
-    combined = pd.concat(frames, ignore_index=True)
-    combined = combined.sort_values(["timestamp", "_contract"])
+    if not frames:
+        raise ValueError("All contract files were empty after 4-week warmup skip.")
 
-    # Keep first contract alphabetically at each timestamp = front month
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Sort by timestamp first, then by expiry (front month = lowest key first)
+    combined = combined.sort_values(["timestamp", "_expiry_year", "_expiry_month"])
+
+    # Keep front-month bar at each timestamp
     combined = combined.drop_duplicates(subset="timestamp", keep="first")
-    combined = combined.drop(columns=["_contract"])
+    combined = combined.drop(columns=["_expiry_year", "_expiry_month"])
     combined = combined.reset_index(drop=True)
 
     required = {"timestamp", "open", "high", "low", "close", "volume"}
-    missing = required - set(combined.columns)
+    missing  = required - set(combined.columns)
     if missing:
         raise ValueError(f"Missing columns: {missing}")
 
@@ -85,15 +130,34 @@ def load_data() -> pd.DataFrame:
 
 
 def train_val_split(df: pd.DataFrame):
-    """Split DataFrame into (train_df, val_df) by VALIDATION_START date."""
-    cutoff = pd.Timestamp(VALIDATION_START)
-    train = df[df["timestamp"] < cutoff].reset_index(drop=True)
-    val   = df[df["timestamp"] >= cutoff].reset_index(drop=True)
+    """
+    Split into (train_df, val_df) using VALIDATION_START boundary.
+    Forward test data (H6) is excluded from both — use load_forward_test() separately.
+    """
+    t_val     = pd.Timestamp(VALIDATION_START)
+    t_forward = pd.Timestamp(FORWARD_TEST_START)
+
+    train = df[df["timestamp"] < t_val].reset_index(drop=True)
+    val   = df[(df["timestamp"] >= t_val) & (df["timestamp"] < t_forward)].reset_index(drop=True)
+
     print(f"[prepare] Train: {len(train):,} bars  "
           f"({train['timestamp'].iloc[0]} → {train['timestamp'].iloc[-1]})")
     print(f"[prepare] Val:   {len(val):,} bars  "
           f"({val['timestamp'].iloc[0]} → {val['timestamp'].iloc[-1]})")
     return train, val
+
+
+def load_forward_test() -> pd.DataFrame:
+    """
+    Return H6 forward test data (Dec 2025 → Mar 2026).
+    Not used in the training loop — for manual champion validation only.
+    """
+    df     = load_data()
+    t_fwd  = pd.Timestamp(FORWARD_TEST_START)
+    fwd_df = df[df["timestamp"] >= t_fwd].reset_index(drop=True)
+    print(f"[prepare] Forward: {len(fwd_df):,} bars  "
+          f"({fwd_df['timestamp'].iloc[0]} → {fwd_df['timestamp'].iloc[-1]})")
+    return fwd_df
 
 
 # ─── FEATURE UTILITIES ────────────────────────────────────────────────────────
@@ -109,8 +173,8 @@ def add_basic_features(df: pd.DataFrame) -> pd.DataFrame:
         df[f"sma_{w}"]  = df["close"].rolling(w).mean()
         df[f"roc_{w}"]  = df["close"].pct_change(w)
         df[f"vol_{w}"]  = df["returns"].rolling(w).std()
-    df["rsi_14"] = _rsi(df["close"], 14)
-    df["atr_14"] = _atr(df, 14)
+    df["rsi_14"]  = _rsi(df["close"], 14)
+    df["atr_14"]  = _atr(df, 14)
     return df.dropna().reset_index(drop=True)
 
 
@@ -123,10 +187,10 @@ def _rsi(series: pd.Series, period: int) -> pd.Series:
 
 
 def _atr(df: pd.DataFrame, period: int) -> pd.Series:
-    hl  = df["high"] - df["low"]
-    hc  = (df["high"] - df["close"].shift(1)).abs()
-    lc  = (df["low"]  - df["close"].shift(1)).abs()
-    tr  = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    hl = df["high"] - df["low"]
+    hc = (df["high"] - df["close"].shift(1)).abs()
+    lc = (df["low"]  - df["close"].shift(1)).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
 
@@ -134,15 +198,13 @@ def _atr(df: pd.DataFrame, period: int) -> pd.Series:
 
 def run_backtest(df: pd.DataFrame, signals: np.ndarray) -> dict:
     """
-    Vectorised backtest given a DataFrame and a signal array.
-
-    signals: array of length len(df), values in {-1, 0, 1}
+    Vectorised backtest.
+    signals: array of len(df), values in {-1, 0, 1}
       +1 = long, -1 = short, 0 = flat
     """
-    signals = np.clip(np.round(signals).astype(int), -MAX_POSITION, MAX_POSITION)
-    closes  = df["close"].values
-    n       = len(closes)
-
+    signals     = np.clip(np.round(signals).astype(int), -MAX_POSITION, MAX_POSITION)
+    closes      = df["close"].values
+    n           = len(closes)
     equity      = np.zeros(n)
     position    = 0
     entry_price = 0.0
@@ -151,13 +213,15 @@ def run_backtest(df: pd.DataFrame, signals: np.ndarray) -> dict:
     for i in range(1, n):
         sig = signals[i - 1]
 
+        # Close if direction changes or goes flat
         if position != 0 and sig != position:
             pnl   = (closes[i] - entry_price) * position * POINT_VALUE
-            cost  = (COMMISSION_PER_TRADE + SLIPPAGE_POINTS * POINT_VALUE)
+            cost  = COMMISSION_PER_TRADE + SLIPPAGE_POINTS * POINT_VALUE
             cash += pnl - cost
             position    = 0
             entry_price = 0.0
 
+        # Open new position
         if sig != 0 and position == 0:
             position    = sig
             entry_price = closes[i]
@@ -195,10 +259,10 @@ def calmar_ratio(equity: np.ndarray, bars_per_year: int = 252 * 390) -> float:
 # ─── EVALUATION ENTRY POINT ───────────────────────────────────────────────────
 
 def evaluate_agent(agent_module) -> float:
-    """Load agent, run on validation set, return Calmar ratio."""
-    df_all        = load_data()
-    _, val_df     = train_val_split(df_all)
-    val_df_feat   = add_basic_features(val_df)
+    """Load agent, run on validation set (Z5), return Calmar ratio."""
+    df_all      = load_data()
+    _, val_df   = train_val_split(df_all)
+    val_df_feat = add_basic_features(val_df)
 
     signals = agent_module.get_signals(val_df_feat)
 
@@ -253,7 +317,7 @@ def run_experiment() -> float:
                 print("[prepare] Running agent.train() on training data...")
                 agent.train(train_df_feat)
 
-            print("[prepare] Evaluating on validation set...")
+            print("[prepare] Evaluating on validation set (Z5)...")
             score = evaluate_agent(agent)
 
     except ExperimentTimeout:
@@ -265,7 +329,7 @@ def run_experiment() -> float:
 
     elapsed = time.time() - start
     print(f"\n{'='*60}")
-    print(f"Calmar ratio (val): {score:.4f}")
+    print(f"Calmar ratio (val/Z5): {score:.4f}")
     print(f"Elapsed: {elapsed:.1f}s")
     print(f"{'='*60}\n")
 
@@ -273,8 +337,12 @@ def run_experiment() -> float:
 
 
 if __name__ == "__main__":
+    print("=== Data split summary ===")
     df = load_data()
     train_df, val_df = train_val_split(df)
-    print(f"\nTotal bars (deduped): {len(df):,}")
-    print(f"Train: {len(train_df):,} bars | Val: {len(val_df):,} bars")
-    print("\nData looks good. Ready to run experiments.")
+    fwd_df = load_forward_test()
+    print(f"\nTotal bars (deduped, 4-week warmup skipped): {len(df):,}")
+    print(f"  Train (H5+M5+U5): {len(train_df):,} bars")
+    print(f"  Val   (Z5):       {len(val_df):,} bars")
+    print(f"  Forward (H6):     {len(fwd_df):,} bars")
+    print("\nReady to run experiments.")
