@@ -10,9 +10,8 @@ dependencies = [
     "scikit-learn>=1.4",
     "stable-baselines3>=2.3",
     "gymnasium>=0.29",
-    "torch>=2.2",          # CPU build is fine, SB3 needs it
+    "torch>=2.2",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv]
+package = false
