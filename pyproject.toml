@@ -1,0 +1,18 @@
+[project]
+name = "trading-autoresearch"
+version = "0.1.0"
+description = "Autoresearch loop for NQ futures — Calmar ratio target"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "scikit-learn>=1.4",
+    "stable-baselines3>=2.3",
+    "gymnasium>=0.29",
+    "torch>=2.2",          # CPU build is fine, SB3 needs it
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
