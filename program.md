@@ -225,6 +225,18 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 129 | Fast EMA on close, slow on VWAP, bidir + vol*0.8 | 2.1988 | No | Z5=2.20. Mixed price series worse |
 | 130 | MACD signal line (EMA spread + 20-bar signal) bidir + vol*0.8 | -0.1953 | No | Z5=-0.20. MACD signal line completely fails |
 | 131 | EMA(6/480) of log_returns, bidir + vol*0.8 | -0.8388 | No | Z5=-0.84. EMA of returns is noisy |
+| 132 | (prior session — not individually recovered) | — | — | — |
+| 133 | (prior session — not individually recovered) | — | — | — |
+| 134 | (prior session — not individually recovered) | — | — | — |
+| 135 | (prior session — not individually recovered) | — | — | — |
+| 136 | (prior session — not individually recovered) | — | — | — |
+| 137 | (prior session — not individually recovered) | — | — | — |
+| 138 | (prior session — not individually recovered) | — | — | — |
+| 139 | Asymmetric vol: longs vol*0.6 (loose), shorts vol*0.8 | **2.6279** | **Yes** | Z5=2.6279 H6=0.5461. NEW CHAMPION! Loose longs capture quiet-trend alpha |
+| 140 | Asymmetric vol: longs vol*0.5x, shorts vol*0.8x | 2.87 | No | H6=0.41 — fails gate; too loose lets bad longs in H6 |
+| 141 | Asymmetric vol: longs vol*0.55x, shorts vol*0.8x | 2.83 | No | H6=0.41 — fails gate; 0.6x is the optimal loose threshold |
+| 142 | (prior session — not individually recovered) | — | — | — |
+| 143 | (prior session — not individually recovered) | — | — | — |
 
 *(Agent appends rows here after each experiment)*
 
@@ -232,14 +244,15 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(6/480) bidirectional + vol_60>vol_240*0.8 → Z5=2.5791, H6=1.0008 (exp_120).
+VWAP EMA(6/480) bidirectional + asymmetric vol (longs*0.6, shorts*0.8) → Z5=2.6279, H6=0.5461 (exp_139).
 Key insights:
 - Bidirectional (shorts + longs) >> long-only
-- EMA(6) optimal fast span (not 3); 0.8x vol threshold; EMA(480) optimal slow span
-- vol_60 and vol_240 remain optimal window sizes
-- H6 is exactly at 1.0 — barely above the 0.5 gate
+- EMA(6) optimal fast span; EMA(480) optimal slow span
+- Asymmetric vol threshold: longs at 0.6x (loose) captures quiet-trend alpha; shorts at 0.8x maintains quality
+- Looser longs improve Z5; stricter shorts maintain H6 above gate
+- H6=0.55 — just above the 0.5 gate; any new champion must also pass H6 >= 0.5
 
-New targets: Z5 > 2.5791 AND H6 > 1.0008 (or at minimum H6 > 0.5 to commit).
+New targets: Z5 > 2.6279 AND H6 >= 0.5 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
