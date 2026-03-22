@@ -552,6 +552,21 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 304 | Vol baseline window 360 bars (between 240 and 480) | 3.8856 | No | Z5=3.89 H6=0.53. Fails gate. 480-bar window is optimal for passing gate with highest Z5 |
 | 305 | DEMA(6) fast (2*EMA-EMA(EMA), reduced lag) | 2.7832 | No | Z5=2.78 H6=-0.17. Fails gate; DEMA too responsive, increases noise (confirms exp_183) |
 
+| 306 | HL2 EMA(428) slow — mapping landscape above champion span=425 | 4.1211 | No | Z5=4.1211 H6=0.4555 PnL=$111,118 Trades=685. Fails gate; H6 drops sharply above span=425 |
+| 307 | HL2 EMA(420) slow + vol-free longs + vol>40th shorts | 3.9949 | No | Z5=3.9949 H6=0.6468 PnL=$107,228 Trades=697. Passes gate but Z5 below champion; span=425 is optimal |
+| 308 | Dual-window vol gate for shorts: vol>pct40(480) AND vol>pct40(240) | 3.8326 | No | Z5=3.8326 H6=1.0904 PnL=$100,212 Trades=783. Excellent H6 but Z5 too far below champion; dual window too strict |
+| 309 | Softer dual-window: vol>pct40(480) AND vol>pct30(240) | 3.6076 | No | Z5=3.6076 H6=0.9923 PnL=$98,012 Trades=751. Dual-window approach consistently hurts Z5; drop this direction |
+| 310 | Asymmetric fast EMA: EMA(6) longs, EMA(8) shorts | 3.4652 | No | Z5=3.4652 H6=0.5298 PnL=$102,028 Trades=768. Fails gate; asymmetric fast EMA hurts both metrics |
+| 311 | Adaptive vol filter: use 480-bar when vol>70th pct, else 240-bar | 3.2872 | No | Z5=3.2872 H6=1.0576 PnL=$89,838 Trades=854. Excellent H6 but fires too many extra shorts in Z5; hurts Calmar |
+| 312 | Choppiness Index CHOP(100) < 50 regime filter | 1.6159 | No | Z5=1.6159 H6=0.5816 PnL=$40,045 Trades=1183. CHOP<50 fires constantly at 1-min NQ; creates churn on longs, terrible |
+| 313 | OR-logic shorts: vol>40th pct OR (down bar > 2x ATR) | 3.9450 | No | Z5=3.9450 H6=0.5977 PnL=$106,762 Trades=822. Close on H6 (0.5977 vs 0.6 gate) but Z5 below champion |
+| 314 | Blended slow: 70% HL2 EMA(425) + 30% rolling VWAP(420) | 2.9173 | No | Z5=2.9173 H6=0.4608 PnL=$105,730 Trades=652. Fails gate; VWAP blend degrades both Z5 and H6 |
+| 315 | Long only when slow EMA rising (ema_slow > ema_slow.shift(60)) | 3.6654 | No | Z5=3.6654 H6=0.5577 PnL=$103,672 Trades=679. Fails gate; slow EMA slope filter cuts valid longs |
+| 316 | Asymmetric fast EMA: EMA(5) longs, EMA(6) shorts | 3.9157 | No | Z5=3.9157 H6=0.3607 PnL=$106,188 Trades=794. Fails gate; faster longs hurt H6; EMA(6) optimal for both |
+| 317 | Bar body displacement EWM(60) < 0 as short filter | 2.4229 | No | Z5=2.4229 H6=-0.1018 PnL=$58,108 Trades=1468. Body filter almost always TRUE; creates forced-flat periods on longs causing churn |
+| 318 | Volume-Weighted EMA (VWEMA) as slow line | 1.6152 | No | Z5=1.6152 H6=-0.3646 PnL=$85,872 Trades=613. VWEMA tracks too fast during high-vol; standard EMA confirmed optimal |
+| 319 | (H-L)*volume momentum as short filter | 3.1554 | No | Z5=3.1554 H6=0.5448 PnL=$84,448 Trades=718. Fails gate; HL*vol product worse than pure volume — range correlated with vol, no addl info |
+
 *(Agent appends rows here after each experiment)*
 
 ---
