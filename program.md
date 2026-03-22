@@ -119,7 +119,8 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 033 | EMA(8/480) + ATR crash guard (range>3x) | 2.6353 | No | Exits on big up moves too; range not directional |
 | 034 | EMA(8/480) + directional guard (open-close>2x ATR) | 2.4265 | No | Even directional guards hurt; EMA timing is optimal |
 | --- | **DATA EXTENDED** — val now Sep 2025→Mar 2026 (195k bars). EMA(8/480) re-scores 0.5893 | | | New baseline: 0.5893 |
-| 035 | EMA(8) close vs EMA(480) vwap_proxy | 0.6295 | ? | Tested on new extended dataset; beats 0.5893 |
+| 035 | EMA(8) close vs EMA(480) vwap_proxy | 0.6295 | Yes | VWAP proxy slow EMA beats close-based on extended data |
+| 036 | Same + EMA(3) faster exit trigger | 0.1617 | No | Asymmetric fast exit creates too many whipsaws |
 
 *(Agent appends rows here after each experiment)*
 
@@ -127,8 +128,9 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-The best strategy found so far is EMA(8) vs EMA(480) long-only → Calmar 3.0635.
-This is your baseline to beat. It is already committed. Do not re-run EMA/SMA variants.
+The best strategy found so far is EMA(8) close vs EMA(480) vwap_proxy long-only → Calmar 0.6295.
+(Note: validation set expanded to Sep 2025–Mar 2026; EMA(8/480) rescores 0.5893 on new data.)
+This is your baseline to beat. It is already committed. Do not re-run simple EMA/SMA variants.
 
 ## Banned approaches — already exhausted
 
