@@ -1,8 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 070: GBM same as exp_069 but horizon=240 (4-hour ahead vs 8-hour).
-Hypothesis: 4-hour target aligns better with intraday cycles than 8-hour.
+Exp 081: GBM same 6 features, horizon=300 (between 240 and 480).
+240 scored 2.9967, 480 scored 2.7848. Does 300 fall between or surprise?
 """
 
 import numpy as np
@@ -11,7 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 
 _model = None
 _feature_cols = ["dow_cos", "dow_sin", "hour_cos", "hour_sin", "trend_state", "vol_state"]
-HORIZON = 240
+HORIZON = 300
 
 
 def _add_features(df: pd.DataFrame) -> pd.DataFrame:
