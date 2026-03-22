@@ -254,6 +254,27 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 141 | Asymmetric vol: longs vol*0.55x, shorts vol*0.8x | 2.83 | No | H6=0.41 — fails gate; 0.6x is the optimal loose threshold |
 | 142 | (prior session — not individually recovered) | — | — | — |
 | 143 | (prior session — not individually recovered) | — | — | — |
+| 144 | Momentum percentile filter (roc_60 vs 75/25th pct 480-bar window) | -0.3902 | No | Z5=-0.39 H6=-0.67. Fails both. |
+| 145 | Asymmetric vol: longs*0.6, shorts*0.7 (loosen shorts) | 2.1573 | No | Z5=2.16 H6=0.47. Fails gate; loosening shorts hurts both |
+| 146 | Normalized EMA spread > 0.0003 filter (replaces vol) | 1.7173 | No | Z5=1.72 H6=0.59. Passes H6 but Z5 regresses |
+| 147 | Vol*0.6 OR spread>0.0003 for longs (OR condition) | 3.3237 | No | Z5=3.32 H6=0.31. Fails H6; OR adds Z5-only entries |
+| 148 | ATR(14) vs rolling ATR mean, asymmetric 0.6/0.8x | 1.4532 | No | Z5=1.45 H6=0.12. ATR filter worse than vol filter |
+| 149 | vol_60 vs vol_480 (8h baseline instead of 4h) | 2.3354 | No | Z5=2.34 H6=0.43. Fails gate; vol_240 baseline optimal |
+| 150 | + close>EMA(240) medium alignment for longs | 0.8515 | No | Z5=0.85 H6=0.07. Too restrictive; kills entries |
+| 151 | Self-normalizing vol percentile: longs>25th, shorts>40th pct | **2.8200** | **Yes** | Z5=2.8200 H6=0.5008. NEW CHAMPION (committed under old H6=0.5 gate) |
+| 152 | Vol percentile: longs>20th, shorts>40th (looser longs) | 2.7647 | No | Z5=2.76 H6=0.62. Passes new 0.6 gate but Z5 regressed |
+| 153 | Vol percentile: longs>25th, shorts>30th (looser shorts) | 2.3491 | No | Z5=2.35 H6=0.24. Fails gate; looser shorts destroy H6 |
+| 154 | Vol percentile: longs>20th, shorts>50th (offset asymmetry) | 2.1967 | No | Z5=2.20 H6=0.84. Good H6 but Z5 regressed too much |
+
+| 155 | Percentile window 960 bars (16h) instead of 480 | 1.8540 | No | Z5=1.85 H6=0.31. Fails gate; longer window hurts both |
+
+| 156 | Variance ratio VR(60)>1 regime filter (no vol, pure EMA+VR) | -0.4428 | No | Z5=-0.44 H6=0.09. VR at 1-min is noisy — mean-reverting at micro level |
+
+| 157 | OBV EMA(6/480) crossover bidirectional (volume-weighted direction) | 0.1871 | No | Z5=0.19 H6=-0.00. OBV trend weak signal; cumulative OBV drifts without meaning |
+
+| 158 | EMA(6/360) + vol percentile (longs>25th, shorts>40th pct) | 2.6634 | No | Z5=2.66 H6=1.15! Passes gate. Shorter slow EMA → great H6. Z5 below champion |
+
+| 159 | EMA(6/360) + vol percentile longs>15th pct (looser longs) | 2.5772 | No | Z5=2.58 H6=0.98. Looser longs hurt Z5 with EMA(360) — different tradeoff |
 
 *(Agent appends rows here after each experiment)*
 
@@ -261,15 +282,15 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(6/480) bidirectional + asymmetric vol (longs*0.6, shorts*0.8) → Z5=2.6279, H6=0.5461 (exp_139).
+VWAP EMA(6/480) bidirectional + self-normalizing vol percentile (longs>25th pct, shorts>40th pct of 480-bar window) → Z5=2.8200, H6=0.5008 (exp_151, committed under old H6=0.5 gate).
 Key insights:
-- Bidirectional (shorts + longs) >> long-only
-- EMA(6) optimal fast span; EMA(480) optimal slow span
-- Asymmetric vol threshold: longs at 0.6x (loose) captures quiet-trend alpha; shorts at 0.8x maintains quality
-- Looser longs improve Z5; stricter shorts maintain H6 above gate
-- H6=0.55 — just above the 0.5 gate; any new champion must also pass H6 >= 0.5
+- Percentile-normalized vol threshold beats fixed ratio — adapts to vol regime changes
+- Longs: enter when vol_60_mean is in top 75% of recent vol history
+- Shorts: enter when vol_60_mean is in top 60% (stricter quality bar)
+- exp_139 (Z5=2.63) is grandfathered; exp_151 is the git head (Z5=2.82)
+- H6=0.50 barely passed old gate; under new 0.6 gate, needs improvement
 
-New targets: Z5 > 2.6279 AND H6 >= 0.5 to commit.
+New targets: Z5 > 2.8200 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
