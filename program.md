@@ -121,6 +121,9 @@ if your approach requires fitting (it will be called automatically before `get_s
 | --- | **DATA EXTENDED** — val now Sep 2025→Mar 2026 (195k bars). EMA(8/480) re-scores 0.5893 | | | New baseline: 0.5893 |
 | 035 | EMA(8) close vs EMA(480) vwap_proxy | 0.6295 | Yes | VWAP proxy slow EMA beats close-based on extended data |
 | 036 | Same + EMA(3) faster exit trigger | 0.1617 | No | Asymmetric fast exit creates too many whipsaws |
+| 037 | EMA(8) vs EMA(480) both on vwap_proxy | 0.6311 | Yes | Consistent VWAP signal slightly better |
+| 038 | EMA(8) vs EMA(600) vwap_proxy | 0.3785 | No | EMA(480) still the slow sweet spot |
+| 039 | EMA(12) vs EMA(480) vwap_proxy | 0.5230 | No | EMA(8) fast still optimal |
 
 *(Agent appends rows here after each experiment)*
 
@@ -128,7 +131,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-The best strategy found so far is EMA(8) close vs EMA(480) vwap_proxy long-only → Calmar 0.6295.
+The best strategy found so far is EMA(8) vs EMA(480) both vwap_proxy long-only → Calmar 0.6311.
 (Note: validation set expanded to Sep 2025–Mar 2026; EMA(8/480) rescores 0.5893 on new data.)
 This is your baseline to beat. It is already committed. Do not re-run simple EMA/SMA variants.
 
