@@ -170,6 +170,10 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 078 | GBM + minute sin/cos features | 2.9967 | No | Minutes have 0.0 importance; score unchanged — not an improvement |
 | 079 | GradientBoostingRegressor, predict return magnitude | 1.6484 | No | Regressor worse; classifier better for this signal structure |
 | 080 | GBM calendar-only (no trend/vol features) | 1.0062 | No | Trend+vol features add ~2.0 Calmar; both essential |
+| 081 | GBM horizon=300 (5h, same 6 features) | 3.9139 | Yes | NEW CHAMPION! Sweet spot between 240 and 480 |
+| 082 | GBM horizon=270 | 3.2751 | No | Better than 240, worse than 300; curve still rising toward 300 |
+| 083 | GBM horizon=330 | 2.6473 | No | Sharp drop; 300 is confirmed peak of horizon search |
+| 084 | GBM + trend_state_med = sign(EMA3-EMA240), 7 features | 3.0987 | No | Extra trend state dilutes signal; 6 features optimal |
 
 *(Agent appends rows here after each experiment)*
 
@@ -177,7 +181,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-GBM(30/3) with calendar+trend-state+vol-state features, 240-bar target → Calmar 2.9967
+GBM(30/3) with calendar+trend-state+vol-state features, 300-bar target → Calmar 3.9139
 Features: dow_cos/sin, hour_cos/sin, sign(EMA3-EMA480), sign(vol60-vol240)
 Target: 480-bar-ahead price direction (long when P(up) > 0.52)
 Key insight: longer horizon + structured features generalizes far better than next-bar ML.

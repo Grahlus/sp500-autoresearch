@@ -1,8 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 081: GBM same 6 features, horizon=300 (between 240 and 480).
-240 scored 2.9967, 480 scored 2.7848. Does 300 fall between or surprise?
+Exp 085: GBM with subsample=0.8 (stochastic gradient boosting).
+Using random row subsampling per tree can reduce overfitting and improve
+generalization — similar in spirit to dropout in neural networks.
+Same 6 features, horizon=300, n_estimators=30, max_depth=3.
 """
 
 import numpy as np
@@ -40,10 +42,11 @@ def train(df: pd.DataFrame) -> None:
     X = df2[_feature_cols].values
     y = df2["target"].values
     _model = GradientBoostingClassifier(
-        n_estimators=30, max_depth=3, learning_rate=0.1, random_state=42
+        n_estimators=30, max_depth=3, learning_rate=0.1,
+        subsample=0.8, random_state=42
     )
     _model.fit(X, y)
-    print(f"[agent] GBM trained on {len(X):,} samples, horizon={HORIZON}")
+    print(f"[agent] GBM(subsample=0.8) trained on {len(X):,} samples, horizon={HORIZON}")
 
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
