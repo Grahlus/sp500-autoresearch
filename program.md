@@ -326,6 +326,64 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 184 | OHLC4 EMA(6) fast vs SMA(420) slow | 2.8904 | No | Z5=2.89 H6=1.22. SMA slow worse than EMA slow |
 
+| 185 | OHLC4 fast EMA(6) vs close slow EMA(420) | **3.5259** | **Yes** | Z5=3.5259 H6=1.35. Marginal improvement; close slow slightly better |
+
+| 186 | Close fast EMA(6) vs OHLC4 slow EMA(420) (opposite) | 2.7061 | No | Z5=2.71 H6=0.96. OHLC4 fast, close slow confirmed better |
+
+| 187 | VWAP proxy (HLC3) fast vs close slow EMA(420) | 3.1192 | No | Z5=3.12 H6=1.50. OHLC4 fast confirmed better than HLC3; open adds value |
+
+| 188 | Rolling median(60) instead of mean for vol metric | 2.8741 | No | Z5=2.87 H6=1.12. Vol mean is better than median |
+
+| 189 | VWMA(6) fast vs EMA(420) close slow | 3.2067 | No | Z5=3.21 H6=1.45. EMA(6) of OHLC4 better than VWMA(6) |
+
+| 190 | Vol EMA crossover confirmation: vol_EMA(6) > vol_EMA(420) for longs, * 0.8 for shorts | 1.0198 | No | Z5=1.02 H6=0.70. Vol EMA crossover fires rarely at 1-min — too restrictive, crushes signal count |
+
+| 191 | EMA(60) vol smoothing before percentile (instead of rolling mean) | 2.8514 | No | Z5=2.85 H6=1.17. EMA smoothing hurts; rolling(60).mean() confirmed optimal |
+
+| 192 | Bar close > open (bullish bar) confirmation for longs; close < open for shorts | -0.8840 | No | Z5=-0.88 H6=-1.14. Bar direction filter badly hurts — EMA(6) OHLC4 already incorporates this; double-filtering destroys signal count |
+
+| 193 | roc_5 > 0 momentum alignment for longs, < 0 for shorts | -0.7733 | No | Z5=-0.77 H6=-1.13. Short-term ROC noisy at 1-min; destroys strategy. EMA(6) already captures momentum |
+
+| 194 | Triple EMA alignment: EMA(6)>EMA(30)>EMA(420) all three must align | 0.2137 | No | Z5=0.21 H6=-0.73. Too restrictive; medium EMA(30) adds nothing, cuts valid entries |
+
+| 195 | ATR(14) percentile filter instead of volume percentile | 0.8677 | No | Z5=0.87 H6=0.08. ATR filter much worse; volume (participation) is better activity gate than ATR |
+
+| 196 | Vol percentile lookback 600 bars (vs 480) | 2.8956 | No | Z5=2.90 H6=0.71. Passes gate but Z5 worse; 480-bar window confirmed optimal |
+
+| 197 | Vol rolling(90) smoothing (vs 60) before percentile | 2.8094 | No | Z5=2.81 H6=1.29. Wider smoothing hurts; vol_60 confirmed optimal smoothing window |
+
+| 198 | Asymmetric vol smoothing: vol_60 for longs, vol_30 for shorts | 3.0717 | No | Z5=3.07 H6=1.13. Passes gate but Z5 below champion; asymmetric windows don't help |
+
+| 199 | Donchian 20-bar channel breakout + vol percentile (no EMA) | -0.8801 | No | Z5=-0.88 H6=-1.12. Pure short-term Donchian fires constantly at 1-min; too noisy |
+
+| 200 | Longs vol threshold 28th pct (OHLC4 fast + close slow, untested combo) | 3.3591 | No | Z5=3.36 H6=1.30. 30th pct still better for longs with mixed price metric |
+
+| 201 | Asymmetric pct windows: longs 480-bar, shorts 360-bar | 3.2853 | No | Z5=3.29 H6=1.09. Shorter shorts window doesn't help; 480-bar optimal for both |
+
+| 202 | Close slow EMA(430) with OHLC4 fast (span sweep around 420) | 3.4060 | No | Z5=3.41 H6=1.28. Better than 450 but below 420; 420 confirmed optimal slow span |
+
+| 203 | Close slow EMA(410) with OHLC4 fast | 3.1561 | No | Z5=3.16 H6=0.93. EMA(420) confirmed as optimal slow span; both 410 and 430 worse |
+
+| 204 | EMA spread override: enter if vol>pct30 OR spread_pct>0.5% (strong trend bypass) | 3.5058 | No | Z5=3.51 H6=1.19. Almost ties champion but slightly below; spread override near-neutral |
+
+| 205 | EMA spread percentile gate instead of vol (enter only when trend is wide) | 0.4169 | No | Z5=0.42 H6=0.19. Spread filter terrible; wide spread = late entry, vol is better gate |
+
+| 206 | Long-only champion (remove shorts entirely) | 2.5208 | No | Z5=2.52 H6=1.03. Shorts contribute positively; bidirectional confirmed better |
+
+| 207 | Close vs EMA corridor (enter only when close > both EMAs) | -0.8093 | No | Z5=-0.81 H6=-1.12. Noisy — close vs mixed OHLC4/close EMA corridor oscillates rapidly |
+
+| 208 | Rolling VWAP(420) as slow line instead of close EMA(420) | 2.0420 | No | Z5=2.04 H6=2.73! VWAP generalizes much better (H6=2.73 vs champion 1.35) but Z5 lower. Promising direction |
+
+| 209 | Rolling VWAP(240) as slow line | 0.9608 | No | Z5=0.96 H6=1.76. Shorter VWAP worse; trend: VWAP(240)=0.96, VWAP(420)=2.04 → try longer |
+
+| 210 | Rolling VWAP(720) as slow line | 1.3830 | No | Z5=1.38 H6=0.04. Fails H6 gate; VWAP(420)=sweet spot, longer hurts generalization |
+
+| 211 | EMA(6/420) AND VWAP(420) dual confirm + vol gate | 2.7028 | No | Z5=2.70 H6=2.13. VWAP improves H6 but cuts Z5; too restrictive. EMA alone is better at Z5 |
+
+| 212 | Realized vol (vol_60 = return std) percentile gate instead of raw volume | 1.6316 | No | Z5=1.63 H6=0.33. Fails gate; price volatility worse than volume participation as activity signal |
+
+| 213 | OHLC4 EMA(6) fast vs open EMA(420) slow | 3.4831 | No | Z5=3.48 H6=1.34. Very close to champion; close slow slightly edges out open slow |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -339,7 +397,7 @@ Key insights:
 - H6=1.32 provides excellent headroom above the 0.6 gate
 - The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
 
-New targets: Z5 > 3.5242 AND H6 >= 0.6 to commit.
+New targets: Z5 > 3.5259 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
