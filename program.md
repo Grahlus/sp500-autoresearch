@@ -83,7 +83,8 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | # | Hypothesis | Calmar | Kept? | Notes |
 |---|-----------|--------|-------|-------|
-| 000 | Random baseline | ~0.00 | No | Starting point |
+| 000 | Random baseline | -0.9009 | No | Starting point |
+| 001 | SMA(5) vs SMA(60) crossover | -0.5428 | Yes | Simple trend-following beats random |
 
 *(Agent appends rows here after each experiment)*
 
