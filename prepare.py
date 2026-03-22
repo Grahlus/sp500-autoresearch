@@ -292,17 +292,55 @@ class time_limited_experiment:
         signal.alarm(0)
 
 
+# ─── FORWARD TEST EVALUATION ─────────────────────────────────────────────────
+
+# Minimum Calmar on H6 forward test to consider a strategy generalizable.
+# A strategy that scores well on Z5 but below this on H6 is considered overfit.
+H6_MIN_CALMAR = 0.5
+
+def evaluate_agent_forward(agent_module) -> float:
+    """Run agent on H6 forward test set, return Calmar ratio."""
+    fwd_df      = load_forward_test()
+    fwd_df_feat = add_basic_features(fwd_df)
+
+    signals = agent_module.get_signals(fwd_df_feat)
+
+    if len(signals) != len(fwd_df_feat):
+        raise ValueError(
+            f"Agent returned {len(signals)} signals but forward set has {len(fwd_df_feat)} bars"
+        )
+
+    result = run_backtest(fwd_df_feat, signals)
+    return calmar_ratio(result["equity"])
+
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def run_experiment() -> float:
+    """
+    Run one full experiment:
+      1. Train agent on train set (if agent.train() exists)
+      2. Evaluate on Z5 validation set  -> z5_calmar
+      3. Evaluate on H6 forward test    -> h6_calmar
+      4. Print a clear KEEP / REVERT verdict
+
+    KEEP only if:
+      - z5_calmar improved over current champion  (agent tracks this)
+      - h6_calmar >= H6_MIN_CALMAR               (generalization gate)
+
+    Returns z5_calmar for the agent to compare against its best.
+    """
     import sys
 
     print(f"\n{'='*60}")
     print(f"Experiment started at {datetime.now().strftime('%H:%M:%S')}")
     print(f"Timeout: {EXPERIMENT_TIMEOUT_SECS // 60} minutes")
+    print(f"H6 minimum to keep: {H6_MIN_CALMAR}")
     print(f"{'='*60}")
 
-    start = time.time()
+    start    = time.time()
+    z5_score = -999.0
+    h6_score = -999.0
 
     try:
         with time_limited_experiment():
@@ -310,6 +348,7 @@ def run_experiment() -> float:
                 del sys.modules["agent"]
             agent = importlib.import_module("agent")
 
+            # Train
             if hasattr(agent, "train"):
                 df_all = load_data()
                 train_df, _ = train_val_split(df_all)
@@ -317,23 +356,31 @@ def run_experiment() -> float:
                 print("[prepare] Running agent.train() on training data...")
                 agent.train(train_df_feat)
 
+            # Z5 validation
             print("[prepare] Evaluating on validation set (Z5)...")
-            score = evaluate_agent(agent)
+            z5_score = evaluate_agent(agent)
+
+            # H6 forward test
+            print("[prepare] Evaluating on forward test (H6)...")
+            h6_score = evaluate_agent_forward(agent)
 
     except ExperimentTimeout:
         print(f"[prepare] TIMEOUT after {EXPERIMENT_TIMEOUT_SECS}s")
-        score = -999.0
     except Exception:
         print(f"[prepare] EXCEPTION:\n{traceback.format_exc()}")
-        score = -999.0
 
-    elapsed = time.time() - start
+    elapsed    = time.time() - start
+    passes_h6  = h6_score >= H6_MIN_CALMAR
+    verdict    = "KEEP (if Z5 improved)" if passes_h6 else "REVERT -- H6 overfit"
+
     print(f"\n{'='*60}")
-    print(f"Calmar ratio (val/Z5): {score:.4f}")
-    print(f"Elapsed: {elapsed:.1f}s")
+    print(f"Calmar Z5  (val):     {z5_score:.4f}")
+    print(f"Calmar H6  (forward): {h6_score:.4f}  [min required: {H6_MIN_CALMAR}]")
+    print(f"Verdict:              {verdict}")
+    print(f"Elapsed:              {elapsed:.1f}s")
     print(f"{'='*60}\n")
 
-    return score
+    return z5_score
 
 
 if __name__ == "__main__":
