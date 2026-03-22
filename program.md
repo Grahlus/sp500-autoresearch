@@ -132,6 +132,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 045 | Volume-only signal (no trend) | -0.0412 | No | VWAP trend is essential; volume alone is bad |
 | 046 | + roc_60>0 third condition | 0.1653 | No | Third condition too restrictive; cuts good entries |
 | --- | **prepare.py FIXED** — val now Z5-only (109k bars). Exp 035-046 used wrong expanded data. Champion (exp_040 VWAP EMA(8/480)+vol) recalibrated to **1.2210** on correct Z5. | | | New correct baseline: 1.2210 |
+| 047 | VWAP EMA(5/480) + vol_60>vol_240 | 1.3761 | Yes | Faster fast EMA better on correct data |
 
 *(Agent appends rows here after each experiment)*
 
