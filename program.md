@@ -85,6 +85,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 |---|-----------|--------|-------|-------|
 | 000 | Random baseline | -0.9009 | No | Starting point |
 | 001 | SMA(5) vs SMA(60) crossover | -0.5428 | Yes | Simple trend-following beats random |
+| 002 | SMA(5) vs SMA(60) long-only | -0.0186 | Yes | Removing short side greatly improves Calmar |
 
 *(Agent appends rows here after each experiment)*
 
