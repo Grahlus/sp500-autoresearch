@@ -284,6 +284,26 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 163 | EMA(6/360) + vol pct longs>30th, shorts>30th (same threshold) | 2.5479 | No | Z5=2.55 H6=1.36. Looser shorts hurt Z5; 40th pct shorts optimal |
 
+| 164 | EMA(6/**420**) + vol pct longs>30th, shorts>40th | **3.3515** | **Yes** | Z5=3.3515 H6=1.4713. NEW CHAMPION! Huge jump — 420 is a sweet spot |
+
+| 165 | EMA(6/390) + vol pct longs>30th, shorts>40th | 3.0090 | No | Z5=3.01 H6=1.15. Passes gate but Z5 below 420 champion |
+
+| 166 | EMA(6/450) + vol pct longs>30th, shorts>40th | 3.1797 | No | Z5=3.18 H6=1.05. EMA(420) confirmed peak for slow span |
+
+| 167 | EMA(6/420) + vol pct longs>28th, shorts>40th | 3.2479 | No | Z5=3.25 H6=1.41. 30th pct better for longs |
+
+| 168 | EMA(**5**/420) + vol pct longs>30th, shorts>40th | 2.9584 | No | Z5=2.96 H6=1.24. EMA(6) fast confirmed optimal |
+
+| 169 | EMA(**7**/420) + vol pct longs>30th, shorts>40th | 3.0969 | No | Z5=3.10 H6=0.94. EMA(6) confirmed optimal fast span |
+
+| 170 | EMA(6/420) + vol pct longs>30th, shorts>50th (stricter) | 2.5124 | No | Z5=2.51 H6=1.52. 50th pct cuts too many shorts; 40th confirmed optimal |
+
+| 171 | vol_45 rolling mean instead of vol_60 | 3.1012 | No | Z5=3.10 H6=1.12. vol_60 confirmed optimal window |
+
+| 172 | Asymmetric fast EMA: longs EMA(6), shorts EMA(4) | 3.3383 | No | Z5=3.34 H6=1.01. Slightly worse than EMA(6) symmetric |
+
+| 173 | hl_range percentile filter (30th/40th pct) instead of vol | 2.5456 | No | Z5=2.55 H6=0.98. Vol is better activity signal than hl_range for this |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -297,7 +317,7 @@ Key insights:
 - H6=1.32 provides excellent headroom above the 0.6 gate
 - The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
 
-New targets: Z5 > 2.9078 AND H6 >= 0.6 to commit.
+New targets: Z5 > 3.3515 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
