@@ -304,6 +304,28 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 173 | hl_range percentile filter (30th/40th pct) instead of vol | 2.5456 | No | Z5=2.55 H6=0.98. Vol is better activity signal than hl_range for this |
 
+| 174 | **OHLC4** = (O+H+L+C)/4 price metric instead of VWAP proxy | **3.5242** | **Yes** | Z5=3.5242 H6=1.38. NEW CHAMPION! Open price adds useful info |
+
+| 175 | OHLC4 EMA(6/**400**) + vol pct 30th/40th | 2.9132 | No | Z5=2.91 H6=1.56. EMA(420) confirmed optimal slow span for OHLC4 |
+
+| 176 | OHLC4 EMA(6/420) + vol pct longs>**32nd**, shorts>40th | 3.3521 | No | Z5=3.35 H6=1.21. 30th pct confirmed optimal for longs with OHLC4 |
+
+| 177 | Close EMA(6/420) + vol pct 30th/40th | 2.8189 | No | Z5=2.82 H6=0.98. OHLC4 is better; close alone is too noisy |
+
+| 178 | Dual vol filter: percentile AND absolute ratio | 3.1101 | No | Z5=3.11 H6=1.12. Too restrictive; percentile alone is better |
+
+| 179 | OHLC4 EMA(6/420) + vol pct 30th/40th, **360-bar** window | 3.0895 | No | Z5=3.09 H6=1.19. 480-bar confirmed optimal percentile window |
+
+| 180 | + slow EMA slope filter (EMA(420) must be rising/falling) | 1.7613 | No | Z5=1.76 H6=1.10. Slope filter too restrictive; cuts too many entries |
+
+| 181 | Hold-through-low-vol: enter on EMA+vol gate, exit on EMA flip only | 3.2310 | No | Z5=3.23 H6=1.13. Holding through vol drops hurts Z5 slightly |
+
+| 182 | OHLC2 = (O+C)/2 candle body midpoint EMA | 3.4233 | No | Z5=3.42 H6=1.07. Close to OHLC4 but not better |
+
+| 183 | DEMA(6) fast (less lag) vs EMA(420) slow | 2.1960 | No | Z5=2.20 H6=0.31. Fails gate; DEMA too responsive, increases noise |
+
+| 184 | OHLC4 EMA(6) fast vs SMA(420) slow | 2.8904 | No | Z5=2.89 H6=1.22. SMA slow worse than EMA slow |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -317,7 +339,7 @@ Key insights:
 - H6=1.32 provides excellent headroom above the 0.6 gate
 - The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
 
-New targets: Z5 > 3.3515 AND H6 >= 0.6 to commit.
+New targets: Z5 > 3.5242 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
