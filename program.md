@@ -158,6 +158,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 066 | Fitted (weekday×hour) interaction, top 40% slots | 0.4789 | No | Interaction weaker than pure day-of-week; too many buckets |
 | 067 | PPO RL agent (50k timesteps, 64x64 network) | 0.0067 | No | RL finds nothing; too few timesteps, train-val distribution shift |
 | 068 | Day-of-week (Mon-Wed) + Donchian(480) ensemble | -0.8050 | No | Donchian fails on Z5; new 8h-high = reversal, not continuation |
+| 069 | GBM(30/3): calendar+trend-state+vol-state, 480-bar target | 2.7848 | Yes | NEW CHAMPION! Feature imp: dow=0.42, hour=0.31, trend=0.18, vol=0.04 |
 
 *(Agent appends rows here after each experiment)*
 
@@ -165,10 +166,12 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657
-The trend-following + volume confirmation family is NOW FULLY EXHAUSTED.
-Do not run any more variations of this. The next experiment must use
-a completely different mechanism to generate signals.
+GBM(30/3) with calendar+trend-state+vol-state features, 480-bar target → Calmar 2.7848
+Features: dow_cos/sin, hour_cos/sin, sign(EMA3-EMA480), sign(vol60-vol240)
+Target: 480-bar-ahead price direction (long when P(up) > 0.52)
+Key insight: longer horizon + structured features generalizes far better than next-bar ML.
+
+Previous champion: VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657 (now beaten)
 
 ## Banned approaches — already exhausted
 
