@@ -86,6 +86,16 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 000 | Random baseline | -0.9009 | No | Starting point |
 | 001 | SMA(5) vs SMA(60) crossover | -0.5428 | Yes | Simple trend-following beats random |
 | 002 | SMA(5) vs SMA(60) long-only | -0.0186 | Yes | Removing short side greatly improves Calmar |
+| 003 | SMA(15) vs SMA(240) long-only | 1.3581 | Yes | Slower MAs fewer false crossovers, big improvement |
+| 004 | + RTH-only filter (9:30-16:00 ET) | 0.2467 | No | Overnight/extended hours holding contributes positively |
+| 005 | + RSI(14) < 70 filter | 0.1069 | No | RSI overbought filter misses the trend |
+| 006 | SMA(60) vs SMA(240) long-only | 0.7394 | No | Slower fast MA worse; 15 is sweet spot |
+| 007 | + vol regime filter (vol_15 > vol_240) | -0.1397 | No | Vol filter blocks too many good entries |
+| 008 | 240-bar high/low breakout long-only | 1.3293 | No | Competitive but slightly below best |
+| 009 | Always long (buy and hold) | 0.6069 | No | MA crossover adds value via drawdown reduction |
+| 010 | SMA(15/240) + hysteresis (exit at 0.9995x) | 1.2599 | No | Hysteresis delays exits, slightly worse |
+| 011 | ROC(240) > 0 long-only | 0.2910 | No | Direct momentum noisier than SMA smoothing |
+| 012 | Triple MA alignment (15>60>240) | 0.1578 | No | Too restrictive; kills valid entries |
 
 *(Agent appends rows here after each experiment)*
 

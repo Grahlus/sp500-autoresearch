@@ -1,8 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 003: SMA(15) vs SMA(240) long-only crossover.
-Wider MA gap → fewer false crossovers → less commission drag.
+Exp 013: EMA(15) vs EMA(240) long-only crossover.
+EMA responds faster to recent price → better timing than SMA crossover.
 """
 
 import numpy as np
@@ -10,11 +10,10 @@ import pandas as pd
 
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
-    """
-    Long-only SMA crossover: long when sma_15 > sma_240, flat otherwise.
-    """
-    fast = df["sma_15"].values
-    slow = df["sma_240"].values
+    """Long-only EMA crossover: long when ema_15 > ema_240, flat otherwise."""
+    close = df["close"]
+    ema_fast = close.ewm(span=15, adjust=False).mean().values
+    ema_slow = close.ewm(span=240, adjust=False).mean().values
 
-    signals = np.where(fast > slow, 1, 0)
+    signals = np.where(ema_fast > ema_slow, 1, 0)
     return signals.astype(int)
