@@ -174,6 +174,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 082 | GBM horizon=270 | 3.2751 | No | Better than 240, worse than 300; curve still rising toward 300 |
 | 083 | GBM horizon=330 | 2.6473 | No | Sharp drop; 300 is confirmed peak of horizon search |
 | 084 | GBM + trend_state_med = sign(EMA3-EMA240), 7 features | 3.0987 | No | Extra trend state dilutes signal; 6 features optimal |
+| 085 | GBM subsample=0.8 (stochastic) | 4.0338 | Yes | NEW CHAMPION! Row subsampling reduces overfit, improves generalization |
 
 *(Agent appends rows here after each experiment)*
 
@@ -181,7 +182,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-GBM(30/3) with calendar+trend-state+vol-state features, 300-bar target → Calmar 3.9139
+GBM(30/3, subsample=0.8) calendar+trend-state+vol-state, horizon=300 → Calmar 4.0338
 Features: dow_cos/sin, hour_cos/sin, sign(EMA3-EMA480), sign(vol60-vol240)
 Target: 480-bar-ahead price direction (long when P(up) > 0.52)
 Key insight: longer horizon + structured features generalizes far better than next-bar ML.
