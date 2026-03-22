@@ -566,6 +566,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 317 | Bar body displacement EWM(60) < 0 as short filter | 2.4229 | No | Z5=2.4229 H6=-0.1018 PnL=$58,108 Trades=1468. Body filter almost always TRUE; creates forced-flat periods on longs causing churn |
 | 318 | Volume-Weighted EMA (VWEMA) as slow line | 1.6152 | No | Z5=1.6152 H6=-0.3646 PnL=$85,872 Trades=613. VWEMA tracks too fast during high-vol; standard EMA confirmed optimal |
 | 319 | (H-L)*volume momentum as short filter | 3.1554 | No | Z5=3.1554 H6=0.5448 PnL=$84,448 Trades=718. Fails gate; HL*vol product worse than pure volume — range correlated with vol, no addl info |
+| 320 | **Median of HL2 EMA(400/425/450) slow ensemble** | **4.0815** | **Yes** | Z5=4.0815 H6=0.6538 PnL=$109,052 Trades=690. NEW CHAMPION! Marginal Z5 improvement (+0.0039); median more robust than single span |
 
 *(Agent appends rows here after each experiment)*
 
@@ -573,15 +574,15 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-OHLC4 EMA(6) fast vs HL2=(H+L)/2 EMA(425) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0776, H6=0.6538 (exp_257, commit 440eff7).
+OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(400/425/450) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0815, H6=0.6538 (exp_320, commit a49dfdd).
 Key insights:
-- HL2 = (high+low)/2 range midpoint for slow EMA outperforms all other slow metrics
+- HL2 median(EMA_400, EMA_425, EMA_450) slightly more robust than single span=425
 - OHLC4 fast (includes open) is confirmed best for fast EMA
 - Longs: no vol filter needed — HL2 EMA provides quality anchor for long entries
 - Shorts: vol > 40th pct required — prevents false shorts in NQ's uptrend bias
-- EMA(6) fast, EMA(425) slow is optimal with asymmetric vol (420 had H6=0.65, 430 fails gate)
+- Median ensemble averages out crossover noise across 3 slow spans
 
-New targets: Z5 > 4.0776 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.0815 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
