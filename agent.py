@@ -1,9 +1,9 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 257: Longs vol-free + shorts vol>40th, HL2 EMA(425) slow.
-420: Z5=3.99, H6=0.65 (champion, passes). 430: Z5=4.20, H6=0.46 (fails).
-Testing 425 — the crossover point between passing and failing H6 gate.
+Exp 324: Re-verify span=426 with new H6 gate 0.5.
+Previously exp_259 got Z5=4.13, H6=0.55 — failed old gate (0.6) but passes new gate (0.5).
+If verified, this would be a new champion (Z5=4.13 > 4.0776).
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     ema_fast = ohlc4.ewm(span=6, adjust=False).mean().values
 
     hl2 = (df["high"] + df["low"]) / 2.0
-    ema_slow = hl2.ewm(span=425, adjust=False).mean().values
+    ema_slow = hl2.ewm(span=426, adjust=False).mean().values
 
     vol_series = df["volume"].rolling(60).mean()
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
