@@ -1,14 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 069: GBM with 480-bar horizon, structured features: calendar + trend-state + vol-state.
-Prior GBM attempts (030, 058) failed with next-bar/short-horizon targets and raw price lags.
-This uses:
-  - Features: dow, hour (sin/cos encoded), trend_state = sign(EMA3 - EMA480), vol_state = sign(vol60 - vol240)
-  - Target: 480-bar-ahead return direction (binary: up/down)
-  - Model: GBM n_estimators=30, max_depth=3 (lightweight)
-Hypothesis: ML can learn the optimal combination of the known-good signals
-(calendar + trend-state + volume-state) better than any single threshold rule.
+Exp 070: GBM same as exp_069 but horizon=240 (4-hour ahead vs 8-hour).
+Hypothesis: 4-hour target aligns better with intraday cycles than 8-hour.
 """
 
 import numpy as np
@@ -17,7 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 
 _model = None
 _feature_cols = ["dow_cos", "dow_sin", "hour_cos", "hour_sin", "trend_state", "vol_state"]
-HORIZON = 480
+HORIZON = 240
 
 
 def _add_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -49,13 +43,10 @@ def train(df: pd.DataFrame) -> None:
         n_estimators=30, max_depth=3, learning_rate=0.1, random_state=42
     )
     _model.fit(X, y)
-    importances = dict(zip(_feature_cols, _model.feature_importances_.round(3)))
     print(f"[agent] GBM trained on {len(X):,} samples, horizon={HORIZON}")
-    print(f"[agent] Feature importances: {importances}")
 
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
-    """Long when GBM predicts P(up in 480 bars) > 0.52."""
     df2 = _add_features(df)
     X = df2[_feature_cols].fillna(0).values
     proba = _model.predict_proba(X)[:, 1]
