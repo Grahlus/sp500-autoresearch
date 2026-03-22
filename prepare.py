@@ -296,7 +296,7 @@ class time_limited_experiment:
 
 # Minimum Calmar on H6 forward test to consider a strategy generalizable.
 # A strategy that scores well on Z5 but below this on H6 is considered overfit.
-H6_MIN_CALMAR = 0.5
+H6_MIN_CALMAR = 0.6
 
 def evaluate_agent_forward(agent_module) -> float:
     """Run agent on H6 forward test set, return Calmar ratio."""

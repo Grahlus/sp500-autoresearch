@@ -86,6 +86,23 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ---
 
+## Logging discipline — strictly enforced
+
+- Update the experiment log in program.md **IMMEDIATELY** after each `run.py` output
+- Do this **before** writing any code for the next experiment
+- Never batch-update multiple experiments at once — log each one as it happens
+- If you lose context mid-session, run `git log --oneline` to recover results
+- Every row must have Z5 and H6 scores in the Notes column
+
+## H6 generalization gate
+
+- H6 minimum raised to **0.6** (was 0.5)
+- Current champion (exp_139, Z5=2.63 H6=0.55) is **grandfathered** — do not revert it
+- All future commits must clear H6 >= 0.6 to be kept
+- A Z5 improvement that fails H6 is **not an improvement** — revert it
+
+---
+
 ## Experiment log
 
 | # | Hypothesis | Calmar | Kept? | Notes |
