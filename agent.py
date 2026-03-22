@@ -1,10 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 085: GBM with subsample=0.8 (stochastic gradient boosting).
-Using random row subsampling per tree can reduce overfitting and improve
-generalization — similar in spirit to dropout in neural networks.
-Same 6 features, horizon=300, n_estimators=30, max_depth=3.
+Exp 089: GBM n_estimators=40, subsample=0.8.
+Champion uses 30 trees. Does 40 trees improve stability?
 """
 
 import numpy as np
@@ -42,11 +40,11 @@ def train(df: pd.DataFrame) -> None:
     X = df2[_feature_cols].values
     y = df2["target"].values
     _model = GradientBoostingClassifier(
-        n_estimators=30, max_depth=3, learning_rate=0.1,
+        n_estimators=40, max_depth=3, learning_rate=0.1,
         subsample=0.8, random_state=42
     )
     _model.fit(X, y)
-    print(f"[agent] GBM(subsample=0.8) trained on {len(X):,} samples, horizon={HORIZON}")
+    print(f"[agent] GBM(n=40,sub=0.8) trained on {len(X):,} samples, horizon={HORIZON}")
 
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
