@@ -97,6 +97,9 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 011 | ROC(240) > 0 long-only | 0.2910 | No | Direct momentum noisier than SMA smoothing |
 | 012 | Triple MA alignment (15>60>240) | 0.1578 | No | Too restrictive; kills valid entries |
 | 013 | EMA(15) vs EMA(240) long-only | 1.8867 | Yes | EMA recency weighting improves timing significantly |
+| 014 | EMA(10) vs EMA(240) long-only | 2.0621 | Yes | Faster fast EMA catches trend turns sooner |
+| 015 | EMA(5) vs EMA(240) long-only | 0.9104 | No | Too noisy; EMA(10) is sweet spot |
+| 016 | EMA(10) vs EMA(120) long-only | 0.1499 | No | Faster slow EMA exits too often |
 
 *(Agent appends rows here after each experiment)*
 
