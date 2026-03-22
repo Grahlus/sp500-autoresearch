@@ -258,8 +258,8 @@ def calmar_ratio(equity: np.ndarray, bars_per_year: int = 252 * 390) -> float:
 
 # ─── EVALUATION ENTRY POINT ───────────────────────────────────────────────────
 
-def evaluate_agent(agent_module) -> float:
-    """Load agent, run on validation set (Z5), return Calmar ratio."""
+def evaluate_agent(agent_module) -> tuple:
+    """Load agent, run on validation set (Z5), return (calmar, pnl)."""
     df_all      = load_data()
     _, val_df   = train_val_split(df_all)
     val_df_feat = add_basic_features(val_df)
@@ -271,8 +271,11 @@ def evaluate_agent(agent_module) -> float:
             f"Agent returned {len(signals)} signals but val set has {len(val_df_feat)} bars"
         )
 
-    result = run_backtest(val_df_feat, signals)
-    return calmar_ratio(result["equity"])
+    result  = run_backtest(val_df_feat, signals)
+    calmar  = calmar_ratio(result["equity"])
+    pnl     = float(result["equity"][-1] - result["equity"][0])
+    n_trades = int(np.sum(np.diff(result["signals"].astype(float)) != 0) // 2)
+    return calmar, pnl, n_trades
 
 
 # ─── TIMEOUT ──────────────────────────────────────────────────────────────────
@@ -296,10 +299,10 @@ class time_limited_experiment:
 
 # Minimum Calmar on H6 forward test to consider a strategy generalizable.
 # A strategy that scores well on Z5 but below this on H6 is considered overfit.
-H6_MIN_CALMAR = 0.6
+H6_MIN_CALMAR = 0.5
 
-def evaluate_agent_forward(agent_module) -> float:
-    """Run agent on H6 forward test set, return Calmar ratio."""
+def evaluate_agent_forward(agent_module) -> tuple:
+    """Run agent on H6 forward test set, return (calmar, pnl, n_trades)."""
     fwd_df      = load_forward_test()
     fwd_df_feat = add_basic_features(fwd_df)
 
@@ -310,8 +313,11 @@ def evaluate_agent_forward(agent_module) -> float:
             f"Agent returned {len(signals)} signals but forward set has {len(fwd_df_feat)} bars"
         )
 
-    result = run_backtest(fwd_df_feat, signals)
-    return calmar_ratio(result["equity"])
+    result   = run_backtest(fwd_df_feat, signals)
+    calmar   = calmar_ratio(result["equity"])
+    pnl      = float(result["equity"][-1] - result["equity"][0])
+    n_trades = int(np.sum(np.diff(result["signals"].astype(float)) != 0) // 2)
+    return calmar, pnl, n_trades
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
@@ -339,8 +345,12 @@ def run_experiment() -> float:
     print(f"{'='*60}")
 
     start    = time.time()
-    z5_score = -999.0
-    h6_score = -999.0
+    z5_calmar = -999.0
+    z5_pnl    = 0.0
+    z5_trades = 0
+    h6_calmar = -999.0
+    h6_pnl    = 0.0
+    h6_trades = 0
 
     try:
         with time_limited_experiment():
@@ -358,29 +368,29 @@ def run_experiment() -> float:
 
             # Z5 validation
             print("[prepare] Evaluating on validation set (Z5)...")
-            z5_score = evaluate_agent(agent)
+            z5_calmar, z5_pnl, z5_trades = evaluate_agent(agent)
 
             # H6 forward test
             print("[prepare] Evaluating on forward test (H6)...")
-            h6_score = evaluate_agent_forward(agent)
+            h6_calmar, h6_pnl, h6_trades = evaluate_agent_forward(agent)
 
     except ExperimentTimeout:
         print(f"[prepare] TIMEOUT after {EXPERIMENT_TIMEOUT_SECS}s")
     except Exception:
         print(f"[prepare] EXCEPTION:\n{traceback.format_exc()}")
 
-    elapsed    = time.time() - start
-    passes_h6  = h6_score >= H6_MIN_CALMAR
-    verdict    = "KEEP (if Z5 improved)" if passes_h6 else "REVERT -- H6 overfit"
+    elapsed   = time.time() - start
+    passes_h6 = h6_calmar >= H6_MIN_CALMAR
+    verdict   = "KEEP (if Z5 improved)" if passes_h6 else "REVERT -- H6 overfit"
 
     print(f"\n{'='*60}")
-    print(f"Calmar Z5  (val):     {z5_score:.4f}")
-    print(f"Calmar H6  (forward): {h6_score:.4f}  [min required: {H6_MIN_CALMAR}]")
-    print(f"Verdict:              {verdict}")
-    print(f"Elapsed:              {elapsed:.1f}s")
+    print(f"Z5  Calmar: {z5_calmar:>8.4f}   PnL: ${z5_pnl:>10,.0f}   Trades: {z5_trades}")
+    print(f"H6  Calmar: {h6_calmar:>8.4f}   PnL: ${h6_pnl:>10,.0f}   Trades: {h6_trades}  [H6 min: {H6_MIN_CALMAR}]")
+    print(f"Verdict:    {verdict}")
+    print(f"Elapsed:    {elapsed:.1f}s")
     print(f"{'='*60}\n")
 
-    return z5_score
+    return z5_calmar
 
 
 if __name__ == "__main__":

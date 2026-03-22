@@ -34,6 +34,19 @@ your own previous best, indefinitely.
 
 ---
 
+## Logging discipline — strictly enforced
+
+- Update the experiment log IMMEDIATELY after each run.py output
+- Do this before writing any code for the next experiment
+- Never batch-update multiple experiments at once — log each one as it happens
+- If you lose context mid-session, run git log --oneline to recover results
+- Every row must include Z5, H6, and PnL in the Notes column
+
+Log format
+| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX H6=X.XX PnL=$XX,XXX Trades=N |
+
+---
+
 ## Hard constraints (never violate)
 
 - **Do not modify `prepare.py`** — it is frozen ground truth
@@ -44,6 +57,19 @@ your own previous best, indefinitely.
 - **No data leakage** — if you implement `train(df)`, it must only see training data (pre-2024-07-01)
 
 ---
+
+## H6 generalization gate
+
+- H6 minimum: 0.6 — strategies below this on H6 are overfit to Z5 and must be reverted
+- Current champion (exp_139) is grandfathered at H6=0.55 — do not revert it
+- All future commits must clear H6 >= 0.6
+
+
+## Profit visibility
+run.py now prints Z5 PnL, H6 PnL, and trade count alongside Calmar.
+Log all of these. Target Z5 PnL > $20,000 (informational — Calmar is the decision metric).
+A high Calmar with tiny PnL ($200) is not useful in practice.
+
 
 ## What you can change in agent.py
 
@@ -384,20 +410,163 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 213 | OHLC4 EMA(6) fast vs open EMA(420) slow | 3.4831 | No | Z5=3.48 H6=1.34. Very close to champion; close slow slightly edges out open slow |
 
+| 214 | OHLC4 EMA(6) fast vs HL2=(H+L)/2 EMA(420) slow | **3.5566** | **Yes** | Z5=3.5566 H6=1.49. NEW CHAMPION! Range midpoint slow better than close or open |
+
+| 215 | HL2 EMA(6) fast vs HL2 EMA(420) slow (pure HL2/HL2) | 3.0817 | No | Z5=3.08 H6=1.62. HL2/HL2 worse; OHLC4 fast confirmed optimal, HL2 only better as slow |
+
+| 216 | OHLC4 fast vs HL2 EMA(400) slow | 2.9247 | No | Z5=2.92 H6=1.44. HL2(400) worse; HL2(420) confirmed optimal span |
+
+| 217 | OHLC4 fast vs HL2 EMA(440) slow | 3.2486 | No | Z5=3.25 H6=0.99. HL2(440) worse; HL2(420) confirmed optimal for both sides of sweep |
+
+| 218 | OC2=(O+C)/2 fast EMA(6) vs HL2 slow EMA(420) | 3.5546 | No | Z5=3.5546 H6=1.37. Very close to champion (3.5566); OHLC4 fast marginally better than OC2 |
+
+| 219 | (2*open+high+low+close)/5 double-open fast vs HL2 slow | 3.3746 | No | Z5=3.37 H6=1.08. Equal-weight OHLC4 confirmed optimal; extra open weight hurts |
+
+| 220 | OHLC4 fast vs HL2 slow + longs 31st pct | 3.4811 | No | Z5=3.48 H6=1.31. 30th pct still better for longs with HL2 slow |
+
+| 221 | OHLC4 fast vs HL2 slow + shorts 39th pct | 3.4660 | No | Z5=3.47 H6=1.44. 40th pct confirmed optimal for shorts with HL2 slow too |
+
+| 222 | OHLC4 EMA(5) fast vs HL2 EMA(420) slow | 2.9101 | No | Z5=2.91 H6=0.93. EMA(6) confirmed optimal fast span with HL2 slow |
+
+| 223 | Volume-weighted OHLC4 EMA(6) fast vs HL2 slow | 2.7234 | No | Z5=2.72 H6=0.86. Volume-weighted EMA worse; standard EMA confirmed for fast |
+
+| 224 | HLC3=(H+L+C)/3 fast EMA(6) vs HL2 slow | 3.3189 | No | Z5=3.32 H6=1.61. HLC3 worse than OHLC4 fast even with HL2 slow; open price key for fast |
+
+| 225 | Close EMA(6) fast vs HL2 slow | 2.8028 | No | Z5=2.80 H6=1.11. Close fast worse with HL2 slow too; OHLC4 fast confirmed best universally |
+
+| 226 | OHLC4 fast vs HL3=(H+2L)/3 slow (lower anchor) | 2.4509 | No | Z5=2.45 H6=0.91. Too low — HL2 midpoint is optimal; going lower hurts |
+
+| 227 | Vol rolling(55) mean (vs 60) with HL2 slow | 3.1016 | No | Z5=3.10 H6=1.59. vol_60 confirmed optimal with HL2 slow too |
+
+| 228 | OHLC4 fast vs HL2 SMA(420) slow (SMA not EMA) | 2.9158 | No | Z5=2.92 H6=1.22. EMA confirmed better than SMA for HL2 slow |
+
+| 229 | Candle body momentum: bullish bar ratio > 0.53 over 420 bars | -0.2936 | No | Z5=-0.29 H6=-0.15. Bar direction frequency noisy at 1-min; EMA smoothing far superior |
+
+| 230 | Champion + EMA spread pct20 gate (exclude flat-trend entries) | 1.2966 | No | Z5=1.30 H6=0.98. Any spread gate hurts badly; near-crossover entries are valuable |
+
+| 231 | Dual timescale EMA confluence: EMA(6/420) AND EMA(3/60) both agree + vol | 1.6677 | No | Z5=1.6677 H6=-0.28. Fails gate; dual confirmation too restrictive |
+| 232 | Signal hysteresis DECAY=5: forward-fill 0-gaps when trend unchanged | 3.3078 | No | Z5=3.31 H6=1.39. Hysteresis hurts Z5; champion exits are correct |
+| 233 | Vol filter entry-only: enter on EMA+vol, hold until EMA reversal | 3.2592 | No | Z5=3.26 H6=1.21. Holding through vol dips hurts Z5 |
+| 234 | HLC3=(H+L+C)/3 slow EMA(420) | 3.5190 | No | Z5=3.52 H6=1.39. HLC3 worse; HL2 confirmed optimal (more H+L, less C) |
+| 235 | OC2=(O+C)/2 slow EMA(420) | 3.5003 | No | Z5=3.50 H6=1.39. Body center slower worse; HL2 optimal for slow |
+| 236 | ATR filter replacing volume filter | 0.8370 | No | Z5=0.84 H6=0.12. Fails gate; ATR is terrible vs vol as activity gate |
+| 237 | TEMA(6) fast (3x EMA for less lag) vs HL2 slow | 1.4330 | No | Z5=1.43 H6=0.52. Fails gate; triple smoothing adds too much noise |
+| 238 | HL2 EMA(410) slow | 3.1670 | No | Z5=3.17 H6=1.27. Confirms sharp peak at 420 |
+| 239 | HL2 EMA(415) slow | 3.3921 | No | Z5=3.39 H6=1.25. 415 better than 410 but still below 420 |
+| 240 | OHLC4 EMA(7) fast vs HL2 EMA(420) slow | 2.5919 | No | Z5=2.59 H6=0.97. EMA(6) confirmed optimal: 5=2.91, 6=3.56, 7=2.59 |
+| 241 | Vol quantile window 360 bars | 3.1197 | No | Z5=3.12 H6=1.28. 480-bar confirmed optimal window |
+| 242 | Vol quantile window 240 bars | 2.6506 | No | Z5=2.65 H6=2.81! Shorter window = great H6 but worse Z5 |
+| 243 | Vol quantile window 720 bars | 2.7874 | No | Z5=2.79 H6=0.66. 480 is the global peak for vol window |
+| 244 | OHLC4 fast vs open EMA(420) slow (duplicate of exp_213) | 3.4831 | No | Z5=3.48 H6=1.34. Confirmed open slow worse than HL2 |
+| 245 | Low slow EMA(420) — extended lower-anchor hypothesis | 2.1117 | No | Z5=2.11 H6=0.08. Fails gate; going below HL2 to just low over-signals |
+| 246 | Asymmetric slow: HL2 for longs, high EMA(420) for shorts | 3.5566 | No | Z5=3.5566 H6=1.49. EXACT TIE with champion — high slow shorts have same effect |
+| 247 | Rolling VWAP(30) fast vs HL2 EMA(420) slow | 1.6285 | No | Z5=1.63 H6=0.34. Fails gate; VWAP fast terrible vs EMA fast |
+| 248 | HL2 EMA(500) slow | 2.7478 | No | Z5=2.75 H6=0.18. Fails gate; 420 confirmed global optimum for HL2 slow |
+
+| 249 | HL2 EMA(425) slow — gap between 420 and 440 | 3.4974 | No | Z5=3.50 H6=1.47. 420 confirmed sharp global peak: 415=3.39, 420=3.56, 425=3.50, 440=3.25 |
+
+| 250 | HL2 EMA(425) slow — narrowing peak search | 3.4974 | No | Z5=3.50 H6=1.47. Between 420(3.56) and 440(3.25); 420 confirmed global peak |
+| 251 | Adaptive vol threshold: 25/35th pct when spread>0.3%, else 30/40th | 3.3166 | No | Z5=3.32 H6=1.27. Adaptive threshold hurts; uniform 30/40 is better |
+
+| 252 | 5-bar aggregated candle OHLC4 EMA(6) fast vs HL2 EMA(84) slow | 0.1932 | No | Z5=0.19 H6=0.44. Fails gate; 5-bar candle structure destroys signal |
+
+| 253 | **Longs vol-filter-free, shorts vol>40th pct** | **3.9949** | **Yes** | Z5=3.9949 H6=0.65. NEW CHAMPION! Removing vol gate for longs captures quiet-trend alpha. H6 borderline but passes gate |
+
+| 253 already logged |
+| 254 | Longs vol-free, shorts vol > 35th pct | 3.6731 | No | Z5=3.67 H6=0.57. Fails gate; 40th pct optimal for shorts |
+| 255 | Longs vol-free, shorts vol > 45th pct | 3.3159 | No | Z5=3.32 H6=0.97. Better H6 but Z5 regressed; 40th pct confirmed optimal |
+
+| 256 | Longs vol-free, shorts vol>40th, HL2 EMA(430) slow | 4.1961 | No | Z5=4.20 H6=0.46. Fails gate! Higher Z5 but H6 drops below 0.6 |
+| 257 | **Longs vol-free, shorts vol>40th, HL2 EMA(425) slow** | **4.0776** | **Yes** | Z5=4.0776 H6=0.65. NEW CHAMPION! 425 is the H6-safe sweet spot |
+
+| 258 | Longs vol-free + HL2 EMA(427) slow | 4.0873 | No | Z5=4.09 H6=0.50. Fails gate; H6 drops sharply between 425 and 427 |
+| 259 | Longs vol-free + HL2 EMA(426) slow | 4.1340 | No | Z5=4.13 H6=0.55. Fails gate; 425 confirmed maximum passing span |
+
+| 260 | Longs vol-free + close EMA(425) slow + shorts vol>40th | 3.8374 | No | Z5=3.84 H6=0.56. Fails gate; HL2 slow confirmed better than close with asymmetric setup |
+
+| 261 | Champion + shorts vol window 360 | 3.8856 | No | Z5=3.89 H6=0.53. Fails gate; 480-bar still optimal for short vol window |
+| 262 | Champion + shorts vol window 720 | 3.3780 | No | Z5=3.38 H6=0.67. 480 confirmed optimal for short vol window |
+
+| 263 | Champion + vol_90 smoothing for shorts | 3.0152 | No | Z5=3.02 H6=0.89. vol_60 confirmed optimal; wider smoothing hurts Z5 significantly |
+
+| 264 | Asymmetric fast: OHLC4 for longs, close EMA(6) for shorts | 3.8693 | No | Z5=3.87 H6=0.62. Passes gate but Z5 below champion; OHLC4 fast confirmed best for both directions |
+
+| 265 | Longs vol>10th pct (very loose), shorts vol>40th | 3.2291 | No | Z5=3.23 H6=0.80. Even 10th pct filter hurts longs; vol-free confirmed optimal |
+
+| 266 | Longs vol-free, shorts vol median > pct40 | 3.6742 | No | Z5=3.67 H6=0.54. Fails gate; vol mean confirmed better than median for short filter |
+
+| 267 | Longs-only (no vol, no shorts) — diagnostic | 3.1114 | No | Z5=3.11 H6=0.17. Fails gate; shorts add ~+1.0 Z5 and improve H6 significantly |
+
+| 268 | Longs vol-free, shorts raw (unsmoothed) vol > pct40 | 1.4854 | No | Z5=1.49 H6=-0.58. Fails gate; 60-bar smoothing essential for vol filter |
+
+| 269 | HL2 HMA(425) slow (Hull MA — lower lag than EMA) | 0.2283 | No | Z5=0.23 H6=0.16. Fails gate; HMA creates too many false crossovers |
+
+| 270 | Asymmetric slow: longs HL2 EMA(425), shorts HL2 EMA(420) | 4.0685 | No | Z5=4.07 H6=0.63. Marginally below champion on both metrics |
+| 271 | Asymmetric slow: longs HL2 EMA(425), shorts HL2 EMA(430) | 4.0783 | No | Z5=4.078 H6=0.647. Essentially ties champion (+0.0007); not worth committing |
+
+| 272 | Longs vol-free, shorts EMA(240) trend confirmation instead of vol | 1.0528 | No | Z5=1.05 H6=0.69. Vol filter essential for shorts; EMA trend confirmation alone is insufficient |
+
+| 273 | Longs vol-free, shorts vol > 42nd pct | 3.7814 | No | Z5=3.78 H6=0.88. 40th confirmed optimal: 41st=3.96, 42nd=3.78, 45th=3.32 |
+| 274 | Longs vol-free, shorts vol > 41st pct | 3.9622 | No | Z5=3.96 H6=0.72. 40th pct confirmed as Z5-optimal for shorts |
+
+| 275 | 2-bar EMA crossover persistence for longs | 3.7963 | No | Z5=3.80 H6=0.51. Fails gate; persistence requirement hurts both metrics |
+
+| 276 | HL2 rolling(425).median() slow (robust anchor) | 3.1979 | No | Z5=3.20 H6=0.09. Fails gate; rolling median terrible vs EMA for slow |
+
+| 277 | Asymmetric slow metric: HL2 for longs, open EMA(425) for shorts | 4.0450 | No | Z5=4.05 H6=0.64. Below champion; HL2 slow optimal for both directions |
+
+| 278 | Longs vol-free, shorts vol > 480-bar rolling mean | 3.2897 | No | Z5=3.29 H6=0.72. Mean threshold ~50th pct; 40th pct confirmed best for Z5 |
+
+| 279 | Blended slow: 0.7*HL2 EMA(425) + 0.3*HL2 EMA(60) | 2.9007 | No | Z5=2.90 H6=-0.15. Fails gate; mixing short-term EMA into slow destroys signal |
+
+| 280 | 2-level EMA longs: entry EMA(425), exit EMA(30) | 3.1939 | No | Z5=3.19 H6=0.77. Tighter exit hurts Z5; champion EMA(425) exit optimal |
+| 281 | 2-level EMA longs: entry EMA(425), exit EMA(60) | 2.8018 | No | Z5=2.80 H6=0.84. Even worse; EMA(425) exit confirmed optimal for Z5 |
+
+| 282 | Rolling VWAP(425) slow + vol-free longs + vol>40th shorts | 2.3469 | No | Z5=2.35 H6=1.41! Vol-free longs help VWAP (+0.31 vs old 2.04) but Z5 still far below EMA champion |
+
+| 283 | VWAP(60) fast vs HL2 EMA(425) slow + asymmetric vol | 1.6207 | No | Z5=1.62 H6=-0.12. Fails gate; VWAP(60) fast terrible |
+
+| 284 | OHLC4 EMA(6) 420-bar self-momentum (EMA vs its lagged value) | 1.2884 | No | Z5=1.29 H6=-0.73. Fails gate; self-comparison momentum signal is terrible |
+
+| 285 | Slow EMA declining as additional short confirmation | 3.4559 | No | Z5=3.46 H6=0.38. Fails gate; slope confirmation cuts valid shorts |
+
+| 286 | Close EMA(6) fast + HL2 EMA(425) slow + asymmetric vol | 3.5434 | No | Z5=3.54 H6=0.39. Fails gate; OHLC4 fast confirmed best even in asymmetric setup |
+
+| 287 | Supertrend(ATR=10, mult=3.0) + vol-free longs + vol>40th shorts | -0.7226 | No | Z5=-0.72 H6=-1.03. ATR(10) on 1-min is far too noisy; flips direction every few bars |
+| 288 | Supertrend(ATR=100, mult=2.0) + vol-free longs + vol>40th shorts | -0.8379 | No | Z5=-0.84 H6=-1.09. Longer ATR still terrible; Supertrend fundamentally incompatible with 1-min NQ |
+| 289 | Stateful entry=EMA(425)/exit=EMA(390) asymmetric thresholds | 2.7784 | No | Z5=2.78 H6=0.92. H6 great but Z5 far below champion; early exits cost too much trend profit |
+| 290 | TSI(fast=6, slow=425) > 0 longs; < 0 + vol shorts | 3.7155 | No | Z5=3.72 H6=0.40. Fails gate; double-smoothed momentum worse than price-level EMA crossover |
+| 291 | OLS slope of HL2(425) > 0 for longs; < 0 + vol for shorts | 0.4678 | No | Z5=0.47 H6=1.43. OLS slope is too slow/different; misses most Z5 alpha but great H6 |
+| 292 | Parabolic SAR (step=0.002, max=0.20) + vol-free longs + vol>40th shorts | 0.4351 | No | Z5=0.44 H6=-0.95. Fails gate; adaptive trailing stop useless on 1-min NQ |
+| 293 | Champion longs + bearish bar pressure (6/10 bars close<open) for shorts | 1.4785 | No | Z5=1.48 H6=-0.49. Fails gate; bar pressure cuts too many shorts, kills both metrics |
+| 294 | Donchian midpoint(425) as slow anchor + OHLC4_EMA(6) fast | 2.3861 | No | Z5=2.39 H6=0.09. Fails gate; channel midpoint lacks EMA's adaptive trend-following |
+| 295 | train() grid search slow span [380-480]: selected span=470, train_calmar=0.19 | 3.6763 | No | Z5=3.68 H6=0.09. KEY INSIGHT: training max Calmar=0.19! Strategy is Z5-regime specific |
+| 296 | Champion + ADX(60) > 25 regime filter (both longs and shorts) | -0.1637 | No | Z5=-0.16 H6=1.00. ADX>25 cuts almost all Z5 longs — at 1-min scale ADX stays below 25 |
+| 297 | EMA(6/425) entry + ATR(14)*2.0 trailing stop exit | 0.2229 | No | Z5=0.22 H6=-0.53. Fails gate; 2*ATR too tight on 1-min bars, fires constantly |
+| 298 | Champion + RSI(14) < 50 filter for shorts | 2.3970 | No | Z5=2.40 H6=-0.26. Fails gate; RSI(14) cuts too many valid shorts, decimates both metrics |
+| 299 | OR-logic longs: EMA bullish OR close > rolling_max(60); shorts: EMA+vol+no breakout | 2.7798 | No | Z5=2.78 H6=-0.33. Fails gate; breakout OR condition adds noise, destroys H6 |
+| 300 | Fast span=5 (vs champion 6) | 3.8452 | No | Z5=3.85 H6=0.27. Fails gate; faster span significantly worsens H6 |
+| 301 | Fast span=7 (vs champion 6) | 3.2279 | No | Z5=3.23 H6=0.32. Fails gate; both directions from span=6 hurt H6. Span=6 is optimal. |
+| 302 | Vol percentile 30th for shorts (vs champion 40th) | 3.4975 | No | Z5=3.50 H6=0.47. Fails gate; more aggressive shorting hurts both metrics |
+| 303 | Vol baseline window 240 bars (vs champion 480) | 3.2872 | No | Z5=3.29 H6=1.06. Passes gate but Z5 far below champion. Shorter window better H6, worse Z5 |
+| 304 | Vol baseline window 360 bars (between 240 and 480) | 3.8856 | No | Z5=3.89 H6=0.53. Fails gate. 480-bar window is optimal for passing gate with highest Z5 |
+| 305 | DEMA(6) fast (2*EMA-EMA(EMA), reduced lag) | 2.7832 | No | Z5=2.78 H6=-0.17. Fails gate; DEMA too responsive, increases noise (confirms exp_183) |
+
 *(Agent appends rows here after each experiment)*
 
 ---
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(6/360) bidirectional + self-normalizing vol percentile (longs>35th pct, shorts>40th pct of 480-bar window) → Z5=2.8635, H6=1.3172 (exp_160).
+OHLC4 EMA(6) fast vs HL2=(H+L)/2 EMA(425) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0776, H6=0.6538 (exp_257, commit 440eff7).
 Key insights:
-- EMA(6/360) shorter slow span: less Z5 alpha than EMA(480) but much better H6 generalization
-- Tighter vol entry (35th pct = top 65%) selects quality entries; looser (25th or 15th) hurt Z5 with EMA(360)
-- H6=1.32 provides excellent headroom above the 0.6 gate
-- The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
+- HL2 = (high+low)/2 range midpoint for slow EMA outperforms all other slow metrics
+- OHLC4 fast (includes open) is confirmed best for fast EMA
+- Longs: no vol filter needed — HL2 EMA provides quality anchor for long entries
+- Shorts: vol > 40th pct required — prevents false shorts in NQ's uptrend bias
+- EMA(6) fast, EMA(425) slow is optimal with asymmetric vol (420 had H6=0.65, 430 fails gate)
 
-New targets: Z5 > 3.5259 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.0776 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
