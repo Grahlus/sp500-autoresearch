@@ -183,6 +183,12 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 088 | GBM subsample=0.8 + max_features=sqrt | 3.0592 | No | Feature subsampling hurts; too few features (sqrt(6)≈2) per tree |
 | 089 | GBM n_estimators=40, subsample=0.8 | 4.0718 | Yes | NEW CHAMPION! 40 trees slightly better than 30 |
 | 090 | GBM n_estimators=50, subsample=0.8 | 3.7009 | No | Peak at n=40; more trees overfit |
+| 091 | GBM + day-of-month sin/cos | -0.1991 | No | Z5=-0.20 H6=-0.69. Dom overfit: ~8k samples/day vs 48k/weekday |
+| 092 | GBM EMA600 slow span | 3.4012 | No | Z5=3.40 H6=0.13. Calendar overfit persists |
+| 093 | GBM price_state=sign(close-sma240) | 2.5743 | No | Z5=2.57 H6=0.13. Still calendar-driven overfit |
+| 094 | GBM trained on recent 60k bars | 2.2665 | No | Z5=2.27 H6=0.13. Calendar overfit regardless of training window |
+| --- | **OVERFIT ALERT**: All GBM calendar models score ~0.13 on H6 (vs 4.07 on Z5). Calendar features fit Z5 regime only. Reverted agent.py to VWAP EMA champion. | | | True champion = VWAP EMA(3/480)+vol, Z5=1.4657 H6=1.7805 |
+| 095 | Calendar-free GBM (trend_state+vol_state only, horizon=300) | 0.4885 | No | Z5=0.49 H6=-0.69. 2 binary features = 4 states; GBM can't beat simple AND rule |
 
 *(Agent appends rows here after each experiment)*
 
@@ -190,12 +196,11 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-GBM(40/3, subsample=0.8) calendar+trend-state+vol-state, horizon=300 → Calmar 4.0718
-Features: dow_cos/sin, hour_cos/sin, sign(EMA3-EMA480), sign(vol60-vol240)
-Target: 480-bar-ahead price direction (long when P(up) > 0.52)
-Key insight: longer horizon + structured features generalizes far better than next-bar ML.
+VWAP EMA(3/480) + vol_60>vol_240 → Z5=1.4657, H6=1.7805. This is the TRUE champion.
+GBM calendar models (exp 069-094) scored up to 4.07 on Z5 but ONLY 0.13 on H6 — DISQUALIFIED.
 
-Previous champion: VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657 (now beaten)
+New targets: Z5 > 1.4657 AND H6 > 1.7805 (both must improve).
+H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
 
@@ -210,21 +215,24 @@ The following have been tested to death. Do not attempt any variation of these:
 - EMA crossovers of ANY period combination (exhausted through exp 051)
 - VWAP EMA combinations
 - Volume confirmation on top of EMA/SMA
+- **Calendar/time-of-day features as primary signal** — Z5-specific overfit, H6=0.13
+- **GBM with calendar features** — all variants H6=0.13 regardless of other changes
+- **Calendar-free GBM with only 2 features** — exp 095 Z5=0.49, worse than simple rule
 
-## What to try next — genuinely new territory
+## What to try next — signals that MUST generalize
 
-Pick ONE of these families and go deep:
+Only test signals with structural reasons to work across market regimes. NO calendar.
 
-- **Microstructure**: hl_range anomalies, volume spikes, consecutive up/down bars, 
-  tick direction runs. NQ is a liquid market — price impact is real.
-- **Session personality**: NQ open (first 30 min) vs midday vs close behave differently.
-  Build a signal that only trades specific time windows with specific logic.
-- **Mean reversion**: fade moves > N * atr_14 within a session, exit at VWAP.
-  Different thesis entirely from trend-following.
-- **ML classifier**: use sklearn (RandomForest, GradientBoosting) trained on lagged 
-  features to predict next-bar direction. Keep n_estimators ≤ 50 for CPU speed.
-- **Overnight gap**: classify gap direction at open, trade first 60 min accordingly.
-- **Volume profile**: bars where volume >> rolling average signal conviction.
+- **Variance ratio regime**: VR(k) = Var(k-bar) / (k * Var(1-bar)) > 1 means trending.
+  Only trade VWAP EMA signal when VR confirms trending regime. Cuts mean-reverting noise.
+- **GBM with 5+ structural features**: trend_state + vol_state + rsi_14 + roc_60 + atr_relative.
+  More features but still NO calendar — tests if richer structural signal beats simple rule.
+- **Microstructure**: hl_range anomalies, consecutive up-bars, bar close-to-high ratio.
+  NQ is liquid — price impact is real. Different mechanism entirely from trend-following.
+- **Mean reversion**: fade moves > N * atr_14. Opposite thesis from trend-following.
+- **Multi-timeframe momentum**: require BOTH short and medium-term EMA agree (non-trivially).
+- **Adaptive EMA**: span shrinks when VR > 1 (trending), expands when VR < 1 (ranging).
+  Structurally motivated, no calendar, adapts to regime.
 
 ## Hypothesis quality bar
 
