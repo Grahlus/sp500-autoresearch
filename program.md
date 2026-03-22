@@ -124,6 +124,14 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 037 | EMA(8) vs EMA(480) both on vwap_proxy | 0.6311 | Yes | Consistent VWAP signal slightly better |
 | 038 | EMA(8) vs EMA(600) vwap_proxy | 0.3785 | No | EMA(480) still the slow sweet spot |
 | 039 | EMA(12) vs EMA(480) vwap_proxy | 0.5230 | No | EMA(8) fast still optimal |
+| 040 | VWAP EMA(8/480) + vol_60>vol_240 confirm | 1.3225 | Yes | Volume rising filter massively improves Calmar |
+| 041 | Same + vol_15>vol_240 (faster) | 0.5976 | No | vol_15 too noisy; vol_60 is sweet spot |
+| 042 | Same + vol_60>vol_480 (longer baseline) | 0.8505 | No | vol_240 baseline confirmed optimal |
+| 043 | Same but EMA(60/240) of volume (smoothed) | 0.8232 | No | Rolling mean beats EMA for volume comparison |
+| 044 | Same + vol_60 > vol_240 * 1.05 (stricter) | 0.9721 | No | Stricter threshold misses entries |
+| 045 | Volume-only signal (no trend) | -0.0412 | No | VWAP trend is essential; volume alone is bad |
+| 046 | + roc_60>0 third condition | 0.1653 | No | Third condition too restrictive; cuts good entries |
+| --- | **prepare.py FIXED** — val now Z5-only (109k bars). Exp 035-046 used wrong expanded data. Champion (exp_040 VWAP EMA(8/480)+vol) recalibrated to **1.2210** on correct Z5. | | | New correct baseline: 1.2210 |
 
 *(Agent appends rows here after each experiment)*
 
@@ -131,7 +139,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-The best strategy found so far is EMA(8) vs EMA(480) both vwap_proxy long-only → Calmar 0.6311.
+The best strategy found so far is VWAP EMA(8/480) + vol_60>vol_240 → Calmar 1.2210 (on correct Z5 data).
 (Note: validation set expanded to Sep 2025–Mar 2026; EMA(8/480) rescores 0.5893 on new data.)
 This is your baseline to beat. It is already committed. Do not re-run simple EMA/SMA variants.
 
