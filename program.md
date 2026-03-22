@@ -74,7 +74,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 - **Commission**: $2.50/side
 - **Slippage**: 0.25 points/side
 - **Max position**: 1 contract
-- **Metric**: Calmar ratio on 2024-07-01 onward (held-out)
+- **Metric**: Calmar ratio on Z5 contract 2025-09-01 onward (held-out)
 - **Hardware**: CPU only — keep models lightweight
 
 ---
@@ -95,22 +95,55 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 009 | Always long (buy and hold) | 0.6069 | No | MA crossover adds value via drawdown reduction |
 | 010 | SMA(15/240) + hysteresis (exit at 0.9995x) | 1.2599 | No | Hysteresis delays exits, slightly worse |
 | 011 | ROC(240) > 0 long-only | 0.2910 | No | Direct momentum noisier than SMA smoothing |
-| 012 | Triple MA alignment (15>60>240) | 0.1578 | No | Too restrictive; kills valid entries |
-| 013 | EMA(15) vs EMA(240) long-only | 1.8867 | Yes | EMA recency weighting improves timing significantly |
-| 014 | EMA(10) vs EMA(240) long-only | 2.0621 | Yes | Faster fast EMA catches trend turns sooner |
-| 015 | EMA(5) vs EMA(240) long-only | 0.9104 | No | Too noisy; EMA(10) is sweet spot |
-| 016 | EMA(10) vs EMA(120) long-only | 0.1499 | No | Faster slow EMA exits too often |
-| 017 | EMA(10) vs EMA(480) long-only | 2.1603 | Yes | Slower slow EMA holds through noise better |
-| 018 | EMA(10) vs EMA(960) long-only | 2.0354 | No | EMA(480) is sweet spot for slow MA |
 
 *(Agent appends rows here after each experiment)*
 
 ---
 
+## Current champion — DO NOT touch
+
+The best strategy found so far is SMA(15) vs SMA(240) long-only → Calmar 1.3581.
+This is your baseline to beat. It is already committed. Do not re-run SMA variants.
+
+## Banned approaches — already exhausted
+
+The following have been tested to death. Do not attempt any variation of these:
+- SMA/EMA crossovers of any period combination
+- RSI filters on top of SMA
+- Volume/volatility regime filters on top of SMA
+- ROC momentum
+- RTH session filters
+- Hysteresis on SMA exits
+- Buy and hold
+
+## What to try next — genuinely new territory
+
+Pick ONE of these families and go deep:
+
+- **Microstructure**: hl_range anomalies, volume spikes, consecutive up/down bars, 
+  tick direction runs. NQ is a liquid market — price impact is real.
+- **Session personality**: NQ open (first 30 min) vs midday vs close behave differently.
+  Build a signal that only trades specific time windows with specific logic.
+- **Mean reversion**: fade moves > N * atr_14 within a session, exit at VWAP.
+  Different thesis entirely from trend-following.
+- **ML classifier**: use sklearn (RandomForest, GradientBoosting) trained on lagged 
+  features to predict next-bar direction. Keep n_estimators ≤ 50 for CPU speed.
+- **Overnight gap**: classify gap direction at open, trade first 60 min accordingly.
+- **Volume profile**: bars where volume >> rolling average signal conviction.
+
+## Hypothesis quality bar
+
+Before coding, ask:
+1. Is this meaningfully different from SMA crossover in its *logic*?
+2. Why would this work on NQ specifically?
+3. Does it have ≤ 5 parameters?
+
+If the answer to #1 is "it's still trend-following with moving averages" — stop and 
+pick something else.
+
 ## Research taste
 
-- Prefer **interpretable** strategies you can explain in one sentence
-- Prefer **fewer** parameters over many (less overfitting risk on futures)
-- If you find something that works, **dig into it** — vary the parameters, understand why
-- If three consecutive experiments in the same direction all fail, **pivot** to a new idea
-- Document your reasoning in the commit message — future-you will thank present-you
+- The SMA result is good. A truly different approach that scores 0.8+ is more 
+  valuable than another SMA variant at 1.4 — it could be combined later.
+- Failure is fine. A well-reasoned -0.5 teaches more than a lucky 0.3.
+- Document *why* you think it should work, not just what you tried.
