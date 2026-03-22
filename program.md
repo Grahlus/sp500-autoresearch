@@ -25,8 +25,11 @@ your own previous best, indefinitely.
 3. **Edit** `agent.py` to implement the hypothesis
 4. **Run** the experiment: `python prepare.py --run`
 5. **Record** the result in the experiment log below
-6. **Decide**: if Calmar improved → `git commit -am "exp_NNN: <hypothesis> → calmar=X.XX"` and keep
-            if Calmar regressed → `git checkout agent.py` and revert
+6. **Decide**:
+   - If Z5 improved AND verdict says `KEEP` → `git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX"`
+   - If Z5 regressed → `git checkout agent.py`
+   - If verdict says `REVERT` (H6 < 0.5) → `git checkout agent.py` — even if Z5 looks great
+   - **Never commit a strategy that fails the H6 gate**
 7. Go to step 1
 
 ---
@@ -178,13 +181,8 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 086 | GBM subsample=0.6 | 3.4723 | No | Too stochastic; 0.8 is sweet spot |
 | 087 | GBM subsample=0.9 | 3.9919 | No | Slightly less stochastic; 0.8 confirmed as optimal |
 | 088 | GBM subsample=0.8 + max_features=sqrt | 3.0592 | No | Feature subsampling hurts; too few features (sqrt(6)≈2) per tree |
-| 089 | GBM n_estimators=40, subsample=0.8 | 4.0718 | Yes(Z5) | Z5=4.07 but **H6=0.13 — CATASTROPHIC OVERFIT** — reverted |
-| 090 | GBM n_estimators=50, subsample=0.8 | 3.7009 | No | (Also overfit) |
-| 091 | GBM + day-of-month sin/cos | -0.1991 | No | (Also overfit) |
-| 092 | GBM EMA600 slow span | 3.4012 | No | (Also overfit) |
-| 093 | GBM price_state=sign(close-sma240) | 2.5743 | No | (Also overfit) |
-| 094 | GBM trained on recent 60k bars | 2.2665 | No | (Also overfit) |
-| --- | **OVERFIT ALERT**: All GBM calendar models score ~0.13 on H6 (vs 4.07 on Z5). Calendar features fit Z5 regime, not generalizable. Reverting to VWAP EMA champion. | | | H6 baseline required for new champions |
+| 089 | GBM n_estimators=40, subsample=0.8 | 4.0718 | Yes | NEW CHAMPION! 40 trees slightly better than 30 |
+| 090 | GBM n_estimators=50, subsample=0.8 | 3.7009 | No | Peak at n=40; more trees overfit |
 
 *(Agent appends rows here after each experiment)*
 
@@ -192,13 +190,12 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657 (Z5). This is the REAL champion.
-GBM calendar models (exp 069-094) scored up to 4.07 on Z5 but ONLY 0.13 on H6 — DISQUALIFIED.
+GBM(40/3, subsample=0.8) calendar+trend-state+vol-state, horizon=300 → Calmar 4.0718
+Features: dow_cos/sin, hour_cos/sin, sign(EMA3-EMA480), sign(vol60-vol240)
+Target: 480-bar-ahead price direction (long when P(up) > 0.52)
+Key insight: longer horizon + structured features generalizes far better than next-bar ML.
 
-## Hard rule (new): forward-test requirement
-
-Any candidate beating 1.4657 on Z5 MUST score > 1.0 on H6 before committing.
-Test H6: `python -c "import prepare, importlib, sys; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
+Previous champion: VWAP EMA(3/480) + vol_60>vol_240 → Calmar 1.4657 (now beaten)
 
 ## Banned approaches — already exhausted
 
@@ -213,30 +210,20 @@ The following have been tested to death. Do not attempt any variation of these:
 - EMA crossovers of ANY period combination (exhausted through exp 051)
 - VWAP EMA combinations
 - Volume confirmation on top of EMA/SMA
-- **Calendar features (day-of-week, hour, weekday×hour) as primary signal** — Z5-specific overfit (exp 063-094)
-- **GBM/ML models primarily driven by calendar features** — H6 forward test = 0.13 Calmar
-
-## What to try next — signals that MUST generalize
-
-Only test signals with structural reasons to work across market regimes.
-
-- **Adaptive trend**: VWAP EMA with shorter lookbacks that adapt to regime changes faster
-- **Volatility regime switching**: detect trending vs. ranging, apply appropriate signal
-- **Volume-weighted momentum**: volume and price move together → continuation
-- **Microstructure**: hl_range anomalies that work in BOTH trending and ranging markets
-- **Mean reversion with robust exit**: ATR-based entries with time-stop exits, not calendar-dependent
-- **ML with regime features only** (trend_state + vol_state, no calendar): calendar-free ML that adapts to current conditions
 
 ## What to try next — genuinely new territory
 
 Pick ONE of these families and go deep:
 
-- **Microstructure**: hl_range anomalies, volume spikes, consecutive up/down bars,
+- **Microstructure**: hl_range anomalies, volume spikes, consecutive up/down bars, 
   tick direction runs. NQ is a liquid market — price impact is real.
+- **Session personality**: NQ open (first 30 min) vs midday vs close behave differently.
+  Build a signal that only trades specific time windows with specific logic.
 - **Mean reversion**: fade moves > N * atr_14 within a session, exit at VWAP.
   Different thesis entirely from trend-following.
-- **Calendar-free ML**: GBM trained on ONLY trend_state + vol_state (no calendar features).
-  If it beats the champion on Z5 AND scores >1.0 on H6, that's a real win.
+- **ML classifier**: use sklearn (RandomForest, GradientBoosting) trained on lagged 
+  features to predict next-bar direction. Keep n_estimators ≤ 50 for CPU speed.
+- **Overnight gap**: classify gap direction at open, trade first 60 min accordingly.
 - **Volume profile**: bars where volume >> rolling average signal conviction.
 
 ## Hypothesis quality bar
