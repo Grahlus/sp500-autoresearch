@@ -278,6 +278,12 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 160 | EMA(6/360) + vol pct longs>35th, shorts>40th (tighter longs) | **2.8635** | **Yes** | Z5=2.8635 H6=1.3172. NEW CHAMPION! Tighter longs + shorter slow EMA = quality entries + H6 headroom |
 
+| 161 | EMA(6/360) + vol pct longs>30th, shorts>40th | **2.9078** | **Yes** | Z5=2.9078 H6=1.4352. NEW CHAMPION! Looser longs better with EMA(360) at this level |
+
+| 162 | EMA(6/360) + vol pct longs>25th, shorts>40th | 2.6634 | No | Z5=2.66 H6=1.15. Same as exp_158; 30th pct confirmed optimal for longs |
+
+| 163 | EMA(6/360) + vol pct longs>30th, shorts>30th (same threshold) | 2.5479 | No | Z5=2.55 H6=1.36. Looser shorts hurt Z5; 40th pct shorts optimal |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -291,7 +297,7 @@ Key insights:
 - H6=1.32 provides excellent headroom above the 0.6 gate
 - The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
 
-New targets: Z5 > 2.8635 AND H6 >= 0.6 to commit.
+New targets: Z5 > 2.9078 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
