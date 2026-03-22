@@ -1,9 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 118: VWAP EMA(4/480) bidirectional + vol*0.8.
-Testing EMA(4) vs EMA(3): slightly slower fast EMA may reduce whipsaws in
-bidirectional mode where both sides trade. With vol=0.8x on both directions.
+Exp 120: VWAP EMA(6/480) bidirectional + vol*0.8.
+Fast span sweep: EMA(3)=2.06, EMA(4)=2.35 (champion), EMA(5)=2.26, EMA(6)=?
 """
 
 import numpy as np
@@ -12,7 +11,7 @@ import pandas as pd
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
     vwap = df["vwap_proxy"]
-    ema_fast = vwap.ewm(span=4, adjust=False).mean().values
+    ema_fast = vwap.ewm(span=6, adjust=False).mean().values
     ema_slow = vwap.ewm(span=480, adjust=False).mean().values
 
     vol_short = df["volume"].rolling(60).mean().values
