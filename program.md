@@ -276,21 +276,22 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 159 | EMA(6/360) + vol percentile longs>15th pct (looser longs) | 2.5772 | No | Z5=2.58 H6=0.98. Looser longs hurt Z5 with EMA(360) — different tradeoff |
 
+| 160 | EMA(6/360) + vol pct longs>35th, shorts>40th (tighter longs) | **2.8635** | **Yes** | Z5=2.8635 H6=1.3172. NEW CHAMPION! Tighter longs + shorter slow EMA = quality entries + H6 headroom |
+
 *(Agent appends rows here after each experiment)*
 
 ---
 
 ## Current champion — DO NOT touch
 
-VWAP EMA(6/480) bidirectional + self-normalizing vol percentile (longs>25th pct, shorts>40th pct of 480-bar window) → Z5=2.8200, H6=0.5008 (exp_151, committed under old H6=0.5 gate).
+VWAP EMA(6/360) bidirectional + self-normalizing vol percentile (longs>35th pct, shorts>40th pct of 480-bar window) → Z5=2.8635, H6=1.3172 (exp_160).
 Key insights:
-- Percentile-normalized vol threshold beats fixed ratio — adapts to vol regime changes
-- Longs: enter when vol_60_mean is in top 75% of recent vol history
-- Shorts: enter when vol_60_mean is in top 60% (stricter quality bar)
-- exp_139 (Z5=2.63) is grandfathered; exp_151 is the git head (Z5=2.82)
-- H6=0.50 barely passed old gate; under new 0.6 gate, needs improvement
+- EMA(6/360) shorter slow span: less Z5 alpha than EMA(480) but much better H6 generalization
+- Tighter vol entry (35th pct = top 65%) selects quality entries; looser (25th or 15th) hurt Z5 with EMA(360)
+- H6=1.32 provides excellent headroom above the 0.6 gate
+- The percentile filter + shorter slow span creates a different regime sensitivity than fixed-ratio vol
 
-New targets: Z5 > 2.8200 AND H6 >= 0.6 to commit.
+New targets: Z5 > 2.8635 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
