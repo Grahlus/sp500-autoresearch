@@ -96,6 +96,7 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 010 | SMA(15/240) + hysteresis (exit at 0.9995x) | 1.2599 | No | Hysteresis delays exits, slightly worse |
 | 011 | ROC(240) > 0 long-only | 0.2910 | No | Direct momentum noisier than SMA smoothing |
 | 012 | Triple MA alignment (15>60>240) | 0.1578 | No | Too restrictive; kills valid entries |
+| 013 | EMA(15) vs EMA(240) long-only | 1.8867 | Yes | EMA recency weighting improves timing significantly |
 
 *(Agent appends rows here after each experiment)*
 
