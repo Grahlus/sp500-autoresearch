@@ -1,9 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 709: RSI<30 as additive dip entry (deeply oversold, not base_long, not base_short).
-OR condition: add new dip type when market deeply oversold regardless of ATR tier conditions.
-Uses tier1 parameters (STOP1=5.5, 80/60 timeout).
+Exp 710: RSI-only dip entries (RSI<30 but no ATR tier met) assigned dip_tier=1 (STOP1=5.5)
+instead of dip_tier=3 (STOP3=8.0). Tighter stop for looser entry signal.
 """
 
 import numpy as np
@@ -109,8 +108,10 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     dip_tier = 1
                 elif tier2_ok:
                     dip_tier = 2
-                else:
+                elif tier3_ok:
                     dip_tier = 3
+                else:
+                    dip_tier = 1  # RSI-only: use tier1 (tighter stop)
                 dip_entry_bar = i
                 dip_entry_fast = ema_fast[i]
 
