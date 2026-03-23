@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 741: roc_15 threshold 0.00005 (tighter than 0.0001).
+Exp 743: Tighten roc_60 threshold from 0.0002 to 0.0001 in exit gate.
 """
 
 import numpy as np
@@ -90,7 +90,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002 and roc_15_arr[i] <= 0.00005 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.00005 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:
