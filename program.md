@@ -769,20 +769,54 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 451 | LOOKBACK1=130 + MIN_RISE1=1.0 | 4.3988 | No | Z5=4.3988 H6=0.5904. MIN_RISE filter direction exhausted — bad H6 trade robust to min-rise. |
 | 452 | **LOOKBACK1=125 with ATR(25) (no MIN_RISE)** | **4.3883** | **Yes** | Z5=4.3883 H6=0.6016 Z5pnl=$118,688 H6pnl=$22,282 Trades_Z5=737 Trades_H6=662. NEW CHAMPION! ATR(25) shifts the H6 boundary — LOOKBACK1=125 was failing H6 with ATR(20) but passes with ATR(25). More Z5 alpha unlocked. |
 
+| 453 | LOOKBACK1=127 with ATR(25) | 4.3915 | No | Z5=4.3915 H6=0.5989. Fails H6 gate. Better Z5 but H6 still below 0.6. |
+| 454 | LOOKBACK1=126 with ATR(25) | 4.3893 | No | Z5=4.3893 H6=0.5966. Fails H6 gate. Boundary confirmed at 125/126. |
+| 455 | ATR(27) + LOOKBACK1=125 | 4.3045 | No | Z5=4.3045 H6=0.6415. ATR(27) improves H6 but kills Z5. ATR(25) confirmed optimal. |
+| 456 | Fast EMA span=7 | 3.4383 | No | REVERT H6=0.2730. Span=7 dramatically worse both metrics. Span=6 confirmed optimal. |
+| 457 | vol_pct80 filter on dip entry | 4.3458 | No | Z5=4.3458 H6=0.6016 Trades_Z5=736. Blocks exactly 1 high-vol Z5 trade (good trade). Vol filter useless. |
+| 458 | vol_pct90 filter on dip entry | 4.3458 | No | Z5=4.3458 H6=0.6016 Trades_Z5=736. Same as vol_pct80 — same 1 trade blocked. Vol filter confirmed dead end. |
+| 459 | ATR(26) + LOOKBACK1=126 | 4.3155 | No | Z5=4.3155 H6=0.5780. H6 fails gate. ATR(26) not enough to unlock LOOKBACK1=126. |
+| 460 | ATR(26) + LOOKBACK1=125 | 4.3146 | No | Z5=4.3146 H6=0.5830. Worse than ATR(25) champion on both metrics. |
+| 461 | Trailing stop TRAIL_MULT=2.0 on dip trades | 4.3147 | No | Z5=4.3147 H6=0.5860. Trailing stop fails — cuts good trades in both periods. |
+| 462 | Trailing stop TRAIL_MULT=3.5 | 4.3691 | No | Z5=4.3691 H6=0.6009. Closer but still below champion. Trail still cuts winners. |
+| 463 | Trailing stop TRAIL_MULT=5.0 | 4.3852 | No | Z5=4.3852 H6=0.5872. Fails gate. Trailing stop consistently hurts H6. |
+| 464 | STOP1=5.7 | 4.3732 | No | Z5=4.3732 H6=0.6002. STOP1 fine-tuning: 5.5=champion, 5.6 and 5.7 give same worse result. |
+| 465 | STOP1=5.6 | 4.3732 | No | Z5=4.3732 H6=0.6002. Identical to STOP1=5.7 — discrete jump at 5.5 boundary. |
+| 466 | Vol quantile window 720 (vs 480) | 3.6876 | No | Z5=3.6876 H6=0.6043. Longer window kills Z5. 480 confirmed optimal. |
+| 467 | Vol quantile window 240 | 3.5143 | No | Z5=3.5143 H6=0.9072. More trades (903) but terrible Z5. 480 is optimal. |
+| 468 | Slow EMA source = close | 4.0141 | No | Z5=4.0141 H6=0.5149. Significantly worse. HL2 confirmed optimal for slow EMA. |
+| 469 | Slow EMA source = OHLC4 | 4.0961 | No | Z5=4.0961 H6=0.5810. Between close and HL2 but fails gate. HL2 is best. |
+| 470 | True Range ATR (period=25) LOOKBACK1=125 | 4.2248 | No | Z5=4.2248 H6=0.6142. TR ATR improves H6 but kills Z5. H-L ATR confirmed optimal. |
+| 471 | True Range ATR + LOOKBACK1=126 | 4.2257 | No | Z5=4.2257 H6=0.6092. Passes gate but Z5 far below champion. |
+| 472 | Recovery-bar entry confirmation (close > prev_close) | 4.1733 | No | Z5=4.1733 H6=0.5879. More trades (762) but worse — creates re-entries. |
+| 473 | Tier4: LOOKBACK4=200, DIP_MULT4=3.7, STOP4=5.5 | 4.3434 | No | REVERT H6=0.4416. Shallow dips in 200-bar trend bad in H6. |
+| 474 | Tier4: LOOKBACK4=300, DIP_MULT4=3.7, STOP4=5.5 | 4.2372 | No | Z5=4.2372 H6=0.5635. Still fails gate. Tier4 shallow dip approach exhausted. |
+| 475 | DEMA(6) for fast signal | 3.0318 | No | REVERT H6=-0.2149. DEMA extremely bad — too noisy. Plain EWM(6) is optimal. |
+| 476 | Slow EMA center=420 (spans 375,420,465) | 4.1493 | No | Z5=4.1493 H6=0.5590. Lower center worse. 380/425/470 confirmed as global optimum. |
+| 477 | Fast EMA span=5 | 4.2060 | No | REVERT H6=0.2233. Span=5 also terrible. Span=6 is the only viable value. |
+| 478 | LOOKBACK1=120 with ATR(25) | 4.3650 | No | Z5=4.3650 H6=0.6382. Pattern: LOOKBACK monotonically improves Z5 until H6 gate fails at 126. Optimum is LOOKBACK1=125. |
+| 479 | vol_pct60 filter on dip entry | 4.3458 | No | Z5=4.3458 H6=0.6016 Trades_Z5=736. Same result as vol_pct80/90 — same 1 extreme-vol dip trade blocked. Vol filter approach fully exhausted. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
 
 ## Current champion — DO NOT touch
 
-OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA crossover. Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). PLUS stateful dip-buying: enter long when slow rising (120-bar), close < slow - 3.9*ATR, NOT base_long, NOT base_short; exit dip at slow+0.5*ATR; stop at slow-5.5*ATR; smooth transition to champion long when EMA turns bullish during dip. → Z5=4.2022, H6=0.6867 (exp_366, commit 000cda6).
+OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA crossover. Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). PLUS three-tier stateful dip-buying with ATR(25):
+- Tier1: enter long when slow rising (125-bar), close < slow - 3.9*ATR. Stop at slow-5.5*ATR.
+- Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR. Stop at slow-5.0*ATR.
+- Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR. Stop at slow-8.0*ATR.
+- Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
+→ Z5=4.3883, H6=0.6016 (exp_452, commit e0b2364)
 Key insights:
-- HL2 median(EMA_380, EMA_425, EMA_470) more robust than single span=425
-- OHLC4 fast confirmed best; HL2 median slow confirmed best structure
-- Dip-buying adds mean-reversion trades during champion flat periods
-- DIP_MULT=3.9 ATR (enter threshold), DIP_STOP_MULT=5.5 ATR (stop level)
-- Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
-- EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
+- ATR(25) of H-L range confirmed optimal (ATR(20): 4.34, ATR(22): 4.32, ATR(27): 4.30)
+- LOOKBACK1=125 is the H6 gate boundary with ATR(25) (126+ fails H6 < 0.6)
+- Three-tier dip system adds Z5-exclusive alpha: Tier2/3 fire in Z5 bull, rare in H6
+- Trailing stops confirmed bad: consistently hurt H6 (exps 461-463)
+- Fast EMA span=6 is very specific optimum: span=5 and span=7 both catastrophic
+- HL2 for slow EMA, OHLC4 for fast EMA — confirmed optimal (exps 468,469,476)
+- Vol quantile window=480, pct=0.40 confirmed optimal (exps 466,467)
 
 New targets: Z5 > 4.3883 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
