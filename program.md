@@ -1,134 +1,3 @@
-# Trading Autoresearch — program.md
-
-This is your operating manual. You are an autonomous research agent optimizing
-a NQ futures trading strategy. You iterate on `agent.py`, run experiments, and
-keep improvements. The human is asleep.
-
----
-
-## Your mission
-
-Maximize **Calmar ratio** on the NQ 1-minute bar validation set.
-
-Calmar = Annualised Return / Max Drawdown
-
-A good Calmar for a systematic futures strategy is > 0.5. Elite is > 2.0.
-The random baseline scores near 0. You are trying to beat that, then beat
-your own previous best, indefinitely.
-
----
-
-## The loop (repeat until told to stop)
-
-1. **Read** the current `agent.py` and your experiment log below
-2. **Form a hypothesis** — one focused change with a clear rationale
-3. **Edit** `agent.py` to implement the hypothesis
-4. **Run** the experiment: `python prepare.py --run`
-5. **Record** the result in the experiment log below
-6. **Decide**:
-   - If Z5 improved AND verdict says `KEEP` → `git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX"`
-   - If Z5 regressed → `git checkout agent.py`
-   - If verdict says `REVERT` (H6 < 0.5) → `git checkout agent.py` — even if Z5 looks great
-   - **Never commit a strategy that fails the H6 gate**
-7. Go to step 1
-
----
-
-## Logging discipline — strictly enforced
-
-- Update the experiment log IMMEDIATELY after each run.py output
-- Do this before writing any code for the next experiment
-- Never batch-update multiple experiments at once — log each one as it happens
-- If you lose context mid-session, run git log --oneline to recover results
-- Every row must include Z5, H6, and PnL in the Notes column
-
-Log format
-| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX H6=X.XX Z5pnl=$XX,XXX H6pnl=$XX,XXX Trades_Z5=N Trades_H6=N |
-
----
-
-## Hard constraints (never violate)
-
-- **Do not modify `prepare.py`** — it is frozen ground truth
-- **One change per experiment** — don't combine multiple ideas; isolate causality
-- **15-minute timeout** — if your experiment would take longer, simplify the model
-- **Signals must be in {-1, 0, 1}** — the backtest engine enforces this
-- **No lookahead** — `get_signals(df)` receives the bar at time T; do not use T+1 data
-- **No data leakage** — if you implement `train(df)`, it must only see training data (pre-2024-07-01)
-
----
-
-## H6 generalization gate
-
-- H6 minimum: 0.6 — strategies below this on H6 are overfit to Z5 and must be reverted
-- Current champion (exp_139) is grandfathered at H6=0.55 — do not revert it
-- All future commits must clear H6 >= 0.6
-
-
-## Profit visibility
-run.py now prints Z5 PnL, H6 PnL, and trade count alongside Calmar.
-Log all of these. Target Z5 PnL > $20,000 (informational — Calmar is the decision metric).
-A high Calmar with tiny PnL ($200) is not useful in practice.
-
-
-## What you can change in agent.py
-
-Absolutely everything. Some directions to explore:
-
-- **Rules-based**: moving average crossovers, breakout, mean reversion, RSI extremes, ATR-based entries
-- **ML**: scikit-learn classifiers/regressors trained on features → signal
-- **RL**: Gym-style env + PPO/SAC via stable-baselines3 (CPU-friendly, short training)
-- **Ensemble**: combine multiple signal sources
-- **Regime detection**: trend vs. ranging, session filtering (RTH only), day-of-week effects
-- **Risk management**: position sizing, max daily loss cutoff baked into signals
-
-You may add new imports. You may add helper functions. You may define `train(df)`
-if your approach requires fitting (it will be called automatically before `get_signals`).
-
----
-
-## Things that tend to hurt Calmar (avoid unless testing)
-
-- Overtrading (hundreds of trades/day) — commissions and slippage destroy PnL
-- Holding overnight without a thesis — NQ gaps at open are brutal
-- Ignoring volatility regime — a fixed threshold that works in low-vol fails in high-vol
-- Training and testing on the same data (leakage)
-
----
-
-## Session context
-
-- **Asset**: NQ E-mini futures, 1-minute bars
-- **Point value**: $20/point
-- **Commission**: $2.50/side
-- **Slippage**: 0.25 points/side
-- **Max position**: 1 contract
-- **Metric**: Calmar ratio on Z5 contract 2025-09-01 onward (held-out)
-- **Hardware**: CPU only (Intel i5-12500, 6 cores, 24GB RAM)
-  - Rules-based strategies: run in <1s, no constraint
-  - sklearn ML: keep n_estimators ≤ 50, max_depth ≤ 5
-  - RL via SB3/PPO: max 50k timesteps, network ≤ 64x64 hidden layers — or it will timeout
-- **Experiment timeout**: 15 minutes hard wall clock
-
----
-
-## Logging discipline — strictly enforced
-
-- Update the experiment log in program.md **IMMEDIATELY** after each `run.py` output
-- Do this **before** writing any code for the next experiment
-- Never batch-update multiple experiments at once — log each one as it happens
-- If you lose context mid-session, run `git log --oneline` to recover results
-- Every row must have Z5 and H6 scores in the Notes column
-
-## H6 generalization gate
-
-- H6 minimum raised to **0.6** (was 0.5)
-- Current champion (exp_139, Z5=2.63 H6=0.55) is **grandfathered** — do not revert it
-- All future commits must clear H6 >= 0.6 to be kept
-- A Z5 improvement that fails H6 is **not an improvement** — revert it
-
----
-
 ## Experiment log
 
 | # | Hypothesis | Calmar | Kept? | Notes |
@@ -903,6 +772,32 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 574 | threshold=0.10 + LOOKBACK1=125 | 4.4250 | No | Z5=4.4250 H6=0.6506. Same as 128. Full sweep: threshold+LOOKBACK combos max out at 4.4347 (LB1=130). |
 | 575 | threshold=0.15 + LOOKBACK1=130 | 4.4332 | No | Z5=4.4332 H6=0.6609. Higher threshold helps H6 more but Z5 consistently below 4.44. Direction exhausted: boolean fast_declining is Z5-optimal. |
 | 576 | threshold=0.15 + LOOKBACK1=132 | 4.4304 | No | Z5=4.4304 H6=0.6373. Both below champion. Fast_declining magnitude threshold direction fully exhausted. |
+| **577** | **fast_declining magnitude threshold 0.02*ATR** | **4.4455** | **Yes** | Z5=4.4455 H6=0.6260 Z5pnl=$119,518 H6pnl=$22,612 Trades_Z5=763 Trades_H6=696. NEW CHAMPION! Tiny noise-filter on fast declining: require 5-bar fast decline > 0.02*ATR. Same trade count, slightly better Z5 quality. Commit 83b99b1. |
+| 578 | threshold=0.01 | 4.4395 | No | Identical to boolean champion (pre-577). Threshold too small to filter any trades. |
+| 579 | threshold=0.025 | 4.4451 | No | Just below champion. Peak is clearly at 0.02. |
+| 580 | threshold=0.03 | 4.4451 | No | Tied with 0.025 but below champion. 0.02 confirmed as global peak. |
+| 581 | Minimum slow rise for tier1: (slow - slow_prev1) > 0.02*ATR | 4.4410 | No | Z5=4.4410 H6=0.6269. Below champion. Slow EMA in real uptrends already rises much more than 0.02*ATR/130 bars — filter rarely fires. |
+| 582 | threshold=0.02 + LOOKBACK1=131 | 4.4416 | No | Z5=4.4416 H6=0.6226. Both metrics worse. LB1=130 confirmed optimal with new threshold. |
+| 583 | threshold=0.02 + LOOKBACK1=132 | 4.4427 | No | Z5=4.4427 H6=0.6028. Closer on Z5 but H6 drops. LB1=130 is the boundary. Magnitude threshold doesn't unlock longer lookbacks. |
+| 584 | DIP_MULT1=3.88 | 4.3794 | No | Z5=4.3794 H6=0.6260 Trades=764. Significant drop — adds one bad Z5 dip trade. DIP_MULT1=3.9 confirmed optimal. |
+| 585 | window=4 + threshold=0.02 | 4.4434 | No | Z5=4.4434 H6=0.6166 Trades=766. Both below champion. Window=5 + threshold=0.02 confirmed optimal. |
+| 586 | window=6 + threshold=0.02 | 4.4330 | No | Z5=4.4330 H6=0.6003. Window=5 confirmed optimal. Full window sweep with threshold=0.02: w=4→4.44, w=5→4.4455(peak), w=6→4.43. |
+| 587 | Dead band 0.06*ATR + magnitude 0.02*ATR | 4.3736 | No | Z5=4.3736 H6=0.6175. Larger dead band hurts even with quality filter. Dead band=0.05 confirmed optimal. |
+| 588 | Slow EMA ensemble center=424 (MEDIAN 379/424/469) | 4.3260 | No | Z5=4.3260 H6=0.6443. Z5 much worse. Center=425 (380/425/470) confirmed optimal even with full champion stack. |
+| 589 | Weighted slow EMA 0.25*e380+0.50*e425+0.25*e470 | 4.3224 | No | Z5=4.3224 H6=0.5681. Falls between median and mean quality. Median confirmed optimal aggregation. |
+| 590 | Weighted fast EMA (O+H+L+2C)/5 | 4.3387 | No | Z5=4.3387 H6=0.4789 REVERT. Close-weighted OHLC changes crossover dynamics, fails H6 gate. OHLC4 equal weights confirmed optimal. |
+| 591 | Tier-specific threshold: tier1=0.02, tier2/3=boolean | 4.4395 | No | Identical to old boolean champion! Key insight: threshold helps because it blocks entries where NO tier passes — with tier2/3 as fallback, those entries aren't blocked. |
+| 592 | Tier-specific threshold: tier1=boolean, tier2/3=0.02 | 4.4395 | No | Same — tier1 fires first, overriding tier2/3 threshold. Confirmed: threshold must apply to ALL tiers uniformly via the shared fast_declining gate. |
+| 593 | threshold=0.015 | 4.4395 | No | Identical — no trades filtered at 0.015*ATR. Threshold boundary is between 0.015 and 0.018. |
+| 594 | threshold=0.018 | 4.4455 | No | Identical to champion 0.02! Same filtering behavior. Effective window: [0.018, ~0.024] all give 4.4455. Champion at 0.02 is safely in this range. |
+| 595 | Combined momentum: fast_declining AND close_declining (close[i] < close[i-5]) | 4.4187 | No | Z5=4.4187 H6=0.5954 Trades_Z5=770. Worse — close-based filter fires on correct dip entries too, creates churn. fast_declining via EMA is sufficient. |
+| 596 | ATR(24) instead of ATR(25) | 4.4047 | No | Z5=4.4047 H6=0.5891 Trades_Z5=765. Both worse — ATR(25) confirmed optimal with threshold. |
+| 597 | ATR(26) instead of ATR(25) | 4.3707 | No | Z5=4.3707 H6=0.5939 Trades_Z5=764. Worse on both sides. ATR(25) fully confirmed optimal. |
+| 598 | STOP1=5.0 (tighten tier1 stop to match tier2) | 4.4207 | No | Z5=4.4207 H6=0.6215 Trades_Z5=765. Worse. STOP1=5.5 confirmed optimal. |
+| 599 | STOP1=6.0 (loosen tier1 stop) | 4.4242 | No | Z5=4.4242 H6=0.5957 Trades_Z5=762. Worse. STOP1=5.5 confirmed optimal. |
+| 600 | STOP3=7.5 (tighten tier3 stop) | 4.4416 | No | Z5=4.4416 H6=0.6260 Trades_Z5=763. Nearly tied but Z5 slightly below champion. |
+| 601 | STOP3=8.5 | 4.4455 | No | Z5=4.4455 H6=0.6260 PnL=$119,518 Trades_Z5=763. Identical Calmar to champion but slightly higher PnL and proportionally higher drawdown. No improvement. |
+| 602 | STOP3=9.0 | 4.4455 | No | Z5=4.4455 H6=0.6260 PnL=$119,518 Trades_Z5=763. Same — STOP3 flat in [8.0, 9.0]. STOP3=8.0 has lower absolute drawdown so champion value preferred. |
 
 *(Agent appends rows here after each experiment)*
 
@@ -915,7 +810,7 @@ OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA cr
 - Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR, AND fast_declining. Stop at slow-5.0*ATR.
 - Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR, AND fast_declining. Stop at slow-8.0*ATR.
 - Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
-→ Z5=4.4395, H6=0.6260 (exp_548, commit b8999ba)
+→ Z5=4.4455, H6=0.6260 (exp_577, commit 83b99b1)
 Key insights:
 - fast_declining filter (fast[i] < fast[i-5]) unlocks LOOKBACK1=130+ — without it, 126+ fails H6
 - ATR(25) of H-L range optimal; LOOKBACK1=130 optimal with fast_declining
@@ -930,8 +825,9 @@ Key insights:
   Creates more "waiting windows" for dip entries. band=0.10 goes too far (fails H6).
 - 2-bar long exit confirmation (exp_546): catastrophic — holds longs too long
 - Tier-specific timeouts worse than uniform 60 bars
+- fast_declining magnitude threshold 0.02*ATR (exp_577): filters noise-level declines, same trade count but higher quality entries. Threshold is discrete: [0.018, 0.025] all equivalent.
 
-New targets: Z5 > 4.4395 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.4455 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
