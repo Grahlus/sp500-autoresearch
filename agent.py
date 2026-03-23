@@ -1,10 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 548: Entry dead band 0.05*ATR for base_long. NEW CHAMPION!
-Z5=4.4395, H6=0.6260. Dead band delays long entry, allowing more dip entries (763 vs 741).
-Curve: band=0→4.4026, band=0.05→4.4395(champ), band=0.10→4.4836 H6=0.5540 (fails gate).
-The dead band creates more "below slow but not yet entering long" windows for dip trades.
+Exp 577: fast_declining magnitude threshold 0.02*ATR. NEW CHAMPION!
+Z5=4.4455, H6=0.6260. Filters noise-level (<0.02*ATR) fast EMA declines from dip entry.
+Same 763 Z5 trades / 696 H6 trades as exp_548, but slightly higher-quality dip entries.
+Threshold sweep: 0.0(bool)→4.4395, 0.02→4.4455(champ), 0.05→4.4382, 0.10→4.4347, 0.15→4.4332.
 """
 
 import numpy as np
@@ -59,7 +59,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         tier1_ok = (slow > slow_prev1) and (close < slow - DIP_MULT1 * atr_val)
         tier2_ok = (slow > slow_prev2) and (close < slow - DIP_MULT2 * atr_val)
         tier3_ok = (slow > slow_prev3) and (close < slow - DIP_MULT3 * atr_val)
-        fast_declining = ema_fast[i] < ema_fast[max(0, i - 5)]
+        fast_declining = (ema_fast[max(0, i - 5)] - ema_fast[i]) > 0.02 * atr_val
         dip_entry = (not base_long) and (not base_short) and fast_declining and (tier1_ok or tier2_ok or tier3_ok)
 
         if position == 1:

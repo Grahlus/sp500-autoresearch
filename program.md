@@ -867,6 +867,43 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 541 | Still-declining exit at 45 bars + timeout | 4.3830 | No | Z5=4.3830 H6=0.6744. Both worse than champion. |
 | 542 | Still-declining exit at 45 bars alone (no timeout) | 4.3830 | No | Z5=4.3830 H6=0.6744. Same as 541 — still-declining supersedes timeout. |
 
+| 543 | Tier4 (LB4=25, MULT4=9.0, STOP4=13.0) + timeout | 4.3965 | No | Z5=4.3965 H6=0.6556. Worse. Tier4 consistently fails. |
+| 544 | Tier4 MULT4=7.0, STOP4=11.0 | 4.3957 | No | Z5=4.3957 H6=0.6556. Tier4 at any parameters is bad. |
+| 545 | Sustained fast_declining (fast[i-5] < fast[i-10] also) | 4.3442 | No | Z5=4.3442 H6=0.6160. Too restrictive. Single 5-bar is optimal. |
+| 546 | 2-bar long exit confirmation | 3.4560 | No | Z5=3.4560 H6=0.7680. Catastrophic Z5 — holds longs too long, misses shorts. |
+| 547 | Entry dead band fast > slow + 0.1*ATR | 4.4836 | No | Z5=4.4836 H6=0.5540. Massive Z5 jump (787 trades) but fails H6 gate. |
+| **548** | **Entry dead band fast > slow + 0.05*ATR** | **4.4395** | **Yes** | Z5=4.4395 H6=0.6260 Z5pnl=$119,358 H6pnl=$22,612 Trades_Z5=763 Trades_H6=696. NEW CHAMPION! Dead band delays long entry → more dip windows. Commit b8999ba. |
+
+| 549 | Entry dead band 0.07*ATR | 4.3928 | No | Z5=4.3928 H6=0.5807. Fails gate. |
+| 550 | Entry dead band 0.08*ATR | 4.4703 | No | Z5=4.4703 H6=0.5806. Fails gate. |
+| 551 | Entry dead band 0.06*ATR | 4.3678 | No | Z5=4.3678 H6=0.6175. Passes gate but Z5 below champion. 0.05 confirmed optimal. |
+| 552 | Symmetric dead band (entry+exit 0.05*ATR) | 3.9782 | No | Z5=3.9782 H6=0.5385. Terrible. Exit dead band destroys performance. Entry-only is correct. |
+| 553 | LOOKBACK1=131 with dead band | 4.39xx | No | Below champion. LB1=130 confirmed optimal with dead band. |
+| 554 | LOOKBACK1=132 with dead band | 4.39xx | No | Below champion. LB1=130 confirmed. |
+| 555 | LOOKBACK1=133 with dead band | 4.39xx | No | Below champion. LB1=130 confirmed. |
+| 556 | DIP_MULT1=3.85 with dead band | ~4.39 | No | Worse. DIP_MULT1=3.9 confirmed with dead band. |
+| 557 | STOP1=5.3 with dead band | ~4.39 | No | Worse. STOP1=5.5 confirmed with dead band. |
+| 558 | Dip entry dead band (apply price threshold to dip detection) | 4.4395 | No | Identical to champion. Dip entries already far below slow; dead band at entry price irrelevant. |
+| 559 | Stricter dip-to-base_long transition (require base_long_enter to clear dip_tier) | 4.4395 | No | Identical to champion. base_long_enter already implicitly handles this via entry dead band. |
+
+| 560 | fast_declining window=4 | 4.4399 | No | Z5=4.4399 H6=0.6146. Trivial Z5 gain (+0.0004), H6 worse. Window=5 confirmed optimal. |
+| 561 | fast_declining window=6 | 4.4330 | No | Z5=4.4330 H6=0.6003. Both worse. Full window sweep done: 3→4.39, 4→4.44(~tie), 5→4.44(peak), 6→4.43, 7→4.38. Window=5 confirmed global peak. |
+| 562 | Short entry dead band (fast < slow - 0.05*ATR required to enter short) | 4.1249 | No | Z5=4.1249 H6=0.6069 Trades=785. Significant Z5 drop — short dead band delays profitable early-short entries. Only long dead band is beneficial. |
+| 563 | Slow EMA slope filter (slow > slow_20 + 0.05*ATR for dip entry) | 4.1801 | No | Z5=4.1801 H6=0.6478 Trades_Z5=717. Blocks 46 Z5 dip trades — slope filter too strict. The slope check fires right when good Z5 dip entries occur (slow briefly flat). |
+| 564 | Tier-specific increasing timeouts (t1=60, t2=75, t3=90) | 4.4391 | No | Z5=4.4391 H6=0.6260. Essentially identical to champion — all tier2/tier3 dips resolve before 75 bars. Uniform 60-bar timeout confirmed. |
+| 565 | Exit hysteresis: exit long when fast < slow - 0.05*ATR (not just slow) | 3.9782 | No | Z5=3.9782 H6=0.5385. IDENTICAL to exp_552 (symmetric dead band) — exit hysteresis is the dominant bad effect. Holding losing longs too long and missing short entries. |
+| 566 | Median ATR (rolling 25-bar median of bar range instead of mean) | 4.2060 | No | Z5=4.2060 H6=0.5230. Worse on both. Median ATR is lower in skewed distributions, tightening all thresholds and causing premature stops/missed entries. Mean ATR confirmed optimal. |
+| 567 | 1-bar rising confirmation for long entry (fast[i] >= fast[i-1]) | 4.4395 | No | Identical to champion. EMA(6) is smooth — when crossing slow+0.05*ATR, it's virtually always rising by 1 bar. Filter never fires. |
+| 568 | fast_declining magnitude filter: threshold=0.10*ATR (5-bar decline must exceed 0.1*ATR) | 4.4347 | No | Z5=4.4347 H6=0.6572 Trades=764. H6 significantly improved (+0.031) but Z5 just below champion. Higher threshold consistently improves H6 at cost of Z5. |
+| 569 | Magnitude threshold=0.05 | 4.4382 | No | Z5=4.4382 H6=0.6260. Essentially identical to champion — same H6 but small Z5 regression. Threshold too small to filter any trades. |
+| 570 | threshold=0.10 + LOOKBACK1=131 | 4.4308 | No | Z5=4.4308 H6=0.6537. LOOKBACK1 increase with threshold doesn't help Z5. |
+| 571 | threshold=0.10 + LOOKBACK1=132 | 4.4319 | No | Z5=4.4319 H6=0.6337. LOOKBACK1=132 improves Z5 vs 131 but still below champion. |
+| 572 | threshold=0.10 + LOOKBACK1=135 | 4.4317 | No | Z5=4.4317 H6=0.5697. Fails gate. |
+| 573 | threshold=0.10 + LOOKBACK1=128 | 4.4250 | No | Z5=4.4250 H6=0.6670. Shorter lookback hurts Z5 more. |
+| 574 | threshold=0.10 + LOOKBACK1=125 | 4.4250 | No | Z5=4.4250 H6=0.6506. Same as 128. Full sweep: threshold+LOOKBACK combos max out at 4.4347 (LB1=130). |
+| 575 | threshold=0.15 + LOOKBACK1=130 | 4.4332 | No | Z5=4.4332 H6=0.6609. Higher threshold helps H6 more but Z5 consistently below 4.44. Direction exhausted: boolean fast_declining is Z5-optimal. |
+| 576 | threshold=0.15 + LOOKBACK1=132 | 4.4304 | No | Z5=4.4304 H6=0.6373. Both below champion. Fast_declining magnitude threshold direction fully exhausted. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -878,7 +915,7 @@ OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA cr
 - Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR, AND fast_declining. Stop at slow-5.0*ATR.
 - Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR, AND fast_declining. Stop at slow-8.0*ATR.
 - Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
-→ Z5=4.4026, H6=0.6556 (exp_524, commit 99f9d51)
+→ Z5=4.4395, H6=0.6260 (exp_548, commit b8999ba)
 Key insights:
 - fast_declining filter (fast[i] < fast[i-5]) unlocks LOOKBACK1=130+ — without it, 126+ fails H6
 - ATR(25) of H-L range optimal; LOOKBACK1=130 optimal with fast_declining
@@ -889,9 +926,12 @@ Key insights:
 - Trailing stops confirmed bad for dip trades (exps 461-463)
 - Vol filter on dip entry confirmed dead end (exps 457-458, 479)
 - 60-bar dip timeout: exit if dip position open >60 bars without base_long recovery
-- slow_stalled exit (exp_522): bad — slow EMA flattens too often during valid dips
+- Entry dead band 0.05*ATR: require fast > slow + 0.05*ATR for initial long entry (not exit)
+  Creates more "waiting windows" for dip entries. band=0.10 goes too far (fails H6).
+- 2-bar long exit confirmation (exp_546): catastrophic — holds longs too long
+- Tier-specific timeouts worse than uniform 60 bars
 
-New targets: Z5 > 4.4026 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.4395 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
