@@ -1,10 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 524: Time-based dip exit after 60 bars. NEW CHAMPION!
-Z5=4.4026, H6=0.6556. 90-bar version was identical to champion (never fired).
-60 bars = 60 min. Cuts extended failing dips — improves Z5 by $274/trade.
-Previously dip_entry_bar was tracked but never used in exit logic.
+Exp 548: Entry dead band 0.05*ATR for base_long. NEW CHAMPION!
+Z5=4.4395, H6=0.6260. Dead band delays long entry, allowing more dip entries (763 vs 741).
+Curve: band=0→4.4026, band=0.05→4.4395(champ), band=0.10→4.4836 H6=0.5540 (fails gate).
+The dead band creates more "below slow but not yet entering long" windows for dip trades.
 """
 
 import numpy as np
@@ -51,6 +51,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         slow = ema_slow[i]
         atr_val = atr[i]
         base_long = ema_fast[i] > slow
+        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
         slow_prev1 = ema_slow[max(0, i - LOOKBACK1)]
         slow_prev2 = ema_slow[max(0, i - LOOKBACK2)]
@@ -92,7 +93,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                 position = 0
 
         if position == 0:
-            if base_long:
+            if base_long_enter:
                 position = 1
                 dip_tier = 0
             elif base_short:

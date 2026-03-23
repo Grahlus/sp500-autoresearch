@@ -842,6 +842,31 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 519 | vol_pct35 (more shorts) | 4.0642 | No | Z5=4.0642 H6=0.5970. Fails gate. More shorts destroy Z5. |
 | 520 | vol_pct45 (fewer shorts) | 3.5856 | No | Z5=3.5856 H6=0.9655. H6 dramatically better but Z5 crashes. vol_pct40 confirmed optimal. |
 
+| 521 | Tier-specific fast_declining windows (t1=3, t2=5, t3=7) | 4.3835 | No | Z5=4.3835 H6=0.6383. Worse on both. Uniform window=5 is optimal. |
+| 522 | slow_stalled exit (slow[i] <= slow[i-1]) | 4.0457 | No | Z5=4.0457 H6=0.6213. Trades=785 — churn. Slow EMA flattens often during dips. Dead end. |
+| 523 | Time-based dip exit, 90 bars | 4.3924 | No | Z5=4.3924 H6=0.6621. Identical to champion — all dips resolve within 90 bars. |
+| **524** | **Time-based dip exit, 60 bars** | **4.4026** | **Yes** | Z5=4.4026 H6=0.6556 Z5pnl=$119,072 H6pnl=$23,512 Trades=741. NEW CHAMPION! 60-bar timeout cuts extended failing dips. Commit 99f9d51. |
+
+| 525 | Dip timeout=45 bars | 4.3839 | No | Z5=4.3839 H6=0.6781. Worse Z5, better H6. Too aggressive cuts. |
+| 526 | Dip timeout=50 bars | 4.3931 | No | Z5=4.3931 H6=0.6668. Closer but below champion. |
+| 527 | Dip timeout=55 bars | 4.3963 | No | Z5=4.3963 H6=0.6622. Still below champion. |
+| 528 | Dip timeout=65 bars | 4.4020 | No | Z5=4.4020 H6=0.6821. Just below champion Z5. Better H6. |
+| 529 | Dip timeout=70 bars | 4.3931 | No | Z5=4.3931 H6=0.6862. Curve: 45→4.3839, 50→4.3931, 55→4.3963, 60→4.4026(champ), 65→4.4020, 70→4.3931. 60 confirmed peak. |
+| 530 | Tier-specific timeouts (t1=75, t2=60, t3=45) | 4.3920 | No | Z5=4.3920 H6=0.6803. Uniform 60 beats tier-specific. |
+| 531 | LOOKBACK1=132 + 60-bar timeout | 4.3998 | No | Z5=4.3998 H6=0.6322. Passes gate but Z5 below champion. LB1=130 still optimal. |
+| 532 | LOOKBACK1=131 + 60-bar timeout | 4.3987 | No | Z5=4.3987 H6=0.6521. Below champion. LB1=130 confirmed optimal with timeout. |
+| 533 | STOP1=6.0 + 60-bar timeout | 4.3821 | No | Z5=4.3821 H6=0.6244. Worse. STOP1=5.5 confirmed. |
+
+| 534 | STOP3=7.5 + 60-bar timeout | 4.3987 | No | Z5=4.3987 H6=0.6556. STOP3=8.0 still optimal. |
+| 535 | Trend-only short exit (fast>=slow only) | 3.6785 | No | Z5=3.6785 H6=0.9863. H6 great but Z5 crashes. vol-based exit is essential. |
+| 536 | LOOKBACK3=35 + 60-bar timeout | 4.3976 | No | Z5=4.3976 H6=0.6469. LOOKBACK3=45 confirmed. |
+| 537 | Entry-price stop 2*ATR + timeout | 4.3859 | No | Z5=4.3859. Worse. |
+| 538 | Entry-price stop 3*ATR + timeout | 4.3893 | No | Z5=4.3893. Still below champion. |
+| 539 | LOOKBACK2=55 + 60-bar timeout | 4.3035 | No | Z5=4.3035. Much worse. LOOKBACK2=60 confirmed. |
+| 540 | Still-declining exit at 30 bars + timeout | 4.3526 | No | Z5=4.3526 H6=0.7128. H6 best ever but Z5 terrible. |
+| 541 | Still-declining exit at 45 bars + timeout | 4.3830 | No | Z5=4.3830 H6=0.6744. Both worse than champion. |
+| 542 | Still-declining exit at 45 bars alone (no timeout) | 4.3830 | No | Z5=4.3830 H6=0.6744. Same as 541 — still-declining supersedes timeout. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -853,7 +878,7 @@ OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA cr
 - Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR, AND fast_declining. Stop at slow-5.0*ATR.
 - Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR, AND fast_declining. Stop at slow-8.0*ATR.
 - Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
-→ Z5=4.3924, H6=0.6621 (exp_488, commit d880b85)
+→ Z5=4.4026, H6=0.6556 (exp_524, commit 99f9d51)
 Key insights:
 - fast_declining filter (fast[i] < fast[i-5]) unlocks LOOKBACK1=130+ — without it, 126+ fails H6
 - ATR(25) of H-L range optimal; LOOKBACK1=130 optimal with fast_declining
@@ -863,8 +888,10 @@ Key insights:
 - Vol quantile window=480, pct=0.40 confirmed optimal
 - Trailing stops confirmed bad for dip trades (exps 461-463)
 - Vol filter on dip entry confirmed dead end (exps 457-458, 479)
+- 60-bar dip timeout: exit if dip position open >60 bars without base_long recovery
+- slow_stalled exit (exp_522): bad — slow EMA flattens too often during valid dips
 
-New targets: Z5 > 4.3924 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.4026 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
