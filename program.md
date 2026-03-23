@@ -716,6 +716,20 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 405 | Three-tier Tier3=(4.5 ATR, 30-bar, STOP3=6.0) — bug fixed | 4.2864 | No | Z5=4.2864 H6=0.5833 Z5pnl=$116,478 H6pnl=$20,898 Trades_Z5=736 Trades_H6=662. Fails gate. Tier3 adds 1 Z5 trade but 2 bad H6 trades. 30-bar lookback too noisy for Tier3. |
 | 406 | **Three-tier: Tier3=(DIP_MULT3=5.0, LOOKBACK3=45, STOP3=6.5)** | **4.3132** | **Yes** | Z5=4.3132 H6=0.6006 Z5pnl=$117,208 H6pnl=$21,518 Trades_Z5=735 Trades_H6=660. NEW CHAMPION! Deeper entry (5.0 ATR) + longer trend requirement (45 bars) adds Z5-exclusive trade. H6 completely unchanged ($21,518/660). Free Z5 alpha from extreme dips in moderate-length uptrends. |
 
+| 407 | Three-tier Tier3=(5.0, LOOKBACK3=60, STOP3=6.5) | 4.3081 | No | Z5=4.3081 H6=0.6006 — identical to two-tier champion. LOOKBACK3=60 adds no new trades vs 45. |
+| 408 | Three-tier Tier3=(5.0, LOOKBACK3=50, STOP3=6.5) | 4.3132 | No | Z5=4.3132 H6=0.6006 — identical to three-tier champion. LOOKBACK3=50 same result as 45. |
+| 409 | Three-tier Tier3=(5.0, LOOKBACK3=40, STOP3=6.5) | 4.3083 | No | Z5=4.3083 H6=0.5903 Z5pnl=$117,072 H6pnl=$21,148 Trades_Z5=735 Trades_H6=661. Fails gate. LOOKBACK3 sweep: 30→fails, 40→fails, 45-50→champion, 60→same as two-tier. |
+| 410 | Three-tier Tier3=(4.8 ATR, LOOKBACK3=45, STOP3=5.8) | 4.2925 | No | Z5=4.2925 H6=0.6006 Z5pnl=$116,642 H6pnl=$21,518 Trades_Z5=736 Trades_H6=660. Worse Z5. DIP_MULT3=4.8 adds trade that hurts Z5 (vs 5.0 which adds Z5-exclusive trade). |
+| 411 | Three-tier Tier3=(5.2 ATR, LOOKBACK3=45, STOP3=6.8) | 4.3132 | No | Z5=4.3132 H6=0.6006 — identical to champion. DIP_MULT3 sweep: 4.8→4.29(worse), 5.0→4.31(champion), 5.2→4.31(same). The Z5-exclusive trade is between 4.8 and 5.0 ATR. |
+| 412 | Dip detection using `low` instead of `close` | 4.1360 | No | Z5=4.1360 H6=0.5381 Z5pnl=$115,008 H6pnl=$19,972 Trades_Z5=741 Trades_H6=669. Fails gate. Too sensitive — adds bad trades to both Z5 and H6. |
+| 413 | Dip detection using HL2 instead of `close` | 4.1513 | No | Z5=4.1513 H6=0.6517 Z5pnl=$113,798 H6pnl=$23,058 Trades_Z5=733 Trades_H6=663. Z5 worse. Price input sweep: close→4.31(champion), HL2→4.15, low→4.14. `close` confirmed optimal. |
+| 414 | Three-tier LOOKBACK1=100 | 4.1562 | No | Z5=4.1562 H6=0.6515 Z5pnl=$113,102 H6pnl=$23,322 Trades_Z5=735 Trades_H6=661. Worse Z5. |
+| 415 | Three-tier LOOKBACK1=110 | 4.2089 | No | Z5=4.2089 H6=0.6299 Z5pnl=$114,372 H6pnl=$22,598 Trades_Z5=736 Trades_H6=661. Still below champion. |
+| 416 | Three-tier LOOKBACK1=130 | 4.3502 | No | Z5=4.3502 H6=0.5768 Z5pnl=$118,212 H6pnl=$20,932 Trades_Z5=737 Trades_H6=660. Fails gate! Best Z5 yet but H6 drops. LOOKBACK1 sweep: longer→higher Z5/lower H6. |
+| 417 | Three-tier LOOKBACK1=125 | 4.3361 | No | Z5=4.3361 H6=0.5699 Z5pnl=$117,828 H6pnl=$20,798 Trades_Z5=737 Trades_H6=660. Fails gate. H6 drops sharply at LOOKBACK1=121+. LOOKBACK1=120 is the hard boundary for H6≥0.6. |
+
+| 418 | **Three-tier champion with ATR period=25 (vs 20)** | **4.3406** | **Yes** | Z5=4.3406 H6=0.6304 Z5pnl=$117,398 H6pnl=$22,928 Trades_Z5=737 Trades_H6=662. NEW CHAMPION! Smoother ATR(25) improves BOTH metrics. More consistent dip thresholds across volatile periods. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -731,7 +745,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.3132 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3406 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

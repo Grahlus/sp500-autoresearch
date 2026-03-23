@@ -1,10 +1,9 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 406: Three-tier system — Tier3 = very deep dips (5.0 ATR) in 45-bar trend, STOP3=6.5.
-Hypothesis: DIP_MULT3=4.5/LOOKBACK3=30 hurts H6. Try deeper entry (5.0 ATR) with longer
-trend requirement (45 bars). 5.0 ATR dips are extreme rare events — likely more Z5-exclusive.
-STOP3=6.5 (1.5 ATR buffer below entry at 5.0 ATR below slow).
+Exp 418: Three-tier champion with ATR period=25 (vs current 20).
+Hypothesis: ATR(20) was optimal for single-tier. With three tiers, slightly smoother ATR
+might give different threshold levels that improve Z5-exclusive dip entries.
 """
 
 import numpy as np
@@ -26,7 +25,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     vol_cur = vol_series.values
 
     bar_range = (df["high"] - df["low"]).values
-    atr = pd.Series(bar_range).rolling(20, min_periods=1).mean().values
+    atr = pd.Series(bar_range).rolling(25, min_periods=1).mean().values
     close_arr = df["close"].values
 
     n = len(close_arr)
