@@ -1,8 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 710: RSI-only dip entries (RSI<30 but no ATR tier met) assigned dip_tier=1 (STOP1=5.5)
-instead of dip_tier=3 (STOP3=8.0). Tighter stop for looser entry signal.
+Exp 713: Add fast_declining requirement to RSI<30 dip entries.
+Only enter when price is actually declining AND oversold (not just oversold while bouncing).
 """
 
 import numpy as np
@@ -62,7 +62,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         tier2_ok = (slow > slow_prev2) and (close < slow - DIP_MULT2 * atr_val)
         tier3_ok = (slow > slow_prev3) and (close < slow - DIP_MULT3 * atr_val)
         fast_declining = (ema_fast[max(0, i - 5)] - ema_fast[i]) > 0.02 * atr_val
-        rsi_dip_ok = (rsi_14_arr[i] < 30) and (not base_long) and (not base_short)
+        rsi_dip_ok = (rsi_14_arr[i] < 30) and fast_declining and (not base_long) and (not base_short)
         dip_entry = (not base_long) and (not base_short) and fast_declining and (tier1_ok or tier2_ok or tier3_ok)
         dip_entry = dip_entry or rsi_dip_ok
 
