@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        758
-best_z5_calmar:  6.9889
-best_h6_calmar:  0.8689
-best_z5_pnl:     $149,148
-best_h6_pnl:     $31,852
-trades_z5:       965
-trades_h6:       996
-next_exp:        759
+best_exp:        759
+best_z5_calmar:  7.8443
+best_h6_calmar:  0.6620
+best_z5_pnl:     $142,848
+best_h6_pnl:     $25,418
+trades_z5:       946
+trades_h6:       989
+next_exp:        763
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 6.9889 + 149148/25000 = **12.95**
+Current champion composite: 7.8443 + 142848/25000 = **13.56**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 12.95:
+elif z5_composite <= 13.56:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -957,3 +957,7 @@ Hypothesis quality bar — before coding, ask:
 | 756 | roc_240>0 filter on RSI dip path only | 5.6452 | No | Z5=5.6452 H6=1.3388 Z5pnl=$137,328 composite=11.14. Trades drop 695. RSI dips cut too aggressively. |
 | 757 | roc_240>0 AND roc_60>0 for base_long_enter | 6.4587 | Yes | Z5=6.4587 H6=1.0750 Z5pnl=$150,952 H6pnl=$36,392 composite=12.50. New champion! Marginal improvement. H6 drops vs 752. |
 | 758 | roc_60>0.001 for base_long_enter (tighter 60-min threshold) | 6.9889 | Yes | Z5=6.9889 H6=0.8689 Z5pnl=$149,148 H6pnl=$31,852 composite=12.95. New champion! +0.45 composite. |
+| 759 | roc_60>0.002 for base_long_enter (even tighter) | 7.8443 | Yes | Z5=7.8443 H6=0.6620 Z5pnl=$142,848 H6pnl=$25,418 composite=13.56. New champion! +0.61. H6=0.66 near gate floor. |
+| 760 | roc_60>0.003 for base_long_enter | 5.4209 | No | Z5=5.4209 H6=1.0443 Z5pnl=$115,415 composite=10.04. Cliff edge — PnL drops $27k. roc_60>0.002 confirmed optimal. |
+| 761 | roc_240>0.001 (tighter, re-sweep with roc_60>0.002) | 7.2733 | No | Z5=7.2733 H6=0.5437 Z5pnl=$136,930 composite=12.75. Fails H6 gate. roc_240>0 confirmed even with roc_60>0.002. |
+| 762 | add roc_15>0 to entry (3-TF: roc_240>0, roc_60>0.002, roc_15>0) | 7.6579 | No | Z5=7.6579 H6=0.7230 Z5pnl=$139,452 composite=13.24. Z5 calmar drops. roc_15 not helpful for entry. |

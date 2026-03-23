@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 759: roc_60 > 0.002 for base_long_enter (even tighter).
+Exp 763: exit gate roc_240 re-sweep: <= 0.0003 with new roc_60>0.002 entry filter.
 """
 
 import numpy as np
@@ -90,7 +90,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0002 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.00005 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0003 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.00005 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:
