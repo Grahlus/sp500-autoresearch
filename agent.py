@@ -1,9 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 735: Add roc_5 <= 0.0002 to non-dip long exit gate (4th AND condition).
-5-min momentum must also be flat/negative to allow exit. Prevents premature exits during
-brief 5-min dips within a longer uptrend.
+Exp 736: roc_5 threshold tightened from 0.0002 to 0.0001 in non-dip exit gate.
 """
 
 import numpy as np
@@ -91,7 +89,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002 and roc_5_arr[i] <= 0.0002 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:
