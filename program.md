@@ -1011,6 +1011,17 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 680 | Normal long stop loss (close < slow - 3.8*ATR) | 4.7643 | No | Z5=4.7643 H6=0.6428. Slightly below 3.6 peak. |
 | 681 | Normal long stop loss (close < slow - 3.7*ATR) | 4.7712 | No | Identical to 3.6 (same trades=733, PnL=$125,202). 3.6 preferred for tighter stop and H6=0.6837. |
 
+| 682 | Re-sweep roc_240=0.001 with stop 3.6*ATR | 4.5671 | No | Z5=4.5671 H6=0.6907. roc_240=0.0005 remains optimal even with stop in place. |
+| 683 | Re-sweep roc_240=0.0003 with stop 3.6*ATR | 4.7438 | No | Z5=4.7438 H6=0.7140. Below 0.0005 peak. roc_240 threshold confirmed. |
+| 684 | roc_240=0.0 + stop 3.6*ATR | 4.7121 | No | Z5=4.7121 H6=0.7177. More aggressive hold but Z5 lower. 0.0005 confirmed optimal. |
+| 685 | Hold when roc_240>0.0005 OR roc_60>0.001 + stop 3.6*ATR | 4.7839 | No | Z5=4.7839 H6=0.7174. Adding roc_60 OR condition improves beyond champion! Still below 4.8 though. |
+| 686 | roc_60 threshold=0.002 (hold when roc_60>0.2%) | 4.7504 | No | Z5=4.7504. Stricter 1h gate → less improvement. |
+| 687 | roc_60 threshold=0.0005 (hold when roc_60>0.05%) | 4.8192 | No | Z5=4.8192 H6=0.7128. Getting closer to peak. |
+| 688 | roc_60 threshold=0.0002 (hold when roc_60>0.02%) | 4.8293 | YES | Z5=4.8293 H6=0.7305 Z5pnl=$126,192 H6pnl=$25,168 Trades_Z5=722 Trades_H6=650. NEW CHAMPION! Peak roc_60 sweep. |
+| 689 | roc_60 threshold=0.0001 | 4.8119 | No | Z5=4.8119. Slightly below 0.0002 peak. |
+| 690 | roc_60 threshold=0.00015 | 4.8100 | No | Z5=4.8100. Below 0.0002. |
+| 691 | roc_60 threshold=0.00025 | 4.8148 | No | Z5=4.8148. Below 0.0002. 0.0002 confirmed as peak. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -1099,19 +1110,23 @@ The following have been tested to death. Do not attempt any variation of these:
 
 ## Current champion — DO NOT touch
 
-**exp_679**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + roc_240-gated base_long exit (threshold=0.0005) with base_short override + normal long stop loss (close < slow - 3.6*ATR)
+**exp_688**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + dual-momentum-gated normal long exit + normal long stop loss
 
-- Z5 Calmar: **4.7712**
-- H6 Calmar: **0.6837**
-- Z5 PnL: **$125,202**
-- H6 PnL: **$23,958**
-- Trades Z5/H6: **733 / 664**
+Normal long exit condition: `(not base_long AND roc_240<=0.0005 AND roc_60<=0.0002) OR base_short OR (close<slow-3.6*ATR)`
+HOLD when: fast<slow AND (roc_240 > 0.05% OR roc_60 > 0.02%) AND not base_short AND close > slow-3.6*ATR
 
-Two key changes from exp_577:
-1. roc_240-gated exit: non-dip long holds through fast<slow when 4h momentum > 0.05% (with base_short override)
-2. Normal long stop at slow - 3.6*ATR: prevents runaway drawdown when roc_240 gate holds long into deep decline
+- Z5 Calmar: **4.8293**
+- H6 Calmar: **0.7305**
+- Z5 PnL: **$126,192**
+- H6 PnL: **$25,168**
+- Trades Z5/H6: **722 / 650**
 
-Stop sweep (3.6*ATR optimal): 2.5→4.58, 3.0→4.68, 3.3→4.72, 3.5→4.76, 3.6=3.7→4.7712(peak), 3.8→4.76, 4.0→4.75, no stop→4.72.
+Three changes from exp_577:
+1. roc_240 gate: hold non-dip long when roc_240 > 0.0005 (4h momentum positive)
+2. roc_60 gate: also hold when roc_60 > 0.0002 (1h momentum > 0.02%, OR with roc_240)
+3. Normal long stop: close < slow - 3.6*ATR emergency exit
+
+roc_60 sweep (0.0001→4.81, 0.00015→4.81, 0.0002→4.8293(peak), 0.00025→4.81, 0.0005→4.82, 0.001→4.78, 0.002→4.75, no gate→4.77).
 
 ## What to try next — signals that MUST generalize
 

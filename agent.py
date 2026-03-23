@@ -1,10 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 679: Emergency stop for normal long (dip_tier==0): close < slow - 3.6*ATR. NEW CHAMPION!
-Z5=4.7712, H6=0.6837. Stop sweep: 2.5→4.58, 3.0→4.68, 3.3→4.72, 3.5→4.76,
-3.6→4.7712(peak,same as 3.7), 3.7→4.7712, 3.8→4.76, 4.0→4.75, no stop→4.72.
-3.6 preferred over 3.7 (identical Z5, better H6=0.6837 vs 0.6684).
+Exp 688: roc_60+roc_240 gated exit + stop 3.6*ATR. NEW CHAMPION!
+Z5=4.8293, H6=0.7305. Exit when: (fast<slow AND roc_240<=0.0005 AND roc_60<=0.0002) OR base_short OR (close<slow-3.6*ATR).
+Hold when: roc_240>0.0005 (4h positive) OR roc_60>0.02% (1h barely positive).
+roc_60 sweep: 0.0001→4.81, 0.00015→4.81, 0.0002→4.8293(peak), 0.00025→4.81, 0.0005→4.82, 0.001→4.78, 0.002→4.75.
 """
 
 import numpy as np
@@ -29,6 +29,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     atr = pd.Series(bar_range).rolling(25, min_periods=1).mean().values
     close_arr = df["close"].values
     roc_240_arr = df["roc_240"].fillna(0).values
+    roc_60_arr = df["roc_60"].fillna(0).values
 
     n = len(close_arr)
     signals = np.zeros(n, dtype=np.int32)
@@ -87,7 +88,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0005) or base_short or (close < slow - 3.6 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:
