@@ -682,6 +682,12 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 383 | **Two-tier: Tier1=(3.9/120) OR Tier2=(4.0/60)** | **4.2586** | **Yes** | Z5=4.2586 H6=0.6016 Z5pnl=$115,722 H6pnl=$21,552 Trades_Z5=734 Trades_H6=660. NEW CHAMPION! DIP_MULT2 sweep: 4.5→4.237, 4.2→4.245, 4.0→4.259(champion). H6=0.6016 BARELY passes gate — dangerously close. Do NOT lower DIP_MULT2 further. Instead: try Tier3. |
 
+| 384 | Three-tier: add Tier3=(4.8/30) | 4.2442 | No | Z5=4.2442 H6=0.5890 Z5pnl=$115,332 H6pnl=$21,102 Trades_Z5=735 Trades_H6=662. Fails gate. Tier3 with 30-bar lookback adds bad H6 dips even at 4.8 ATR. Very short lookback (30-bar) not stable enough. Keep two-tier system. |
+
+| 385 | Two-tier: Tier2 LOOKBACK2=90 | 4.1653 | No | Z5=4.1653 H6=0.6132 Z5pnl=$113,188 H6pnl=$21,968 Trades_Z5=729 Trades_H6=659. LOOKBACK2 sweep: 60→4.259/0.602(champion), 90→4.165/0.613. 60-bar Tier2 confirmed optimal for Z5. |
+
+| 386 | **Two-tier: tier-specific stops (Tier1=5.5, Tier2=5.0)** | **4.2650** | **Yes** | Z5=4.2650 H6=0.6006 Z5pnl=$115,898 H6pnl=$21,518 Trades_Z5=734 Trades_H6=660. NEW CHAMPION but H6=0.6006 RAZOR-THIN (0.0006 above gate). Tier2 tighter stop adds marginal Z5. H6 buffer essentially zero — next experiment must not hurt H6. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -697,7 +703,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.2586 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.2650 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
