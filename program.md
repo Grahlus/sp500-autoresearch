@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        757
-best_z5_calmar:  6.4587
-best_h6_calmar:  1.0750
-best_z5_pnl:     $150,952
-best_h6_pnl:     $36,392
-trades_z5:       975
-trades_h6:       1003
-next_exp:        758
+best_exp:        758
+best_z5_calmar:  6.9889
+best_h6_calmar:  0.8689
+best_z5_pnl:     $149,148
+best_h6_pnl:     $31,852
+trades_z5:       965
+trades_h6:       996
+next_exp:        759
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 6.4587 + 150952/25000 = **12.50**
+Current champion composite: 6.9889 + 149148/25000 = **12.95**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 12.50:
+elif z5_composite <= 12.95:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -956,3 +956,4 @@ Hypothesis quality bar — before coding, ask:
 | 755 | roc_240>0 filter added to all dip_entry tier conditions | 6.4047 | No | Z5=6.4047 H6=1.3076 Z5pnl=$148,802 composite=12.36. Tier dips already filtered by slow>slow_prev. |
 | 756 | roc_240>0 filter on RSI dip path only | 5.6452 | No | Z5=5.6452 H6=1.3388 Z5pnl=$137,328 composite=11.14. Trades drop 695. RSI dips cut too aggressively. |
 | 757 | roc_240>0 AND roc_60>0 for base_long_enter | 6.4587 | Yes | Z5=6.4587 H6=1.0750 Z5pnl=$150,952 H6pnl=$36,392 composite=12.50. New champion! Marginal improvement. H6 drops vs 752. |
+| 758 | roc_60>0.001 for base_long_enter (tighter 60-min threshold) | 6.9889 | Yes | Z5=6.9889 H6=0.8689 Z5pnl=$149,148 H6pnl=$31,852 composite=12.95. New champion! +0.45 composite. |
