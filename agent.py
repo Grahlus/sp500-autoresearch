@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 763: exit gate roc_240 re-sweep: <= 0.0003 with new roc_60>0.002 entry filter.
+Exp 783: fast EMA using HL2 price instead of OHLC4.
 """
 
 import numpy as np
@@ -10,7 +10,7 @@ import pandas as pd
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
     ohlc4 = (df["open"] + df["high"] + df["low"] + df["close"]) / 4.0
-    ema_fast = ohlc4.ewm(span=6, adjust=False).mean().values
+    ema_fast = ((df["high"] + df["low"]) / 2.0).ewm(span=6, adjust=False).mean().values
 
     hl2 = (df["high"] + df["low"]) / 2.0
     e380 = hl2.ewm(span=380, adjust=False).mean().values

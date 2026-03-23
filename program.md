@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        759
-best_z5_calmar:  7.8443
+best_exp:        763
+best_z5_calmar:  7.8468
 best_h6_calmar:  0.6620
-best_z5_pnl:     $142,848
+best_z5_pnl:     $142,892
 best_h6_pnl:     $25,418
 trades_z5:       946
 trades_h6:       989
-next_exp:        763
+next_exp:        783
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 7.8443 + 142848/25000 = **13.56**
+Current champion composite: 7.8468 + 142892/25000 = **13.56**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 13.56:
+elif z5_composite <= 13.562:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -961,3 +961,23 @@ Hypothesis quality bar — before coding, ask:
 | 760 | roc_60>0.003 for base_long_enter | 5.4209 | No | Z5=5.4209 H6=1.0443 Z5pnl=$115,415 composite=10.04. Cliff edge — PnL drops $27k. roc_60>0.002 confirmed optimal. |
 | 761 | roc_240>0.001 (tighter, re-sweep with roc_60>0.002) | 7.2733 | No | Z5=7.2733 H6=0.5437 Z5pnl=$136,930 composite=12.75. Fails H6 gate. roc_240>0 confirmed even with roc_60>0.002. |
 | 762 | add roc_15>0 to entry (3-TF: roc_240>0, roc_60>0.002, roc_15>0) | 7.6579 | No | Z5=7.6579 H6=0.7230 Z5pnl=$139,452 composite=13.24. Z5 calmar drops. roc_15 not helpful for entry. |
+| 763 | exit gate roc_240 re-sweep: <=0.0003 (with roc_60>0.002 entry) | 7.8468 | Yes | Z5=7.8468 H6=0.6620 Z5pnl=$142,892 H6pnl=$25,418 composite=13.56. Marginal improvement. Exit roc_240 effectively same at 0.0002 vs 0.0003. |
+| 764 | exit gate roc_240 <=0.0005 re-sweep | 7.8015 | No | Z5=7.8015 H6=0.6562 Z5pnl=$142,068 composite=13.48. Looser exit threshold slightly worse. 0.0003 confirmed. |
+| 765 | exit gate roc_60 <=0.0002 (looser, re-sweep) | 7.8468 | No | Z5=7.8468 H6=0.6620 Z5pnl=$142,892 composite=13.562. Identical to champion — roc_60 exit threshold never binding between 0.0001 and 0.0002. |
+| 766 | remove roc_60 from exit gate entirely | 7.7633 | No | Z5=7.7633 H6=0.6494 Z5pnl=$141,372 composite=13.42. Removing roc_60 hurts — prevents exits when roc_60>0.0002 but other conditions met. Keep it. |
+| 767 | exit gate roc_5 <=0.0002 (looser) | 7.5680 | No | Z5=7.5680 H6=0.6695 Z5pnl=$142,688 composite=13.28. Looser roc_5 hurts. |
+| 768 | exit gate roc_5 <=0.00005 (tighter) | 7.8446 | No | Z5=7.8446 H6=0.6618 Z5pnl=$142,852 composite=13.559. Marginally below threshold. roc_5=0.0001 confirmed optimal. |
+| 769 | roc_60>0.0015 for base_long_enter (finer sweep) | 6.8118 | No | Z5=6.8118 H6=0.6908 Z5pnl=$147,108 composite=12.70. Non-monotonic — 0.0015 worse than both 0.001 and 0.002. roc_60>0.002 confirmed optimal. |
+| 770 | add roc_5>0 to base_long_enter (4th entry filter) | 7.7306 | No | Z5=7.7306 H6=0.6885 Z5pnl=$142,835 composite=13.44. Drops Z5 calmar. roc_5 entry filter not helpful. |
+| 771 | add RSI<70 overbought filter to base_long_enter | 7.5554 | No | Z5=7.5554 H6=0.7915 Z5pnl=$137,418 composite=13.05. Z5 drops. RSI<70 filter not helpful. |
+| 772 | LOOKBACK1 = 140 (longer tier1 dip window) | 7.8438 | No | Z5=7.8438 H6=0.6344 Z5pnl=$142,838 composite=13.557. Essentially identical to champion. LOOKBACK1=130 confirmed. |
+| 773 | EXIT_ABOVE_SLOW = 0.30 (looser dip profit exit) | 7.7676 | No | Z5=7.7676 H6=0.6097 Z5pnl=$142,872 composite=13.48. H6 drops. 0.25 confirmed. |
+| 774 | EXIT_ABOVE_SLOW = 0.20 (tighter dip profit exit) | 7.8457 | No | Z5=7.8457 H6=0.6547 Z5pnl=$142,872 composite=13.561. Marginally below. 0.25 confirmed optimal. |
+| 775 | add roc_240<-0.001 as trend-collapse exit for non-dip longs | 5.8741 | No | Z5=5.8741 H6=0.6945 Z5pnl=$129,368 composite=11.05. Too many exits — fires on Z5 corrections. |
+| 776 | add roc_60<-0.002 as fast exit for non-dip longs | 7.1214 | No | Z5=7.1214 H6=0.9710 Z5pnl=$126,798 composite=12.19. PnL drops $16k. Momentum-based fast exits hurt Z5. |
+| 777 | base_long requires roc_60>0 (tighter hold condition) | 6.5279 | No | Z5=6.5279 H6=1.1165 Z5pnl=$128,982 composite=11.69. 1216 trades — too many whipsaws. |
+| 778 | relative momentum: roc_60>roc_240 for entry | 7.1742 | No | Z5=7.1742 H6=0.5384 Z5pnl=$126,622 composite=12.24. Fails H6 gate. |
+| 779 | DIP_MULT1 = 3.8 re-sweep | 7.8468 | No | Z5=7.8468 H6=0.6896 Z5pnl=$142,892 composite=13.562. Identical — no dips in 3.8-3.9 ATR range fire. DIP_MULT1 insensitive here. |
+| 780 | DIP_MULT1 = 4.0 re-sweep | 7.8441 | No | Z5=7.8441 H6=0.6617 Z5pnl=$142,842 composite=13.558. Marginally below. DIP_MULT1 insensitive in 3.8-4.0 range. |
+| 781 | remove roc_240 from exit gate (test redundancy) | 7.6359 | No | Z5=7.6359 H6=0.6429 Z5pnl=$139,052 composite=13.20. roc_240 exit condition not redundant. Keep it. |
+| 782 | fast EMA uses close price (instead of OHLC4) | 6.8103 | No | Z5=6.8103 H6=0.5447 Z5pnl=$141,518 composite=12.47. Fails H6 gate. OHLC4 confirmed for fast EMA. |
