@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        747
-best_z5_calmar:  5.9745
-best_h6_calmar:  0.7233
-best_z5_pnl:     $143,912
-best_h6_pnl:     $27,558
-trades_z5:       962
-trades_h6:       998
-next_exp:        752
+best_exp:        752
+best_z5_calmar:  6.4560
+best_h6_calmar:  1.3046
+best_z5_pnl:     $149,992
+best_h6_pnl:     $41,802
+trades_z5:       971
+trades_h6:       992
+next_exp:        755
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 5.9745 + 143912/25000 = **11.73**
+Current champion composite: 6.4560 + 149992/25000 = **12.46**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 11.73:
+elif z5_composite <= 12.46:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -950,3 +950,6 @@ Hypothesis quality bar — before coding, ask:
 | 749 | RSI threshold 45 (higher from 40) in non-dip exit gate | 5.5641 | No | Z5=5.5641 H6=0.7131 Z5pnl=$142,272 composite=11.26. Tighter RSI hurts. RSI>40 confirmed optimal. |
 | 750 | non-dip hard stop 3.0*ATR (tighter from 3.6) | 5.7346 | No | Z5=5.7346 H6=0.6815 Z5pnl=$140,872 composite=11.37. Tighter stop hurts. |
 | 751 | non-dip hard stop 4.0*ATR (looser from 3.6) | 5.8897 | No | Z5=5.8897 H6=0.6781 Z5pnl=$142,428 composite=11.59. Looser stop also worse. 3.6*ATR confirmed optimal. |
+| 752 | require roc_240>0 for base_long entry (medium-term momentum filter) | 6.4560 | Yes | Z5=6.4560 H6=1.3046 Z5pnl=$149,992 H6pnl=$41,802 composite=12.46. MASSIVE win! +0.73 composite, H6 nearly doubles. |
+| 753 | roc_240>0.001 for base_long entry (tighter) | 6.2764 | No | Z5=6.2764 H6=1.0804 Z5pnl=$147,492 composite=12.18. Too strict. |
+| 754 | roc_240>-0.001 for base_long entry (looser) | 6.4049 | No | Z5=6.4049 H6=0.9855 Z5pnl=$150,478 composite=12.42. Allows some bad longs back. roc_240>0 confirmed optimal. |
