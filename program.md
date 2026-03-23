@@ -741,6 +741,21 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 427 | ATR(25) + DIP_MULT3=4.5, STOP3=5.5 | 4.3294 | No | Z5=4.3294 H6=0.6362 Z5pnl=$117,092 H6pnl=$23,138. Z5 below champion, H6 above. DIP_MULT3=5.0 still Z5-optimal. |
 | 428 | **ATR(25) + DIP_MULT3=5.5, STOP3=7.0** | **4.3615** | **Yes** | Z5=4.3615 H6=0.6382 Z5pnl=$117,962 H6pnl=$23,212 Trades_Z5=736 Trades_H6=662. NEW CHAMPION! Deeper Tier3 (5.5 ATR) adds better Z5 trades. Both metrics improved. |
 
+| 429 | DIP_MULT3=6.0, STOP3=7.5 | 4.3615 | No | Z5=4.3615 H6=0.6382 — identical to champion. No new trades. DIP_MULT3=5.5 → 6.0 adds nothing. |
+| 430 | DIP_MULT3=5.5, LOOKBACK3=30, STOP3=7.0 | 4.3497 | No | Z5=4.3497 H6=0.6297 Z5pnl=$117,642 H6pnl=$22,902. Below champion. LOOKBACK3=45 confirmed optimal. |
+| 431 | Four-tier: add Tier4=(3.9 ATR, 45-bar, STOP=5.5) | 4.3061 | No | Z5=4.3061 H6=0.6362. Z5 drops — Tier4 3.9/45 adds bad Z5 trade. |
+| 432 | Four-tier: Tier4=(4.0 ATR, 45-bar) | 4.3061 | No | Z5=4.3061 H6=0.6362 — identical to 431. Same bad trade fires at 3.9-4.0 ATR/45-bar. |
+| 433 | Four-tier: Tier4=(4.5 ATR, 45-bar, STOP=5.5) | 4.3445 | No | Z5=4.3445 H6=0.6362 Z5pnl=$117,502 H6pnl=$23,138 Trades_Z5=737 Trades_H6=662. Adds 1 Z5 trade but nets slightly below champion. |
+| 434 | Slow EMA MEDIAN(385/430/475) center=430 | 4.4275 | No | Z5=4.4275 H6=0.4406. Fails H6 gate. Same H6 cliff at center>425 as before. |
+| 435 | Slow EMA MEDIAN(382/427/472) center=427 | 4.3289 | No | Z5=4.3289 H6=0.4815. Fails gate. H6 collapses sharply above center=425. |
+| 436 | Slow EMA MEDIAN(381/426/471) center=426 | 4.4175 | No | Z5=4.4175 H6=0.5328 Z5pnl=$119,402 H6pnl=$19,928 Trades_Z5=731 Trades_H6=661. Fails gate. Center=425 confirmed sharp optimum: 425→0.64, 426→0.53. |
+
+| 437 | DIP_MULT3=5.3, STOP3=6.8 | 4.3421 | No | Z5=4.3421 H6=0.6307. DIP_MULT3 sweep: 4.5→4.33, 5.0→4.34, 5.3→4.34, 5.5→4.36(champ). 5.5 confirmed optimal. |
+| 438 | vol rolling window=40 | 4.3118 | No | Z5=4.3118 H6=0.6698 Trades_Z5=785 H6pnl=$26,528. Z5 drops badly. vol_60 confirmed. |
+| 439 | vol rolling window=80 | 3.3406 | No | Z5=3.3406 H6=0.4944. Fails gate. Terrible — wider window destroys short timing. vol_60 confirmed. |
+| 440 | STOP3=6.0 (tighter Tier3 stop) | 4.3464 | No | Z5=4.3464 H6=0.6382 — slightly below champion. |
+| 441 | **STOP3=8.0 (wider Tier3 stop, 2.5 ATR buffer)** | **4.3650** | **Yes** | Z5=4.3650 H6=0.6382 Z5pnl=$118,058 H6pnl=$23,212 Trades_Z5=736 Trades_H6=662. NEW CHAMPION! Wider stop for extreme dips gives more breathing room. STOP3 sweep: 6.0→4.35, 7.0→4.36, 8.0→4.37(peak?). |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -756,7 +771,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.3615 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3650 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

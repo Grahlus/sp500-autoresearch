@@ -1,9 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 428: ATR(25) + DIP_MULT3=5.5, STOP3=7.0.
-Hypothesis: DIP_MULT3=4.5→Z5=4.33(worse), 5.0→4.34(champion). Try deeper at 5.5.
-May find even more extreme Z5-exclusive dips. STOP3=7.0 (1.5 ATR buffer below 5.5).
+Exp 441: Three-tier ATR(25) with STOP3=8.0 (2.5 ATR buffer vs champion 1.5 ATR buffer).
+Hypothesis: STOP3=6.0→Z5=4.35(worse), 7.0→4.36(champion). Try 8.0 — wider stop allows
+more room for Tier3 trades to breathe. May improve Z5 if some Tier3 trades temporarily
+dip below -7.0 ATR before recovering.
 """
 
 import numpy as np
@@ -42,7 +43,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     STOP2 = 5.0
     DIP_MULT3 = 5.5
     LOOKBACK3 = 45
-    STOP3 = 7.0
+    STOP3 = 8.0
     EXIT_ABOVE_SLOW = 0.25
 
     for i in range(n):
