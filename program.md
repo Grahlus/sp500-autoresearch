@@ -730,6 +730,17 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 418 | **Three-tier champion with ATR period=25 (vs 20)** | **4.3406** | **Yes** | Z5=4.3406 H6=0.6304 Z5pnl=$117,398 H6pnl=$22,928 Trades_Z5=737 Trades_H6=662. NEW CHAMPION! Smoother ATR(25) improves BOTH metrics. More consistent dip thresholds across volatile periods. |
 
+| 419 | ATR(30) three-tier | 4.2750 | No | Z5=4.2750 H6=0.5689 Z5pnl=$116,548 H6pnl=$21,038 Trades_Z5=739 Trades_H6=662. Fails gate. ATR sweep: 20→4.31, 25→4.34(champ), 30→4.28. ATR(25) is the peak. |
+| 420 | ATR(22) three-tier | 4.3239 | No | Z5=4.3239 H6=0.6258 Z5pnl=$117,498 H6pnl=$22,288 Trades_Z5=737 Trades_H6=662. Below champion. ATR sweep confirmed: 20→4.31, 22→4.32, 25→4.34(peak), 30→4.28. |
+| 421 | ATR(25) + DIP_MULT1=3.85 | 4.3366 | No | Z5=4.3366 H6=0.6159. Below champion Z5. DIP_MULT1=3.9 confirmed optimal with ATR(25). |
+| 422 | ATR(25) + DIP_MULT1=3.95 | 4.3328 | No | Z5=4.3328 H6=0.6055. Below champion. DIP_MULT1=3.9 is the optimum with ATR(25). |
+| 423 | ATR(25) + DIP_MULT2=3.9 | 4.3356 | No | Z5=4.3356 H6=0.6304 Z5pnl=$117,262 H6pnl=$22,928. H6 same as champion but Z5 slightly lower. DIP_MULT2=3.95 confirmed optimal. |
+| 424 | ATR(25) + DIP_MULT2=3.85 | 4.2516 | No | Z5=4.2516 H6=0.6012 Z5pnl=$116,948 H6pnl=$22,128. Both worse. DIP_MULT2=3.95 confirmed. |
+| 425 | ATR(25) + STOP1=5.0 | 4.3099 | No | Z5=4.3099 H6=0.6209. Both worse than champion. STOP1=5.5 confirmed optimal. |
+| 426 | ATR(25) + STOP1=6.0 | 4.3438 | No | Z5=4.3438 H6=0.5629 Z5pnl=$117,892 H6pnl=$21,178. Fails gate. Z5 improves but H6 drops. STOP1=5.5 confirmed optimal. |
+| 427 | ATR(25) + DIP_MULT3=4.5, STOP3=5.5 | 4.3294 | No | Z5=4.3294 H6=0.6362 Z5pnl=$117,092 H6pnl=$23,138. Z5 below champion, H6 above. DIP_MULT3=5.0 still Z5-optimal. |
+| 428 | **ATR(25) + DIP_MULT3=5.5, STOP3=7.0** | **4.3615** | **Yes** | Z5=4.3615 H6=0.6382 Z5pnl=$117,962 H6pnl=$23,212 Trades_Z5=736 Trades_H6=662. NEW CHAMPION! Deeper Tier3 (5.5 ATR) adds better Z5 trades. Both metrics improved. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -745,7 +756,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.3406 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3615 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

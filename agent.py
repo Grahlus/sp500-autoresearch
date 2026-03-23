@@ -1,9 +1,9 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 418: Three-tier champion with ATR period=25 (vs current 20).
-Hypothesis: ATR(20) was optimal for single-tier. With three tiers, slightly smoother ATR
-might give different threshold levels that improve Z5-exclusive dip entries.
+Exp 428: ATR(25) + DIP_MULT3=5.5, STOP3=7.0.
+Hypothesis: DIP_MULT3=4.5→Z5=4.33(worse), 5.0→4.34(champion). Try deeper at 5.5.
+May find even more extreme Z5-exclusive dips. STOP3=7.0 (1.5 ATR buffer below 5.5).
 """
 
 import numpy as np
@@ -40,9 +40,9 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     DIP_MULT2 = 3.95
     LOOKBACK2 = 60
     STOP2 = 5.0
-    DIP_MULT3 = 5.0
+    DIP_MULT3 = 5.5
     LOOKBACK3 = 45
-    STOP3 = 6.5
+    STOP3 = 7.0
     EXIT_ABOVE_SLOW = 0.25
 
     for i in range(n):
