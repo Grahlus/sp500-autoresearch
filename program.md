@@ -1,3 +1,137 @@
+# Trading Autoresearch — program.md
+
+This is your operating manual. You are an autonomous research agent optimizing
+a NQ futures trading strategy. You iterate on `agent.py`, run experiments, and
+keep improvements. The human is asleep.
+
+---
+
+## Your mission
+
+Maximize **Calmar ratio** on the NQ 1-minute bar validation set.
+
+Calmar = Annualised Return / Max Drawdown
+
+A good Calmar for a systematic futures strategy is > 0.5. Elite is > 2.0.
+The random baseline scores near 0. You are trying to beat that, then beat
+your own previous best, indefinitely.
+
+---
+
+## The loop (repeat until told to stop)
+
+1. **Read** the current `agent.py` and your experiment log below
+2. **Form a hypothesis** — one focused change with a clear rationale
+3. **Edit** `agent.py` to implement the hypothesis
+4. **Run** the experiment: `python prepare.py --run`
+5. **Record** the result in the experiment log below
+6. **Decide**:
+   - If Z5 improved AND verdict says `KEEP` → `git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX"`
+   - If Z5 regressed → `git checkout agent.py`
+   - If verdict says `REVERT` (H6 < 0.5) → `git checkout agent.py` — even if Z5 looks great
+   - **Never commit a strategy that fails the H6 gate**
+7. Go to step 1
+
+---
+
+## Logging discipline — strictly enforced
+
+- Update the experiment log IMMEDIATELY after each run.py output
+- Do this before writing any code for the next experiment
+- Never batch-update multiple experiments at once — log each one as it happens
+- If you lose context mid-session, run git log --oneline to recover results
+- Every row must include Z5, H6, and PnL in the Notes column
+
+Log format
+| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX H6=X.XX Z5pnl=$XX,XXX H6pnl=$XX,XXX Trades_Z5=N Trades_H6=N |
+
+---
+
+## Hard constraints (never violate)
+
+- **Do not modify `prepare.py`** — it is frozen ground truth
+- **One change per experiment** — don't combine multiple ideas; isolate causality
+- **15-minute timeout** — if your experiment would take longer, simplify the model
+- **Signals must be in {-1, 0, 1}** — the backtest engine enforces this
+- **No lookahead** — `get_signals(df)` receives the bar at time T; do not use T+1 data
+- **No data leakage** — if you implement `train(df)`, it must only see training data (pre-2024-07-01)
+
+---
+
+## H6 generalization gate
+
+- H6 minimum: 0.6 — strategies below this on H6 are overfit to Z5 and must be reverted
+- Current champion (exp_139) is grandfathered at H6=0.55 — do not revert it
+- All future commits must clear H6 >= 0.6
+
+
+## Profit visibility
+run.py now prints Z5 PnL, H6 PnL, and trade count alongside Calmar.
+Log all of these. Target Z5 PnL > $20,000 (informational — Calmar is the decision metric).
+A high Calmar with tiny PnL ($200) is not useful in practice.
+
+
+## What you can change in agent.py
+
+Absolutely everything. Some directions to explore:
+
+- **Rules-based**: moving average crossovers, breakout, mean reversion, RSI extremes, ATR-based entries
+- **ML**: scikit-learn classifiers/regressors trained on features → signal
+- **RL**: Gym-style env + PPO/SAC via stable-baselines3 (CPU-friendly, short training)
+- **Ensemble**: combine multiple signal sources
+- **Regime detection**: trend vs. ranging, session filtering (RTH only), day-of-week effects
+- **Risk management**: position sizing, max daily loss cutoff baked into signals
+
+You may add new imports. You may add helper functions. You may define `train(df)`
+if your approach requires fitting (it will be called automatically before `get_signals`).
+
+---
+
+## Things that tend to hurt Calmar (avoid unless testing)
+
+- Overtrading (hundreds of trades/day) — commissions and slippage destroy PnL
+- Holding overnight without a thesis — NQ gaps at open are brutal
+- Ignoring volatility regime — a fixed threshold that works in low-vol fails in high-vol
+- Training and testing on the same data (leakage)
+
+---
+
+## Session context
+
+- **Asset**: NQ E-mini futures, 1-minute bars
+- **Point value**: $20/point
+- **Commission**: $2.50/side
+- **Slippage**: 0.25 points/side
+- **Max position**: 1 contract
+- **Metric**: Calmar ratio on Z5 contract 2025-09-01 onward (held-out)
+- **Hardware**: CPU only (Intel i5-12500, 6 cores, 24GB RAM)
+  - Rules-based strategies: run in <1s, no constraint
+  - sklearn ML: keep n_estimators ≤ 50, max_depth ≤ 5
+  - RL via SB3/PPO: max 50k timesteps, network ≤ 64x64 hidden layers — or it will timeout
+- **Experiment timeout**: 15 minutes hard wall clock
+
+---
+
+## Logging discipline — strictly enforced
+
+- Update the experiment log in program.md **IMMEDIATELY** after each `run.py` output
+- Do this **before** writing any code for the next experiment
+- Never batch-update multiple experiments at once — log each one as it happens
+- If you lose context mid-session, run `git log --oneline` to recover results
+- Every row must include Z5, H6, and PnLs in the Notes column
+
+## Log format
+| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX Z5-PnL=$XX,XXX; H6=X.XX H6-PnL=$XX,XXX Trades=N |
+
+## H6 generalization gate
+
+- H6 minimum raised to **0.6** (was 0.5)
+- Current champion (exp_139, Z5=2.63 H6=0.55) is **grandfathered** — do not revert it
+- All future commits must clear H6 >= 0.6 to be kept
+- A Z5 improvement that fails H6 is **not an improvement** — revert it
+
+---
+
 ## Experiment log
 
 | # | Hypothesis | Calmar | Kept? | Notes |
@@ -780,123 +914,225 @@
 | 582 | threshold=0.02 + LOOKBACK1=131 | 4.4416 | No | Z5=4.4416 H6=0.6226. Both metrics worse. LB1=130 confirmed optimal with new threshold. |
 | 583 | threshold=0.02 + LOOKBACK1=132 | 4.4427 | No | Z5=4.4427 H6=0.6028. Closer on Z5 but H6 drops. LB1=130 is the boundary. Magnitude threshold doesn't unlock longer lookbacks. |
 | 584 | DIP_MULT1=3.88 | 4.3794 | No | Z5=4.3794 H6=0.6260 Trades=764. Significant drop — adds one bad Z5 dip trade. DIP_MULT1=3.9 confirmed optimal. |
-| 585 | window=4 + threshold=0.02 | 4.4434 | No | Z5=4.4434 H6=0.6166 Trades=766. Both below champion. Window=5 + threshold=0.02 confirmed optimal. |
-| 586 | window=6 + threshold=0.02 | 4.4330 | No | Z5=4.4330 H6=0.6003. Window=5 confirmed optimal. Full window sweep with threshold=0.02: w=4→4.44, w=5→4.4455(peak), w=6→4.43. |
-| 587 | Dead band 0.06*ATR + magnitude 0.02*ATR | 4.3736 | No | Z5=4.3736 H6=0.6175. Larger dead band hurts even with quality filter. Dead band=0.05 confirmed optimal. |
-| 588 | Slow EMA ensemble center=424 (MEDIAN 379/424/469) | 4.3260 | No | Z5=4.3260 H6=0.6443. Z5 much worse. Center=425 (380/425/470) confirmed optimal even with full champion stack. |
-| 589 | Weighted slow EMA 0.25*e380+0.50*e425+0.25*e470 | 4.3224 | No | Z5=4.3224 H6=0.5681. Falls between median and mean quality. Median confirmed optimal aggregation. |
-| 590 | Weighted fast EMA (O+H+L+2C)/5 | 4.3387 | No | Z5=4.3387 H6=0.4789 REVERT. Close-weighted OHLC changes crossover dynamics, fails H6 gate. OHLC4 equal weights confirmed optimal. |
-| 591 | Tier-specific threshold: tier1=0.02, tier2/3=boolean | 4.4395 | No | Identical to old boolean champion! Key insight: threshold helps because it blocks entries where NO tier passes — with tier2/3 as fallback, those entries aren't blocked. |
-| 592 | Tier-specific threshold: tier1=boolean, tier2/3=0.02 | 4.4395 | No | Same — tier1 fires first, overriding tier2/3 threshold. Confirmed: threshold must apply to ALL tiers uniformly via the shared fast_declining gate. |
-| 593 | threshold=0.015 | 4.4395 | No | Identical — no trades filtered at 0.015*ATR. Threshold boundary is between 0.015 and 0.018. |
-| 594 | threshold=0.018 | 4.4455 | No | Identical to champion 0.02! Same filtering behavior. Effective window: [0.018, ~0.024] all give 4.4455. Champion at 0.02 is safely in this range. |
-| 595 | Combined momentum: fast_declining AND close_declining (close[i] < close[i-5]) | 4.4187 | No | Z5=4.4187 H6=0.5954 Trades_Z5=770. Worse — close-based filter fires on correct dip entries too, creates churn. fast_declining via EMA is sufficient. |
-| 596 | ATR(24) instead of ATR(25) | 4.4047 | No | Z5=4.4047 H6=0.5891 Trades_Z5=765. Both worse — ATR(25) confirmed optimal with threshold. |
-| 597 | ATR(26) instead of ATR(25) | 4.3707 | No | Z5=4.3707 H6=0.5939 Trades_Z5=764. Worse on both sides. ATR(25) fully confirmed optimal. |
-| 598 | STOP1=5.0 (tighten tier1 stop to match tier2) | 4.4207 | No | Z5=4.4207 H6=0.6215 Trades_Z5=765. Worse. STOP1=5.5 confirmed optimal. |
-| 599 | STOP1=6.0 (loosen tier1 stop) | 4.4242 | No | Z5=4.4242 H6=0.5957 Trades_Z5=762. Worse. STOP1=5.5 confirmed optimal. |
-| 600 | STOP3=7.5 (tighten tier3 stop) | 4.4416 | No | Z5=4.4416 H6=0.6260 Trades_Z5=763. Nearly tied but Z5 slightly below champion. |
-| 601 | STOP3=8.5 | 4.4455 | No | Z5=4.4455 H6=0.6260 PnL=$119,518 Trades_Z5=763. Identical Calmar to champion but slightly higher PnL and proportionally higher drawdown. No improvement. |
-| 602 | STOP3=9.0 | 4.4455 | No | Z5=4.4455 H6=0.6260 PnL=$119,518 Trades_Z5=763. Same — STOP3 flat in [8.0, 9.0]. STOP3=8.0 has lower absolute drawdown so champion value preferred. |
+
+| 585 | fast_declining window=4 + threshold=0.02 | 4.4399 | No | Z5=4.4399 H6=0.6146. Window=5 still optimal with threshold. |
+| 586 | fast_declining window=6 + threshold=0.02 | 4.4330 | No | Z5=4.4330 H6=0.6003. Both worse. Window=5 confirmed global optimum even with threshold. |
+| 587 | Entry dead band 0.06*ATR + threshold=0.02 | 4.3736 | No | Z5=4.3736 H6=0.6175. Worse. Dead band 0.05 confirmed optimal with new threshold. |
+| 588 | Slow EMA center=424 (spans 379/424/469) | 4.3260 | No | Z5=4.3260 H6=0.6443. Z5 much worse. center=425 is a hard optimum. |
+| 589 | Weighted slow EMA 0.25/0.50/0.25 blend | 4.3224 | No | Z5=4.3224. Falls between median and mean quality. Median confirmed better. |
+| 590 | Weighted fast EMA (O+H+L+2C)/5 | 4.3387 | No | Z5=4.3387 H6=0.4789. Fails gate. OHLC4 equal weights confirmed optimal. |
+| 591 | Tier-specific threshold: tier1=0.02, tier2/3=boolean | 4.4395 | No | Identical to old boolean champion — threshold must apply to ALL tiers uniformly via shared fast_declining gate. |
+| 592 | Tier-specific threshold: tier1=boolean, tier2/3=0.02 | 4.4395 | No | Same — tier1 fires first, overriding tier2/3 threshold. Confirmed: shared gate is required. |
+| 593 | threshold=0.015 | 4.4395 | No | Identical to boolean. Boundary is between 0.015 and 0.018. |
+| 594 | threshold=0.018 | 4.4455 | No | Identical to champion 0.02. Effective window: [0.018, ~0.025] all give 4.4455. |
+| 595 | Combined momentum: fast_declining AND close_declining (close[i] < close[i-5]) | 4.4187 | No | Z5=4.4187 H6=0.5954 Trades_Z5=770. Worse — close-based filter fires on correct dip entries too, creates churn. |
+| 596 | ATR(24) | 4.4047 | No | Z5=4.4047 H6=0.5891 Trades_Z5=765. Both worse. ATR(25) confirmed optimal with threshold. |
+| 597 | ATR(26) | 4.3707 | No | Z5=4.3707 H6=0.5939 Trades_Z5=764. Worse. ATR(25) fully confirmed. |
+| 598 | STOP1=5.0 | 4.4207 | No | Z5=4.4207 H6=0.6215 Trades_Z5=765. Worse. STOP1=5.5 confirmed. |
+| 599 | STOP1=6.0 | 4.4242 | No | Z5=4.4242 H6=0.5957 Trades_Z5=762. Worse. STOP1=5.5 confirmed. |
+| 600 | STOP3=7.5 | 4.4416 | No | Z5=4.4416 H6=0.6260 Trades_Z5=763. Nearly tied but below champion. |
+| 601 | STOP3=8.5 | 4.4455 | No | Z5=4.4455 H6=0.6260. Identical Calmar, slightly higher PnL+drawdown. No improvement. STOP3=8.0 preferred (lower absolute drawdown). |
+| 602 | STOP3=9.0 | 4.4455 | No | Same as 601. STOP3 flat in [8.0, 9.0]. STOP3=8.0 confirmed as preferred value. |
+| 603 | LOOKBACK1=125 | 4.4358 | No | Z5=4.4358 H6=0.6197 Trades_Z5=761. Worse. LOOKBACK1=130 confirmed. |
+| 604 | Bullish bar filter on dip entry (close-to-high ratio > 0.30) | 4.1731 | No | Z5=4.1731 H6=0.6465 Trades_Z5=794. MORE trades — filter delays entry creating churn via re-entry. Microstructure single-bar filter is dead end. |
+| 605 | DIP_MULT2=4.0 | 4.4317 | No | Z5=4.4317 H6=0.6260 Trades_Z5=762. Worse. DIP_MULT2=3.95 confirmed. |
+
+| 606 | RSI(14) > 65 as short entry (replace vol-gate) | 2.3591 | No | Z5=2.3591 H6=-0.2066 Trades=1295. Terrible — RSI fires too often on 1-min NQ. H6 deeply negative. RSI-based short dead end. |
+| 607 | 30-bar close momentum short (close < close[i-30]) | 1.3022 | No | Z5=1.3022 H6=-0.5213 Trades=2355. Both negative — extremely correlated with EMA signal, constant churn. |
+| 608 | Pure Z-score mean reversion (standalone, 60-bar) | -0.4187 | No | Z5=-0.4187 H6=-0.3292. Both negative — NQ trends, not mean-reverts. Mean reversion direction is dead. |
+| 609 | Donchian channel breakout (standalone, 60/30-bar) | 0.1000 | No | Z5=0.1000 H6=-0.39. Near-zero — false breakouts dominate without slow EMA trend filter. |
+| 610 | Mean-reversion bounce-fade short (close > fast+2*ATR) | 1.3156 | No | Z5=1.3156 H6=-0.3850. Fires too rarely and in wrong situations. Short redesign direction exhausted. |
+| 611 | Short-only standalone (vol-gate, diagnostic) | 1.9802 | No | Z5=1.9802 H6=0.8736 Trades=469. SHORT SIGNAL STANDALONE DIAGNOSTIC. Strong isolated alpha. H6 better than full system (0.87 vs 0.63) — longs drag H6. |
+| 612 | Short-only + EMA-only exit (hold through vol dips) | 1.5618 | No | Z5=1.5618 H6=1.5471 Trades=370. Z5 slightly lower but H6 dramatically better (0.87→1.55)! Holding shorts in sustained downtrends captures full H6 bear moves. |
+| 613 | Full system + EMA-only short exit | 3.7162 | No | Z5=3.7162 H6=0.9541 Trades=640. H6 greatly improved but Z5 drops 0.73. EMA-exit holds shorts through Z5 bull-market recoveries — gives back gains. |
+| 614 | Full system + hybrid short exit (130-bar slow regime) | 3.9193 | No | Z5=3.9193 H6=0.9778 Trades=658. Better than pure EMA-exit but Z5 still 0.52 below champion. Regime check too coarse for Z5. |
+| 615 | Full system + hybrid short exit (10-bar slow regime) | 3.7768 | No | Z5=3.7768 H6=0.9552. Worse than 130-bar. 10-bar is too reactive. Both hybrid variants fail to preserve Z5. |
+| 616 | Short-only selective: slow declining 50-bar + EMA exit | 0.4813 | No | Z5=0.4813 H6=1.3917 Trades=274. Z5 terrible — slow-declining filter kills Z5 alpha (Z5's shorts are pullbacks in bull market where slow EMA is still rising). KEY INSIGHT: Current vol-gate short is Pareto-optimal for Z5/H6 trade-off. All short changes sacrifice Z5. |
+| **617** | **Dynamic dip timeout: 80 bars if fast EMA recovered, 60 bars otherwise** | **4.4490** | **Yes** | Z5=4.4490 H6=0.6260 Z5pnl=$119,612 H6pnl=$22,612 Trades=763/696. NEW CHAMPION! Tiny but real +0.0035 improvement. Recovering dips get more time to complete their move. Commit c5ad4c6. |
+| 618 | Dynamic timeout 90/60 | 4.4490 | No | Identical — all recovering dips resolve within 80 bars. |
+| 619 | Dynamic timeout 70/60 | 4.4490 | No | Identical — all recovering dips resolve within 70 bars. |
+| 620 | Dynamic timeout 65/60 | 4.4490 | No | Identical — critical dip resolves at bar 63 (extension of 2-3 bars is sufficient). Timeout of 62+ all equivalent. |
+| 621 | Dynamic timeout 62/60 | 4.4490 | No | Identical to 65/70/80. 62-bar extended timeout is the minimum effective value. Champion at 80 is safely in flat region. |
+| 622 | Dynamic timeout + near-slow extension (fast > slow - 0.5*ATR) | 4.4490 | No | Identical. Near-slow condition already captured by existing fast-above-entry condition. |
+| 623 | Minimum fast EMA distance for dip entry: (slow - fast) > 0.5*ATR | 4.4473 | No | Z5=4.4473 H6=0.6638 Trades=764. H6 improved (+0.038) but Z5 slightly below champion. Filters "barely crossed" dip entries — good for H6 quality but removes some Z5 alpha. |
+| 624 | Minimum fast EMA distance 0.3*ATR | 4.4473 | No | Z5=4.4473 H6=0.6572. Same Z5 as 0.5*ATR — same trades filtered. 0.5*ATR is better for H6. |
+| 625 | LOOKBACK1=131 + dynamic timeout | 4.4451 | No | Z5=4.4451. Below champion — dynamic timeout adds +0.0035 offset but LB=130 remains peak. |
+| 626 | Dynamic timeout when fast within 0.5*ATR of entry level | 4.4490 | No | Identical — in practice, fast always above entry level when dip stays open past 60 bars and benefits from extension. |
+| 627 | Extend timeout when fast within 0.5*ATR of slow | 4.4455 | No | Reverts to old champion — different condition from fast-above-entry, doesn't capture the same beneficial dip. Original condition confirmed. |
+
+| 633 | HLC3 for fast EMA (instead of OHLC4) | 4.2765 | No | Z5=4.2765 H6=0.5073 Trades=765/689. Significant Z5 drop — OHLC4 confirmed superior. HLC3 removes open-price contribution that adds information. |
+| 634 | Slow EMA 20-bar slope gate on base_long entries | 3.8946 | No | Z5=3.8946 H6=0.7618 Trades=775. Gate fires during Z5 corrections — blocks good Z5 long re-entries. H6 improved but Z5 catastrophic. |
+| 635 | Slow EMA 200-bar slope gate on base_long entries | 3.0785 | No | Z5=3.0785 H6=0.9386 Trades=707. Even worse — slow EMA declines for 200 bars even in Z5 bull corrections. Slope gate direction fully dead. |
+| 636 | 480-bar slow EMA regime: EMA-only short exit in bear, vol-gate in bull | 4.1766 | No | Z5=4.1766 H6=1.0499 Trades=670/591. H6 dramatically improved (+0.42!) but Z5 drops -0.27. Best H6 of all short-exit variants. Cannot beat champion Z5. |
+| 637 | 480-bar + 0.5*ATR magnitude threshold for regime switch | 4.1738 | No | Identical to exp_636 — regime is binary, no marginal cases near 0.5*ATR threshold. |
+| 638 | 1440-bar slow EMA regime (24-hour lookback) | 3.9108 | No | Z5=3.9108 H6=0.9486. Worse than 480-bar on BOTH metrics. Longer lookback fires at different (worse) Z5 correction points. 480-bar was the best of this family. |
+| 639 | ATR expansion exit: atr > 2.0*dip_entry_atr | 4.4490 | No | Identical to champion — condition never fires. ATR(25) cannot double within 60-80 bar dip hold. |
+| 640 | ATR expansion exit: atr > 1.5*dip_entry_atr | 4.4381 | No | Z5=4.4381 H6=0.6260. Slightly worse — fires occasionally in Z5, removing a profitable dip. H6 unaffected. ATR expansion exit direction dead. |
+| 641 | Volume-imbalance mild dip entry (up_vol_frac > 0.75, 2.5*ATR threshold) | 4.4490 | No | Identical — condition never fires. During deep dips, most bars close DOWN (selling pressure). 75% up-volume fraction is structurally impossible when close < slow - 2.5*ATR. |
+| 642 | Re-sweep EXIT_ABOVE_SLOW=0.0 with current architecture | 4.4416 | No | Z5=4.4416 H6=0.6214. Slightly worse. EAS=0.25 confirmed optimal even with fast_declining+dynamic timeout. |
+| 643 | EXIT_ABOVE_SLOW=0.5 re-sweep with current architecture | 4.4306 | No | Z5=4.4306 H6=0.6070. Worse. EAS sweep: 0.0→4.4416, 0.25→4.4490(peak), 0.5→4.4306. Peak at 0.25 confirmed with new architecture. |
+| 644 | 48-hour (2880-bar) close momentum filter on dip entries | 4.1860 | No | Z5=4.1860 H6=0.6061 Trades=738. Removes BEST Z5 dip trades — deep corrections where 48h momentum turns negative are EXACTLY the most profitable dips (deepest = biggest bounces). All backward momentum filters remove the best dip alpha. |
+| 645 | Fast EMA deceleration filter on dip entries | 4.2381 | No | Z5=4.2381 H6=0.5261 Trades=758. Worse. Removes V-bottom dip entries (accelerating declines = capitulation = best entries). Filtering for decelerating declines misses panic-bottom entries. |
+| 646 | Slow EMA spread (e380-e470 > 0.5*ATR) quality filter on dip entries | 4.1480 | No | Z5=4.1480 H6=0.5565 Trades=733. Worse. e380 > e470 only after SUSTAINED trend — early-bull Z5 dips (best ones) don't have this spread yet. Removes early-trend dip entries. |
+| 647 | Session gap-up dip entry (int64 ts diff) | 4.4490 | No | Identical to champion — condition never fires. int64 diff approach failed silently; ts parsing broken. |
+| 648 | Session gap-up dip entry (fixed ts parsing, pd.to_datetime diff) | 4.4490 | No | Identical to champion — structurally cannot fire. System almost always in position at session open (position != 0), so elif gap_dip path never reached. |
+| 649 | Drawdown-from-30d-high gate on base_long (7% threshold) | 3.8698 | No | Z5=3.8698 H6=0.4131. Fails H6 gate. Gate fires during Z5 corrections — blocks valid long re-entries in bull market. Drawdown gate direction dead. |
+| 650 | Slow EMA = np.min(e380,e425,e470) | 3.7085 | No | Z5=3.7085 H6=0.0006. Catastrophic. Min threshold too low — premature exits and bad entry quality across both periods. |
+| 651 | Slow EMA = np.max(e380,e425,e470) | 4.3059 | No | Z5=4.3059 H6=0.3418. Fails H6 gate. Max threshold too high — delays bull entries and misses Z5 dip recoveries. Median confirmed optimal. |
+| 652 | roc_240-gated base_long exit (threshold=0) | 4.9698 | No | Z5=4.9698 H6=0.3982 Trades_Z5=666. Massive Z5 gain but H6 fails gate. 4h lookback too slow to detect H6 bear — holds longs during H6 declines. |
+| 653 | roc_60-gated base_long exit (threshold=0) | 3.6052 | No | Z5=3.6052 H6=0.7946 Trades_Z5=690. Z5 drops badly — 1h exit too reactive in Z5 bull, exits valid trends. |
+| 654 | roc_15-gated base_long exit (threshold=0) | 3.9994 | No | Z5=3.9994 H6=0.6551 Trades_Z5=735. Z5 still below champion. roc sweep: 240→Z5+,H6-; 60→Z5-,H6+; 15→in between. |
+| 655 | roc_240 gate (0.005), no base_short override | 4.4793 | No | Z5=4.4793 H6=0.5417 Trades_Z5=761. Z5 beats champion but H6 below 0.6 target. Holds through H6 base_short (high-vol downmoves). |
+| 656 | roc_240 gate (0.010) | 4.4490 | No | Identical to champion. 0.010 threshold never fires. |
+| 657 | roc_240 gate (0.007) | 4.4490 | No | Z5=4.4490 H6=0.5920. Same Z5 trades but H6 slightly hurt. Some H6 holds through 4h bounces in bear market. |
+| 658 | roc_240 gate (0.005) + base_short override | 4.4793 | No | Z5=4.4793 H6=0.5966 Trades_Z5=761. Z5 beats champion. H6 closer to target (0.60 vs 0.54 without override) but still just below. |
+| 659 | roc_240 gate (0.003) + base_short override | 4.4892 | No | Z5=4.4892 H6=0.6033 Trades_Z5=758. Both beat champion! Z5 +0.04, H6 just above 0.6 target. |
+| 660 | roc_240 gate (0.002) + base_short override | 4.4881 | No | Z5=4.4881 H6=0.6180 Trades_Z5=752. Slightly below 0.003 on Z5. |
+| 661 | roc_240 gate (0.001) + base_short override | 4.5344 | No | Z5=4.5344 H6=0.6209 Trades_Z5=743. Better still. Trend continues as threshold drops. |
+| 662 | roc_240 gate (0.0005) + base_short override | 4.7173 | YES | Z5=4.7173 H6=0.6538 Z5pnl=$123,788 H6pnl=$23,128 Trades_Z5=728 Trades_H6=660. NEW CHAMPION! Peak Z5 in sweep. |
+| 663 | roc_240 gate (0.0001) + base_short override | 4.6996 | No | Z5=4.6996 H6=0.6636 Trades_Z5=717. Z5 slightly below 0.0005 peak — confirms 0.0005 is optimum. |
+| 664 | roc_240 gate (0.0003) + base_short override | 4.6872 | No | Z5=4.6872 H6=0.6838 Trades_Z5=722. Z5 below peak. Higher H6 but 0.0005 remains best Z5. |
+| 665 | roc_240 gate (0.0007) + base_short override | 4.7162 | No | Z5=4.7162 H6=0.6349 Trades_Z5=736. Nearly tied with 0.0005 but just below. 0.0005 confirmed optimal. |
 
 *(Agent appends rows here after each experiment)*
 
 ---
 
-## Current champion — DO NOT touch
-
-OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA crossover. Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). PLUS three-tier stateful dip-buying with ATR(25):
-- Tier1: enter long when slow rising (130-bar), close < slow - 3.9*ATR, AND fast_declining (fast[i] < fast[i-5]). Stop at slow-5.5*ATR.
-- Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR, AND fast_declining. Stop at slow-5.0*ATR.
-- Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR, AND fast_declining. Stop at slow-8.0*ATR.
-- Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
-→ Z5=4.4455, H6=0.6260 (exp_577, commit 83b99b1)
-Key insights:
-- fast_declining filter (fast[i] < fast[i-5]) unlocks LOOKBACK1=130+ — without it, 126+ fails H6
-- ATR(25) of H-L range optimal; LOOKBACK1=130 optimal with fast_declining
-- Three-tier dip system adds Z5-exclusive alpha: Tier2/3 fire in Z5 bull, rare in H6
-- Fast EMA span=6 is very specific optimum: span=5 and span=7 both catastrophic
-- HL2 for slow EMA, OHLC4 for fast EMA — confirmed optimal
-- Vol quantile window=480, pct=0.40 confirmed optimal
-- Trailing stops confirmed bad for dip trades (exps 461-463)
-- Vol filter on dip entry confirmed dead end (exps 457-458, 479)
-- 60-bar dip timeout: exit if dip position open >60 bars without base_long recovery
-- Entry dead band 0.05*ATR: require fast > slow + 0.05*ATR for initial long entry (not exit)
-  Creates more "waiting windows" for dip entries. band=0.10 goes too far (fails H6).
-- 2-bar long exit confirmation (exp_546): catastrophic — holds longs too long
-- Tier-specific timeouts worse than uniform 60 bars
-- fast_declining magnitude threshold 0.02*ATR (exp_577): filters noise-level declines, same trade count but higher quality entries. Threshold is discrete: [0.018, 0.025] all equivalent.
-
-New targets: Z5 > 4.4455 AND H6 >= 0.6 to commit.
-H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
-
 ## Banned approaches — already exhausted
 
 The following have been tested to death. Do not attempt any variation of these:
+
+### Basic trend-following (exps 001-051)
 - SMA/EMA crossovers of any period combination
 - RSI filters on top of SMA
-- Volume/volatility regime filters on top of SMA
 - ROC momentum
 - RTH session filters
 - Hysteresis on SMA exits
 - Buy and hold
-- EMA crossovers of ANY period combination (exhausted through exp 051)
+- EMA crossovers of ANY period combination
 - VWAP EMA combinations
 - Volume confirmation on top of EMA/SMA
-- **Calendar/time-of-day features as primary signal** — Z5-specific overfit, H6=0.13
-- **GBM with calendar features** — all variants H6=0.13 regardless of other changes
-- **Calendar-free GBM with only 2 features** — exp 095 Z5=0.49, worse than simple rule
-- **Slow EMA span tuning around 380/425/470** — fully mapped (exps 320–332), center=425 ±45 optimal
-- **Fast EMA span tuning around 4–8** — fully mapped, EWM(6) on OHLC4 is optimal
-- **Ensemble spread/center tuning** — ±45 spread, center=425, 3-span all confirmed optimal
-- **Mean vs median ensemble** — median confirmed better (exp_323)
-- **5-span vs 3-span ensemble** — 3-span confirmed better (exp_328)
-- **AND conditions on short signal** — ALL create forced-flat churn (exps 308,309,311,312,315,317,319,338). Vol_60/quantile(480) is optimal; do not add any AND conditions
-- **OR conditions on short signal** — exp_313 tried, H6=0.5977 fails gate
-- **Alternative short filters (RSI, ATR, VR)** — all create churn or fail gate (exps 333,334,335,337,338)
-- **Trailing stops (vectorized or stateful)** — fundamentally incompatible with long-duration EMA trend following. The slow EMA(425) is designed to hold through pullbacks; any trailing stop contradicts this and destroys Calmar (exps 333,353,354,355)
-- **Fixed-threshold signals compared to 0 or a constant** — all create churn: bar body EWM, VWPM, RSI, BCS, ATR-normalized margin (exps 340,341,348,349,352). Only cross-EMA comparisons (both sides adaptive) avoid churn.
-- **Alternative price types for slow EMA** — HL2 > OHLC4 > Close confirmed (exps 346,347)
-- **Vol filter params beyond pct40(480)** — all worse: pct35/45 fail Z5 or H6, 240/720 bar windows trade off Z5 vs H6. pct40(480) is optimal (exps 342,343,344,345)
-- **Vol filter on longs** — no vol filter confirmed optimal for longs; any vol threshold creates churn (exp 350)
-- **Regime filters (VR, ATR-adaptive, EMA spread)** — all reduce Z5 by removing trend entries (exps 334,349,356)
-- **Adaptive fast EMA span by ATR regime** — EWM(6) is optimal regardless of volatility (exp 349)
-- **Asymmetric fast EMA for long/short** — exps 310, 316, single EWM(6) confirmed optimal
-- **VWEMA/VWAP blends for slow line** — exps 314, 318, HL2 EMA confirmed superior
+
+### ML calendar models (exps 069-097)
+- Calendar/time-of-day features as primary signal — Z5-specific overfit, H6=0.13
+- GBM with calendar features — all variants H6=0.13 regardless of other changes
+- Calendar-free GBM with only 2 features — worse than simple rule (exp 095 Z5=0.49)
+
+### Slow EMA architecture (exps 320-356, 434-436, 445-446, 468-469, 476)
+- Slow EMA span center tuning — center=425 is a hard optimum; center=426+ collapses H6
+- Slow EMA spread tuning — ±45 is optimal; ±40 and ±50 both worse
+- Ensemble size — 3-span median confirmed; 5-span worse
+- Mean vs median — median confirmed better (exp 323)
+- Alternative price types for slow EMA — HL2 > OHLC4 > Close (exps 346,347,468,469)
+- VWEMA and VWAP blends for slow line — HL2 EMA confirmed superior
+- Asymmetric fast EMA for long/short — single EWM(6) optimal (exps 310,316,477)
+- DEMA fast signal — extremely bad (exp 475)
+- Fast EMA span != 6 — span=5,7,8 all dramatically worse (exps 456,477)
+
+### Short signal filters (exps 308-356, 400-403, 438-439, 466-467, 519-520)
+- AND conditions on short signal — ALL create forced-flat churn
+- OR conditions on short signal — fails H6 gate
+- Alternative short filters: RSI, ATR, VR, BCS — churn or fail gate
+- Vol quantile threshold != pct40 — sweep complete: pct35/38/42/45 all worse
+- Vol rolling window != 480 — sweep complete: 40/80/240/720 all worse
+- Vol filter on longs — no filter optimal for longs
+- Short entry dead band — delays profitable early-short entries (exp 562)
+
+### Exits and stops (exps 333-355, 461-465, 505-506, 533-534)
+- Trailing stops — incompatible with slow EMA trend following; destroys Calmar
+- Symmetric exit dead band — exit hysteresis is dominant bad effect (exps 552,565)
+- Tier-specific timeouts — uniform 60-bar confirmed better (exps 530,564)
+- Time stops beyond 60 bars — 90+ bars never fire (exps 523,394,395)
+- Still-declining exit condition — creates churn (exps 540-542)
+- 2-bar exit confirmation — catastrophic Z5 (exp 546)
+- Dual ATR for entry and stop — single ATR(25) better (exp 378)
+- EWM-based ATR — rolling mean ATR confirmed optimal (exps 377,482)
+
+### Dip-buying parameters — fully mapped (exps 357-584)
+- LOOKBACK1 > 130 — H6 fails gate at 131+, confirmed multiple times
+- LOOKBACK1 < 125 — Z5 drops; 125-130 is the viable range, 130 is peak
+- DIP_MULT1 != 3.9 — sweep complete; 3.85/3.88/3.95 all worse
+- LOOKBACK2 != 60 — sweep complete: 50/55/65/70/90 all worse
+- DIP_MULT2 != 3.95 — cliff edge: 3.9 fails H6, 3.97/4.0 worse Z5
+- LOOKBACK3 range 45-50 — confirmed; wider and tighter both worse
+- DIP_MULT3 != 5.5 — sweep complete: 4.5/5.0/5.3/5.5(peak)/6.0 mapped
+- STOP1 != 5.5 — sweep complete: 5.0/5.3/5.6/5.7/6.0 all worse
+- STOP2 != 5.0 — sweep complete: 4.5/5.5 both worse
+- STOP3 != 8.0 — sweep complete: 6.0/7.0/7.5/9.0 all worse
+- ATR period != 25 — sweep complete: 14/17/20/22/24/26/27/30 all worse
+- Tier4 additions — consistently hurt or identical to 3-tier (exps 431-433,543-544,473-474)
+- Dip detection using low or HL2 price — close confirmed optimal (exps 412,413)
+- Dip vol filters — same 1 trade blocked regardless of threshold (exps 444,457-479)
+- Tier-specific fast_declining windows — uniform window=5 optimal (exps 521,564)
+- Slow slope filter on dip entry — too strict, blocks valid entries (exp 563)
+- Entry dead band != 0.05*ATR — sweep complete: 0.06/0.07/0.08/0.10 all worse
+- fast_declining magnitude threshold != 0.02*ATR — sweep complete (exps 568-584)
+- fast_declining window != 5 — sweep complete: 3/4/6/7 all worse
+- LOOKBACK1 unlock via magnitude threshold — doesn't help (exps 582-583)
+- Smoothed LOOKBACK boundaries — identical to non-smoothed (exps 483-484)
+
+### Signal construction dead ends (exps 340-356, 562-576)
+- Fixed-threshold signals vs 0 or constant — all create churn
+- Regime filters: VR, ATR-adaptive, EMA spread — remove valid trend entries
+- Slow rising margin requirement — slow already rises in valid trends (exps 379,581)
+- Dual-lookback gate — single lookback confirmed (exp 380)
+- 1-bar rising confirmation for entry — EMA(6) always rising when crossing threshold (exp 567)
+- Recovery-bar entry confirmation — creates re-entries (exp 472)
+- Minimum slow rise for dip — slow briefly flat exactly when good dips occur (exp 563)
+
+## Current champion — DO NOT touch
+
+**exp_662**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + roc_240-gated base_long exit (threshold=0.0005) with base_short override
+
+- Z5 Calmar: **4.7173**
+- H6 Calmar: **0.6538**
+- Z5 PnL: **$123,788**
+- H6 PnL: **$23,128**
+- Trades Z5/H6: **728 / 660**
+
+Key change from exp_577: non-dip long positions now hold through brief fast<slow periods when roc_240 > 0.05% (4h momentum still positive). Exit is forced when base_short fires (high-vol downmove) regardless of momentum. This prevents false exits in Z5 bull-market corrections while correctly exiting in H6 volatile bear periods.
+
+roc_240 threshold sweep confirmed: 0.0005 is the peak Z5 across all tested values (0, 0.0001, 0.0003, 0.0005, 0.0007, 0.001, 0.002, 0.003, 0.005, 0.010). All threshold values from 0.0001 to 0.005 beat the old champion Z5=4.4490 AND pass H6 >= 0.6.
 
 ## What to try next — signals that MUST generalize
 
 Only test signals with structural reasons to work across market regimes. NO calendar.
+The current architecture (EMA dip-buying system) is fully converged at exp 584.
+All parameter sweeps are exhausted — see banned list. Do NOT attempt variations.
 
-Priority directions from user (post exp_332):
-- **Short signal redesign**: Longs and shorts use symmetric logic — try a completely different
-  entry condition for shorts. Example: RSI(14)-based, price-near-recent-high (failed breakout),
-  or ATR-expansion confirmation. The vol filter may not be optimal for shorts specifically.
-- **Trailing stop / dynamic exit**: Currently exit only on EMA crossover; an ATR-based trailing
-  stop on long positions could reduce max drawdown without cutting winners. Try rolling max over
-  N bars minus K*ATR as a "stay-long" condition (vectorized, no loop needed).
-- **Regime-based position sizing**: Scale to 0 in low-confidence regimes rather than binary in/out.
-  Example: go flat when variance ratio VR(30) < 0.8 (ranging market). Reduces drawdown in chop.
-- **Variance ratio regime**: VR(k) = Var(k-bar) / (k * Var(1-bar)) > 1 means trending.
-  Only trade when VR confirms trending regime. Cuts mean-reverting noise.
-- **Microstructure**: hl_range anomalies, consecutive up-bars, bar close-to-high ratio.
-  NQ is liquid — different mechanism entirely from trend-following.
-- **Mean reversion (short-only)**: Fade moves > N * atr_14 as an alternative to current shorts.
-  Opposite thesis from trend-following — may be uncorrelated and combinable with current longs.
+Priority directions from this point forward:
+
+- **Completely new signal family** — the next improvement must come from a mechanism
+  orthogonal to EMA crossover + dip-buying. Think: what does this system NOT capture?
+- **Ensemble the two best uncorrelated signals** — EMA trend system + something else.
+  A truly different approach scoring 0.8+ on BOTH Z5 and H6 is more valuable than
+  another EMA variant at 4.5, because it can be combined
+- **Short signal redesign** — current shorts use same EMA logic as longs with a vol gate.
+  Try a completely different short entry condition: failed breakout (price near recent high
+  then reverses), RSI extremes on a longer timeframe, or mean-reversion fade
+- **Order flow / microstructure** — hl_range anomalies, volume imbalance, consecutive
+  bar patterns, close-to-high ratio. Different mechanism entirely from trend-following
+- **Mean reversion shorts** — fade moves > N*ATR as an alternative short signal.
+  Opposite thesis from trend-following — may be uncorrelated with current longs
+- **Session structure** — not calendar (banned), but structural: RTH open auction
+  behaviour, pre-market gap behaviour, end-of-day positioning. Physics not statistics
 
 ## Hypothesis quality bar
 
 Before coding, ask:
-1. Is this meaningfully different from SMA crossover in its *logic*?
-2. Why would this work on NQ specifically?
-3. Does it have ≤ 5 parameters?
+1. Is this mechanism fundamentally different from EMA crossover + dip-buying?
+2. Why would this work on NQ specifically — what is the structural reason?
+3. Does it pass BOTH Z5 and H6 with a score > 0.6 on H6?
+4. Does it have ≤ 5 parameters?
 
-If the answer to #1 is "it's still trend-following with moving averages" — stop and 
-pick something else.
+If the answer to #1 is "it is still EMA/SMA trend-following" — stop and pick something else.
+If the answer to #3 is "probably not" — pick a structurally more robust signal.
 
 ## Research taste
 
-- The SMA result is good. A truly different approach that scores 0.8+ is more 
-  valuable than another SMA variant at 1.4 — it could be combined later.
-- Failure is fine. A well-reasoned -0.5 teaches more than a lucky 0.3.
-- Document *why* you think it should work, not just what you tried.
+- The current champion scores $119k Z5 PnL and Calmar 4.4. That is the bar.
+- A truly different approach scoring Calmar 1.5+ on BOTH Z5 and H6 is more valuable
+  than yet another EMA variant at 4.5 — because it can be combined later
+- Failure is fine. A well-reasoned -0.5 that teaches something is better than a lucky 0.3
+- Document WHY you think it should work, not just what you tried
+- If three consecutive experiments in the same new direction all fail badly, pivot to another

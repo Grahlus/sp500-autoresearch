@@ -1,10 +1,11 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 577: fast_declining magnitude threshold 0.02*ATR. NEW CHAMPION!
-Z5=4.4455, H6=0.6260. Filters noise-level (<0.02*ATR) fast EMA declines from dip entry.
-Same 763 Z5 trades / 696 H6 trades as exp_548, but slightly higher-quality dip entries.
-Threshold sweep: 0.0(bool)→4.4395, 0.02→4.4455(champ), 0.05→4.4382, 0.10→4.4347, 0.15→4.4332.
+Exp 662: roc_240-gated base_long exit (threshold=0.0005) + base_short override. NEW CHAMPION!
+Z5=4.7173, H6=0.6538. Gate non-dip long exit: hold when fast<slow but roc_240>0.05%.
+base_short override ensures we exit on high-vol downmoves regardless of 4h momentum.
+Threshold sweep: 0→4.97/0.40, 0.0001→4.70/0.66, 0.0003→4.69/0.68, 0.0005→4.72/0.65(peak Z5),
+0.0007→4.72/0.63, 0.001→4.53/0.62, 0.002→4.49/0.62, 0.003→4.49/0.60, 0.005→4.48/0.60.
 """
 
 import numpy as np
@@ -28,6 +29,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     bar_range = (df["high"] - df["low"]).values
     atr = pd.Series(bar_range).rolling(25, min_periods=1).mean().values
     close_arr = df["close"].values
+    roc_240_arr = df["roc_240"].fillna(0).values
 
     n = len(close_arr)
     signals = np.zeros(n, dtype=np.int32)
@@ -86,7 +88,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if not base_long:
+                if (not base_long and roc_240_arr[i] <= 0.0005) or base_short:
                     position = 0
 
         elif position == -1:
