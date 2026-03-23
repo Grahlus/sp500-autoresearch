@@ -1,16 +1,13 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 381: Two-tier dip system.
-Tier1: DIP_MULT=3.9, slow_rising_120 (champion tier)
-Tier2: DIP_MULT=4.5, slow_rising_60 (deeper dip allowed in shorter-term uptrends)
-OR logic: either tier triggers a dip entry.
-Hypothesis: Tier1 already captures shallow dips in strong 2-hour uptrends. Tier2 adds
-deeper dips (4.5 ATR) when the slow EMA has been rising for just 1 hour. The higher
-ATR threshold for Tier2 protects H6 (only extreme dips in shorter-term uptrends, where
-the mean-reversion argument is strongest). In Z5's bull market, short-term uptrend dips
-of 4.5 ATR are likely to recover sharply. Net: more Z5 alpha while H6 stays above 0.6.
-Stop=5.5 ATR, exit=slow+0.25 ATR, ATR(20) — all champion parameters.
+Exp 382: Two-tier dip — Tier2 DIP_MULT=4.2 (vs champion's 4.5).
+Hypothesis: exp_381 champion uses Tier2=4.5 ATR. Try 4.2 — more Tier2 entries (lower
+threshold) while still requiring 60-bar rising slow. DIP_MULT2 sweep: need to find
+optimal between 3.9 (Tier1) and 4.5 (current Tier2). 4.2 would catch more intermediate
+dips that are too shallow for Tier2@4.5 but not slow_rising_120. If these dips recover
+in Z5, Z5 improves. If they hurt H6, revert.
+
 """
 
 import numpy as np
@@ -44,7 +41,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     DIP_MULT1 = 3.9
     LOOKBACK1 = 120
     # Tier 2: deeper dip in shorter-term uptrend
-    DIP_MULT2 = 4.5
+    DIP_MULT2 = 4.2
     LOOKBACK2 = 60
     EXIT_ABOVE_SLOW = 0.25
     DIP_STOP_MULT = 5.5
