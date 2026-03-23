@@ -662,6 +662,22 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 373 | **Dip 3.9 ATR / 120-bar / stop 5.5 / exit+0.25 + ATR(20) smoothing** | **4.2201** | **Yes** | Z5=4.2201 H6=0.6197 Z5pnl=$114,678 H6pnl=$22,202 Trades_Z5=724 Trades_H6=657. NEW CHAMPION! ATR(20) smoother → more consistent dip thresholds vs ATR(14). H6 dropped slightly (0.678→0.620) but still passes gate. ATR sweep: try ATR(30). |
 
+| 374 | Dip ATR(30) — looser ATR smoothing | 4.2027 | No | Z5=4.2027 H6=0.6449 Z5pnl=$114,578 H6pnl=$23,412 Trades_Z5=726 Trades_H6=657. ATR sweep: 14=4.2128, 20=4.2201(champion), 30=4.2027. Peak at ATR(20). Try ATR(17) to check fine structure. |
+
+| 375 | Dip ATR(17) | 4.0923 | No | Z5=4.0923 H6=0.6194 Z5pnl=$113,882 H6pnl=$22,158 Trades_Z5=725 Trades_H6=657. Non-monotonic: 14=4.213, 17=4.092(valley), 20=4.220(champion), 30=4.203. ATR(20) confirmed optimal. |
+
+| 376 | Dip DIP_MULT=3.85 with ATR(20) | 4.2128 | No | Z5=4.2128 H6=0.6358 Z5pnl=$114,478 H6pnl=$22,892 Trades_Z5=724 Trades_H6=658. DIP_MULT=3.9 still optimal with ATR(20). Fine-grain sweep (ATR20): DIP_MULT=3.85→4.2128, 3.9→4.2201(champion). |
+
+| 377 | EWM ATR(span=20) vs rolling mean ATR(20) | 4.1431 | No | Z5=4.1431 H6=0.6349 Z5pnl=$113,802 H6pnl=$22,678 Trades_Z5=724 Trades_H6=657. Rolling mean ATR confirmed better than EWM ATR; equal weighting of recent bars superior to exponential recency. |
+
+| 378 | Dual ATR: ATR(20) entry/exit, ATR(50) stop | 4.2065 | No | Z5=4.2065 H6=0.6350 Z5pnl=$113,932 H6pnl=$22,848 Trades_Z5=725 Trades_H6=658. Single ATR(20) confirmed better; dual ATR adds no benefit. |
+
+| 379 | Minimum slow rising margin (slow > slow_prev + 0.05*ATR) | 4.1878 | No | Z5=4.1878 H6=0.6261 Z5pnl=$113,798 H6pnl=$22,432 Trades_Z5=724 Trades_H6=657. Near-flat rising conditions contribute positively to Z5. Margin requirement removes valid entries. Any(slow > slow_prev) confirmed optimal. |
+
+| 380 | Dual-lookback gate: slow > slow_60ago AND slow > slow_120ago | 4.1831 | No | Z5=4.1831 H6=0.6088 Z5pnl=$112,462 H6pnl=$22,798 Trades_Z5=713 Trades_H6=643. Dual gate filters some valid Z5 dip entries. Any(slow > slow_prev) is already optimal. |
+
+| 381 | **Two-tier dip: Tier1=(3.9 ATR + 120-bar) OR Tier2=(4.5 ATR + 60-bar)** | **4.2367** | **Yes** | Z5=4.2367 H6=0.6185 Z5pnl=$115,128 H6pnl=$22,158 Trades_Z5=731 Trades_H6=660. NEW CHAMPION! OR-logic adds Tier2 deeper dips (4.5 ATR) in shorter-term uptrends (60-bar rising). More Z5 alpha (+0.017 vs single-tier). H6 just passes gate. Explore Tier2 DIP_MULT sweep. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -677,7 +693,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.2201 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.2367 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

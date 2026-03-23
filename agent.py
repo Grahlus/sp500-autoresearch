@@ -1,13 +1,16 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 373: Dip 3.9 ATR / 120-bar / stop 5.5 ATR / exit+0.25 ATR + ATR(20) period.
-Hypothesis: Champion uses ATR(14). ATR(20) is smoother (less noisy) — the absolute
-threshold levels (DIP_MULT*ATR, STOP*ATR) would be based on a more stable volatility
-estimate. In high-vol periods, ATR(14) may spike and prevent valid dip entries
-(threshold too high). ATR(20) smooths over vol spikes → more consistent dip entries.
-Conversely, fewer false signals when vol is temporarily low. All params unchanged:
-DIP_MULT=3.9, STOP=5.5, EXIT=0.25, LOOKBACK=120.
+Exp 381: Two-tier dip system.
+Tier1: DIP_MULT=3.9, slow_rising_120 (champion tier)
+Tier2: DIP_MULT=4.5, slow_rising_60 (deeper dip allowed in shorter-term uptrends)
+OR logic: either tier triggers a dip entry.
+Hypothesis: Tier1 already captures shallow dips in strong 2-hour uptrends. Tier2 adds
+deeper dips (4.5 ATR) when the slow EMA has been rising for just 1 hour. The higher
+ATR threshold for Tier2 protects H6 (only extreme dips in shorter-term uptrends, where
+the mean-reversion argument is strongest). In Z5's bull market, short-term uptrend dips
+of 4.5 ATR are likely to recover sharply. Net: more Z5 alpha while H6 stays above 0.6.
+Stop=5.5 ATR, exit=slow+0.25 ATR, ATR(20) — all champion parameters.
 """
 
 import numpy as np
@@ -28,7 +31,8 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
     vol_cur = vol_series.values
 
-    atr20 = (df["high"] - df["low"]).rolling(20, min_periods=1).mean().values
+    bar_range = (df["high"] - df["low"]).values
+    atr = pd.Series(bar_range).rolling(20, min_periods=1).mean().values
     close_arr = df["close"].values
 
     n = len(close_arr)
@@ -36,35 +40,43 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     position = 0
     is_dip_trade = False
 
-    DIP_MULT = 3.9
-    SLOW_LOOKBACK = 120
+    # Tier 1: shallow dip in strong uptrend
+    DIP_MULT1 = 3.9
+    LOOKBACK1 = 120
+    # Tier 2: deeper dip in shorter-term uptrend
+    DIP_MULT2 = 4.5
+    LOOKBACK2 = 60
     EXIT_ABOVE_SLOW = 0.25
     DIP_STOP_MULT = 5.5
 
     for i in range(n):
         close = close_arr[i]
         slow = ema_slow[i]
-        atr = atr20[i]
+        atr_val = atr[i]
         base_long = ema_fast[i] > slow
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
-        slow_prev = ema_slow[max(0, i - SLOW_LOOKBACK)]
-        slow_rising = slow > slow_prev
+        slow_prev1 = ema_slow[max(0, i - LOOKBACK1)]
+        slow_prev2 = ema_slow[max(0, i - LOOKBACK2)]
+        slow_rising1 = slow > slow_prev1
+        slow_rising2 = slow > slow_prev2
         dip_entry = (
             (not base_long)
             and (not base_short)
-            and slow_rising
-            and (close < slow - DIP_MULT * atr)
+            and (
+                (slow_rising1 and (close < slow - DIP_MULT1 * atr_val))
+                or (slow_rising2 and (close < slow - DIP_MULT2 * atr_val))
+            )
         )
 
         if position == 1:
             if is_dip_trade:
                 if base_long:
                     is_dip_trade = False  # smooth transition to champion long
-                elif close >= slow + EXIT_ABOVE_SLOW * atr:
+                elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
                     position = 0
                     is_dip_trade = False
-                elif close < slow - DIP_STOP_MULT * atr:
-                    position = 0  # stop-loss: dip is getting worse, not recovering
+                elif close < slow - DIP_STOP_MULT * atr_val:
+                    position = 0
                     is_dip_trade = False
                 elif base_short:
                     position = 0
