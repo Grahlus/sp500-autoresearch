@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 809: roc_60 entry threshold 0.0025 re-sweep.
+Exp 811: roc_240 entry threshold 0.00005 re-sweep.
 """
 
 import numpy as np
@@ -54,7 +54,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         slow = ema_slow[i]
         atr_val = atr[i]
         base_long = ema_fast[i] > slow
-        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0 and roc_60_arr[i] > 0.0025
+        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0.00005 and roc_60_arr[i] > 0.0025
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
         slow_prev1 = ema_slow[max(0, i - LOOKBACK1)]
         slow_prev2 = ema_slow[max(0, i - LOOKBACK2)]
