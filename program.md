@@ -1022,6 +1022,18 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 690 | roc_60 threshold=0.00015 | 4.8100 | No | Z5=4.8100. Below 0.0002. |
 | 691 | roc_60 threshold=0.00025 | 4.8148 | No | Z5=4.8148. Below 0.0002. 0.0002 confirmed as peak. |
 
+| 692 | Triple-momentum gate: roc_240>0.0005 OR roc_60>0.0002 OR roc_15>0.0001 | 4.7785 | No | Z5=4.7785 H6=0.6967. Adding roc_15 hurts — too reactive, adds holds in declining 15m momentum cases. |
+| 693 | Re-sweep roc_240=0.0003 with dual-momentum gate | 4.7934 | No | Z5=4.7934. roc_240=0.0005 still optimal with roc_60 in place. |
+| 694 | Re-sweep stop=3.0*ATR with dual-momentum gate | 4.7313 | No | Stop too tight with dual gate. 3.6 still optimal. |
+| 695 | Re-sweep stop=4.0*ATR with dual-momentum gate | 4.8064 | No | Looser stop slightly lower. 3.6 confirmed optimal. |
+| 696 | No stop with dual-momentum gate | 4.7800 | No | Z5=4.7800. Stop at 3.6 confirmed necessary and optimal. |
+| 697 | RSI<35 hold condition (3rd OR gate) | 5.0250 | No | Z5=5.0250 H6=0.8339. HUGE gain! Holding through oversold RSI captures Z5 bounce. RSI threshold sweep needed. |
+| 698 | RSI<40 hold condition | 5.2556 | YES | Z5=5.2556 H6=0.8610 Z5pnl=$130,562 H6pnl=$28,468 Trades_Z5=694 Trades_H6=626. NEW CHAMPION! Peak RSI threshold. |
+| 699 | RSI<45 hold condition | 5.2071 | No | Z5=5.2071. Below RSI<40 peak. |
+| 700 | RSI<42 hold condition | 5.0989 | No | Z5=5.0989. Below peak. |
+| 701 | RSI<38 hold condition | 5.1149 | No | Z5=5.1149. Below peak. |
+| 702 | RSI<39 hold condition | 5.2470 | No | Z5=5.2470. Just below peak. RSI=40 confirmed optimal. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -1110,23 +1122,24 @@ The following have been tested to death. Do not attempt any variation of these:
 
 ## Current champion — DO NOT touch
 
-**exp_688**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + dual-momentum-gated normal long exit + normal long stop loss
+**exp_698**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + triple-condition normal long exit
 
-Normal long exit condition: `(not base_long AND roc_240<=0.0005 AND roc_60<=0.0002) OR base_short OR (close<slow-3.6*ATR)`
-HOLD when: fast<slow AND (roc_240 > 0.05% OR roc_60 > 0.02%) AND not base_short AND close > slow-3.6*ATR
+Normal long exit condition: `(not base_long AND roc_240<=0.0005 AND roc_60<=0.0002 AND rsi_14>40) OR base_short OR (close<slow-3.6*ATR)`
+HOLD when: roc_240 > 0.05% OR roc_60 > 0.02% OR rsi_14 <= 40 (oversold)
 
-- Z5 Calmar: **4.8293**
-- H6 Calmar: **0.7305**
-- Z5 PnL: **$126,192**
-- H6 PnL: **$25,168**
-- Trades Z5/H6: **722 / 650**
+- Z5 Calmar: **5.2556**
+- H6 Calmar: **0.8610**
+- Z5 PnL: **$130,562**
+- H6 PnL: **$28,468**
+- Trades Z5/H6: **694 / 626**
 
-Three changes from exp_577:
+Four changes from exp_577:
 1. roc_240 gate: hold non-dip long when roc_240 > 0.0005 (4h momentum positive)
-2. roc_60 gate: also hold when roc_60 > 0.0002 (1h momentum > 0.02%, OR with roc_240)
-3. Normal long stop: close < slow - 3.6*ATR emergency exit
+2. roc_60 gate: also hold when roc_60 > 0.0002 (1h momentum > 0.02%)
+3. RSI gate: also hold when rsi_14 <= 40 (oversold conditions = bounce expected)
+4. Normal long stop: close < slow - 3.6*ATR emergency exit
 
-roc_60 sweep (0.0001→4.81, 0.00015→4.81, 0.0002→4.8293(peak), 0.00025→4.81, 0.0005→4.82, 0.001→4.78, 0.002→4.75, no gate→4.77).
+RSI sweep (35→5.03, 38→5.11, 39→5.25, 40→5.2556(peak), 42→5.10, 45→5.21).
 
 ## What to try next — signals that MUST generalize
 
