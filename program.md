@@ -692,6 +692,30 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 388 | **Two-tier: DIP_MULT2=3.95** | **4.3081** | **Yes** | Z5=4.3081 H6=0.6006 Z5pnl=$117,068 H6pnl=$21,518 Trades_Z5=735 Trades_H6=660. NEW CHAMPION! KEY: H6 UNCHANGED from exp_386 (exact same $21,518/660 trades). DIP_MULT2=3.95 adds Z5-ONLY dip trades (never appear in H6). Free Z5 alpha! Try DIP_MULT2=3.9. |
 
+| 389 | Two-tier DIP_MULT2=3.9 | 4.2834 | No | Z5=4.2834 H6=0.5915 Z5pnl=$116,398 H6pnl=$21,302 Trades_Z5=736 Trades_H6=661. Fails gate. Cliff edge: 3.95 ATR→H6 unchanged (Z5-exclusive), 3.9 ATR→H6 degrades (bad H6 trades appear). DIP_MULT2=3.95 is the floor for Tier2. |
+
+| 390 | Three-tier: add Tier3=(3.95/45/stop5.0) | 4.2430 | No | Z5=4.2430 H6=0.6006 Z5pnl=$115,298 H6pnl=$21,518 Trades_Z5=737 Trades_H6=660. H6 unchanged but Z5 dropped (-0.065). Tier3 (45-bar) adds noisy Z5-damaging trades — too short to be reliable. |
+
+| 391 | Two-tier STOP1=6.0 (wider Tier1 stop) | 4.2982 | No | Z5=4.2982 H6=0.5974 Z5pnl=$117,132 H6pnl=$21,572 Trades_Z5=734 Trades_H6=660. Fails gate. Wider Tier1 stop lets bad H6 dips run. STOP1=5.5 confirmed optimal. |
+
+| 392 | Two-tier DIP_MULT1=3.85 | 4.3007 | No | Z5=4.3007 H6=0.6168 Z5pnl=$116,868 H6pnl=$22,208 Trades_Z5=735 Trades_H6=661. DIP_MULT1 sweep: 3.85→4.3007/0.617, 3.9→4.3081/0.601(champion). Lower threshold = better H6 but lower Z5. Champion 3.9 is optimal for Z5. |
+
+| 393 | Two-tier DIP_MULT2=3.92 boundary test | 4.2834 | No | Z5=4.2834 H6=0.5915 — IDENTICAL to DIP_MULT2=3.9. Discrete jump: dips between 3.90 and 3.94 ATR in recently-reversed conditions don't exist — same trades as 3.9. DIP_MULT2=3.95 is the confirmed floor. |
+
+| 394 | Two-tier + time stop 240 bars | 4.3081 | No | Z5=4.3081 H6=0.6006 — IDENTICAL to champion. No dip trade held 240+ bars — price/EMA exits always fire first. Time stop never reached. |
+| 395 | Two-tier + time stop 120 bars (2 hours) | 4.3081 | No | Z5=4.3081 H6=0.6006 — IDENTICAL to champion. 120-bar time stop also never fires. Confirmed: all dip trades exit via price/EMA conditions well before 120 bars. Time stops are irrelevant. |
+| 396 | LOOKBACK2=50 (shorter Tier2 trend requirement) | 4.2369 | No | Z5=4.2369 H6=0.5991 Z5pnl=$115,132 H6pnl=$21,462 Trades_Z5=731 Trades_H6=660. Fails gate. Shorter lookback hurts both metrics. |
+| 397 | LOOKBACK2=55 | 4.2304 | No | Z5=4.2304 H6=0.6000 Z5pnl=$114,958 H6pnl=$21,498 Trades_Z5=731 Trades_H6=660. Both worse than champion. |
+| 398 | LOOKBACK2=70 | 4.2426 | No | Z5=4.2426 H6=0.5696 Z5pnl=$115,288 H6pnl=$20,788 Trades_Z5=733 Trades_H6=663. LOOKBACK2 sweep: 50→4.24/0.60, 55→4.23/0.60, 60→4.31/0.60(champion), 70→4.24/0.57. 60-bar is clearly optimal for Tier2 lookback. |
+| 399 | DIP_MULT2=3.97 (between champion 3.95 and 4.0) | 4.2650 | No | Z5=4.2650 H6=0.6006 Z5pnl=$115,898 H6pnl=$21,518 Trades_Z5=734 Trades_H6=660. Below champion. DIP_MULT2=3.95 is the confirmed optimum. |
+| 400 | vol short threshold = 0.45 (fewer shorts) | 3.4334 | No | Z5=3.4334 H6=0.8871 Z5pnl=$104,922 H6pnl=$31,262 Trades_Z5=737 Trades_H6=647. Massive Z5 drop but H6 jumps. Vol sweep: 0.40→4.31/0.60(champ), 0.45→3.43/0.89. The 40-45th pct shorts are profitable in Z5 but harmful in H6. |
+| 401 | vol short threshold = 0.42 | 3.9675 | No | Z5=3.9675 H6=0.8362 Z5pnl=$113,428 H6pnl=$29,152 Trades_Z5=737 Trades_H6=649. Still well below champion Z5. Each step up in threshold drops Z5 significantly. |
+| 402 | vol short threshold = 0.38 (more shorts) | 4.2540 | No | Z5=4.2540 H6=0.6530 Z5pnl=$120,108 H6pnl=$24,398 Trades_Z5=735 Trades_H6=665. Close to champion Z5 but below. H6 improves. More shorts slightly hurt Z5 near 0.40 optimum. |
+| 403 | vol short threshold = 0.35 | 3.9886 | No | Z5=3.9886 H6=0.5266 Z5pnl=$111,818 H6pnl=$19,958 Trades_Z5=717 Trades_H6=656. Fails gate. Vol sweep: 0.35→3.99/0.53, 0.38→4.25/0.65, 0.40→4.31/0.60(champion), 0.42→3.97/0.84, 0.45→3.43/0.89. 0.40 is clearly optimal. |
+| 404 | Three-tier: Tier3=(DIP_MULT3=4.5, LOOKBACK3=30, STOP3=4.0) | 4.2901 | No | Z5=4.2901 H6=0.5949 Z5pnl=$116,578 H6pnl=$21,312 Trades_Z5=736 Trades_H6=662. Fails gate. BUG: STOP3=4.0 fires immediately since entry is at 4.5 ATR below slow (stop already violated at entry). |
+| 405 | Three-tier Tier3=(4.5 ATR, 30-bar, STOP3=6.0) — bug fixed | 4.2864 | No | Z5=4.2864 H6=0.5833 Z5pnl=$116,478 H6pnl=$20,898 Trades_Z5=736 Trades_H6=662. Fails gate. Tier3 adds 1 Z5 trade but 2 bad H6 trades. 30-bar lookback too noisy for Tier3. |
+| 406 | **Three-tier: Tier3=(DIP_MULT3=5.0, LOOKBACK3=45, STOP3=6.5)** | **4.3132** | **Yes** | Z5=4.3132 H6=0.6006 Z5pnl=$117,208 H6pnl=$21,518 Trades_Z5=735 Trades_H6=660. NEW CHAMPION! Deeper entry (5.0 ATR) + longer trend requirement (45 bars) adds Z5-exclusive trade. H6 completely unchanged ($21,518/660). Free Z5 alpha from extreme dips in moderate-length uptrends. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -707,7 +731,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.3081 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3132 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
