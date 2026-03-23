@@ -1,14 +1,12 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 386: Two-tier dip with tier-specific stops.
-Tier1: DIP_MULT=3.9, LOOKBACK=120, STOP=5.5 ATR (stable uptrend, wider stop)
-Tier2: DIP_MULT=4.0, LOOKBACK=60, STOP=5.0 ATR (recent reversal, tighter stop)
-Hypothesis: Champion uses single stop=5.5 for both tiers. Tier2 entries (60-bar
-rising, recently reversed) are riskier — tighter stop at 5.0 ATR should cut bad
-H6 Tier2 trades earlier without affecting Tier1. This should improve H6 safety
-buffer while minimally impacting Z5 (in Z5's bull market, Tier2 dips recover
-quickly and rarely hit the 5.0 ATR stop). Net: better H6 with similar Z5.
+Exp 388: Two-tier boundary test — DIP_MULT2=3.95.
+Hypothesis: DIP_MULT2 sweep shows H6=0.608→0.602 going from 4.2→4.0. Each 0.1 ATR
+decrease in DIP_MULT2 reduces H6 by ~0.003. At DIP_MULT2=3.95, expect H6~0.600 (still
+passing gate). If true, Z5 should be ~4.27 (more Tier2 entries). This verifies whether
+the H6/Z5 tradeoff is smooth (linear) or whether 3.95 suddenly crashes H6 below 0.6
+(like a cliff edge). Critical boundary test.
 """
 
 import numpy as np
@@ -36,12 +34,12 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     n = len(close_arr)
     signals = np.zeros(n, dtype=np.int32)
     position = 0
-    dip_tier = 0  # 0=no dip, 1=Tier1, 2=Tier2
+    dip_tier = 0
 
     DIP_MULT1 = 3.9
     LOOKBACK1 = 120
     STOP1 = 5.5
-    DIP_MULT2 = 4.0
+    DIP_MULT2 = 3.95
     LOOKBACK2 = 60
     STOP2 = 5.0
     EXIT_ABOVE_SLOW = 0.25
@@ -62,7 +60,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
             if dip_tier > 0:
                 stop_mult = STOP1 if dip_tier == 1 else STOP2
                 if base_long:
-                    dip_tier = 0  # smooth transition to champion long
+                    dip_tier = 0
                 elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
                     position = 0
                     dip_tier = 0

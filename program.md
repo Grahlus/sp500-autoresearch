@@ -688,6 +688,10 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 386 | **Two-tier: tier-specific stops (Tier1=5.5, Tier2=5.0)** | **4.2650** | **Yes** | Z5=4.2650 H6=0.6006 Z5pnl=$115,898 H6pnl=$21,518 Trades_Z5=734 Trades_H6=660. NEW CHAMPION but H6=0.6006 RAZOR-THIN (0.0006 above gate). Tier2 tighter stop adds marginal Z5. H6 buffer essentially zero — next experiment must not hurt H6. |
 
+| 387 | Two-tier: tier-specific exits (T1=0.25 ATR, T2=0.0 ATR) | 4.2650 | No | Z5=4.2650 H6=0.6006 — IDENTICAL to champion. KEY INSIGHT: EXIT_ABOVE_SLOW is irrelevant — smooth transition (base_long fires) handles virtually all dip exits. Explicit price-based exit is a fallback that almost never fires. |
+
+| 388 | **Two-tier: DIP_MULT2=3.95** | **4.3081** | **Yes** | Z5=4.3081 H6=0.6006 Z5pnl=$117,068 H6pnl=$21,518 Trades_Z5=735 Trades_H6=660. NEW CHAMPION! KEY: H6 UNCHANGED from exp_386 (exact same $21,518/660 trades). DIP_MULT2=3.95 adds Z5-ONLY dip trades (never appear in H6). Free Z5 alpha! Try DIP_MULT2=3.9. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -703,7 +707,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.2650 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3081 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
