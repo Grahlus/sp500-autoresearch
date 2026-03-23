@@ -680,6 +680,8 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 382 | **Two-tier: Tier1=(3.9/120) OR Tier2=(4.2/60)** | **4.2446** | **Yes** | Z5=4.2446 H6=0.6081 Z5pnl=$115,342 H6pnl=$21,788 Trades_Z5=733 Trades_H6=661. NEW CHAMPION! Lower Tier2 threshold captures more intermediate dips. DIP_MULT2 sweep: 4.2→4.245(champion), 4.5→4.237. Try 4.0. H6 still barely above gate — careful. |
 
+| 383 | **Two-tier: Tier1=(3.9/120) OR Tier2=(4.0/60)** | **4.2586** | **Yes** | Z5=4.2586 H6=0.6016 Z5pnl=$115,722 H6pnl=$21,552 Trades_Z5=734 Trades_H6=660. NEW CHAMPION! DIP_MULT2 sweep: 4.5→4.237, 4.2→4.245, 4.0→4.259(champion). H6=0.6016 BARELY passes gate — dangerously close. Do NOT lower DIP_MULT2 further. Instead: try Tier3. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -695,7 +697,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.2446 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.2586 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

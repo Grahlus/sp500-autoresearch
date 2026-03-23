@@ -1,12 +1,13 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 382: Two-tier dip — Tier2 DIP_MULT=4.2 (vs champion's 4.5).
-Hypothesis: exp_381 champion uses Tier2=4.5 ATR. Try 4.2 — more Tier2 entries (lower
-threshold) while still requiring 60-bar rising slow. DIP_MULT2 sweep: need to find
-optimal between 3.9 (Tier1) and 4.5 (current Tier2). 4.2 would catch more intermediate
-dips that are too shallow for Tier2@4.5 but not slow_rising_120. If these dips recover
-in Z5, Z5 improves. If they hurt H6, revert.
+Exp 383: Two-tier dip — Tier2 DIP_MULT=4.0.
+Hypothesis: exp_382 champion uses Tier2=4.2. Try 4.0 — even lower threshold. Tier1
+captures slow_rising_120 dips at 3.9 ATR. Tier2 at 4.0 would overlap significantly with
+Tier1 (only difference: slow_rising_60 not slow_rising_120). New entries only come from
+cases where slow_rising_60=True but slow_rising_120=False (slow EMA recently started
+rising, was flat/declining 120 bars ago but rising 60 bars ago). This is a "recently
+turned upward" category. DIP_MULT2=4.0 for these cases is a test of this subset.
 
 """
 
@@ -41,7 +42,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     DIP_MULT1 = 3.9
     LOOKBACK1 = 120
     # Tier 2: deeper dip in shorter-term uptrend
-    DIP_MULT2 = 4.2
+    DIP_MULT2 = 4.0
     LOOKBACK2 = 60
     EXIT_ABOVE_SLOW = 0.25
     DIP_STOP_MULT = 5.5
