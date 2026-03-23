@@ -1,15 +1,13 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 366: Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.5 ATR
+Exp 368: Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.25 ATR
          + dip stop-loss at slow - 5.5 ATR.
-Hypothesis: exp_364 (DIP_MULT=4.0, stop=5.5) gives Z5=4.0923 — best dip result so far
-but still 0.006 below champion. Lower DIP_MULT=3.9 ATR entry threshold catches MORE
-dip trades in Z5 (more alpha) while the stop at slow-5.5 ATR protects H6 from
-continued drops. Previously 3.9 ATR without stop gave H6=0.45 (fails gate), but with
-the 1.6 ATR stop margin from entry (3.9 → 5.5), H6 dip trades that continue falling
-get stopped out before destroying the ratio. Net effect: Z5 should increase (more dips
-captured) and H6 might pass gate due to stop protection.
+Hypothesis: exp_366 champion uses EXIT_ABOVE_SLOW=0.5 (exit at slow+0.5 ATR). DIP_MULT=3.9
+confirmed optimal. Test EXIT_ABOVE_SLOW=0.25 — exit sooner, before the trend ema stabilizes.
+This books profits earlier and allows re-entry on subsequent base_long signal at a better price.
+If profit target is the constraint, earlier exit = more closed winning trades = lower drawdown.
+Or it might reduce Z5 if dips often recover further than slow+0.25.
 """
 
 import numpy as np
@@ -40,8 +38,8 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
 
     DIP_MULT = 3.9
     SLOW_LOOKBACK = 120
-    EXIT_ABOVE_SLOW = 0.5
-    DIP_STOP_MULT = 5.5  # exit dip trade if price falls this far below slow EMA
+    EXIT_ABOVE_SLOW = 0.25
+    DIP_STOP_MULT = 5.5
 
     for i in range(n):
         close = close_arr[i]

@@ -648,21 +648,26 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 366 | **Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.5 ATR + stop at slow-5.5 ATR** | **4.2022** | **Yes** | Z5=4.2022 H6=0.6867 Z5pnl=$114,142 H6pnl=$23,728 Trades_Z5=724 Trades_H6=657. NEW CHAMPION! Lower DIP_MULT=3.9 (vs 4.0) catches more dips in Z5 while stop at 5.5 ATR protects H6. Both metrics beat target (Z5>4.0979, H6>=0.6). +0.104 Z5 over previous champion. |
 
+| 367 | Dip 3.8 ATR / 120-bar + stop 5.5 ATR (lower entry threshold) | 4.1955 | No | Z5=4.1955 H6=0.6703 Z5pnl=$113,962 H6pnl=$23,322 Trades_Z5=726 Trades_H6=657. Z5 below champion (4.1955 vs 4.2022). DIP_MULT sweep with stop=5.5: 3.8=4.1955, 3.9=4.2022(peak), 4.0=4.0923. 3.9 ATR is the optimal entry threshold. |
+
+| 368 | **Dip 3.9 ATR / 120-bar + stop 5.5 ATR + exit at slow+0.25 ATR** | **4.2128** | **Yes** | Z5=4.2128 H6=0.6776 Z5pnl=$114,432 H6pnl=$23,472 Trades_Z5=725 Trades_H6=658. NEW CHAMPION! Earlier exit (slow+0.25 vs slow+0.5) improves Z5. Exit sweep: 0.0=?, 0.25=4.2128(peak?), 0.5=4.2022, 1.0=4.0681. Try EXIT=0.0. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
 
 ## Current champion — DO NOT touch
 
-OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0979, H6=0.6570 (exp_321, commit d1555de).
+OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA crossover. Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). PLUS stateful dip-buying: enter long when slow rising (120-bar), close < slow - 3.9*ATR, NOT base_long, NOT base_short; exit dip at slow+0.5*ATR; stop at slow-5.5*ATR; smooth transition to champion long when EMA turns bullish during dip. → Z5=4.2022, H6=0.6867 (exp_366, commit 000cda6).
 Key insights:
 - HL2 median(EMA_380, EMA_425, EMA_470) more robust than single span=425
-- Wider ensemble spread (±45) better than narrow (±25 in exp_320)
 - OHLC4 fast confirmed best; HL2 median slow confirmed best structure
-- Longs: vol-free; Shorts: vol > 40th pct (unchanged from original champion)
-- Median averaging reduces crossover noise vs single span
+- Dip-buying adds mean-reversion trades during champion flat periods
+- DIP_MULT=3.9 ATR (enter threshold), DIP_STOP_MULT=5.5 ATR (stop level)
+- Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
+- EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.0979 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.2022 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
