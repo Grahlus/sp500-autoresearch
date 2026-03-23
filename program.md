@@ -43,7 +43,7 @@ your own previous best, indefinitely.
 - Every row must include Z5, H6, and PnL in the Notes column
 
 Log format
-| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX H6=X.XX PnL=$XX,XXX Trades=N |
+| NNN | hypothesis | Z5 Calmar | Kept? | Z5=X.XX H6=X.XX Z5pnl=$XX,XXX H6pnl=$XX,XXX Trades_Z5=N Trades_H6=N |
 
 ---
 
@@ -566,7 +566,87 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 317 | Bar body displacement EWM(60) < 0 as short filter | 2.4229 | No | Z5=2.4229 H6=-0.1018 PnL=$58,108 Trades=1468. Body filter almost always TRUE; creates forced-flat periods on longs causing churn |
 | 318 | Volume-Weighted EMA (VWEMA) as slow line | 1.6152 | No | Z5=1.6152 H6=-0.3646 PnL=$85,872 Trades=613. VWEMA tracks too fast during high-vol; standard EMA confirmed optimal |
 | 319 | (H-L)*volume momentum as short filter | 3.1554 | No | Z5=3.1554 H6=0.5448 PnL=$84,448 Trades=718. Fails gate; HL*vol product worse than pure volume — range correlated with vol, no addl info |
-| 320 | **Median of HL2 EMA(400/425/450) slow ensemble** | **4.0815** | **Yes** | Z5=4.0815 H6=0.6538 PnL=$109,052 Trades=690. NEW CHAMPION! Marginal Z5 improvement (+0.0039); median more robust than single span |
+| 320 | **Median of HL2 EMA(400/425/450) slow ensemble** | **4.0815** | **Yes** | Z5=4.0815 H6=0.6538 PnL=$109,052 Trades=690. NEW CHAMPION! Marginal Z5 improvement; median more robust than single span |
+| 321 | **Median of HL2 EMA(380/425/470) slow ensemble — wider spread** | **4.0979** | **Yes** | Z5=4.0979 H6=0.6570 PnL=$109,308 Trades=689. NEW CHAMPION! Wider ensemble further improves both Z5 and H6 |
+| 322 | Median EMA(360/425/490) — ±65 spread | 4.0353 | No | Z5=4.0353 H6=0.6534 PnL=$108,132 Trades=688. Below champion; ±45 is better than ±65 |
+| 323 | Mean of EMA(380/425/470) vs champion's median | 3.9878 | No | Z5=3.9878 H6=0.5820 PnL=$106,682 Trades=685. Fails gate; mean is worse than median (mean raises threshold in uptrend, cutting longs) |
+| 324 | Median EMA(390/425/460) — ±35 spread | 4.0892 | No | Z5=4.0892 H6=0.6570 PnL=$109,258 Trades=689. Below champion; ±35 < ±45 |
+| 325 | Median EMA(375/425/475) — ±50 spread | 4.0619 | No | Z5=4.0619 H6=0.6570 PnL=$108,348 Trades=689. Confirmed: ±25=4.0815, ±35=4.0892, ±45=4.0979(PEAK), ±50=4.0619, ±65=4.0353 |
+| 326 | Median EMA(381/426/471) — center=426, ±45 | 4.1544 | No | Z5=4.1544 H6=0.5548 PnL=$110,748 Trades=684. Best Z5 yet but fails gate; center=426 ensemble preserves same H6 cliff as single span=426 |
+| 327 | Dual ensemble: fast median(4/6/8), slow median(380/425/470) | 4.0953 | No | Z5=4.0953 H6=0.6527 PnL=$109,422 Trades=690. Slightly below champion; fast ensemble hurts, single EMA(6) optimal for fast |
+| 328 | 5-span median EMA(355/390/425/460/495) | 3.9929 | No | Z5=3.9929 H6=0.6534 PnL=$108,038 Trades=688. 5-span worse than 3-span; 3-span median(380/425/470) is the optimal ensemble |
+| 329 | Asymmetric median EMA(360/425/470) — lower outer at −65 | 4.0261 | No | Z5=4.0261 H6=0.6534 PnL=$108,958 Trades=689. Asymmetric worse than symmetric ±45; symmetric (380/425/470) confirmed optimal |
+| 330 | Stateful long: spread widening required for new entries | 4.0917 | No | Z5=4.0917 H6=0.6570 PnL=$109,142 Trades=689. Slightly below champion; spread-widening filter cuts profitable re-entries |
+| 331 | Rolling 6-bar median as fast signal (vs EWM) | 2.5700 | No | Z5=2.5700 H6=0.4137 Z5pnl=$96,438 H6pnl=unknown Trades_Z5=696 Trades_H6=unknown. Fails gate; rolling median terrible — EWM recency weighting is essential for fast signal |
+| 332 | Median EMA(379/424/469) — center=424, ±45 | 4.0210 | No | Z5=4.0210 H6=0.6852 Z5pnl=$108,418 H6pnl=$25,018 Trades_Z5=687 Trades_H6=628. Below champion; center=424 gives better H6 but lower Z5. Gradient confirmed: center↓=lower Z5/better H6, center↑=higher Z5/worse H6, center=425 is sweet spot |
+
+| 333 | ATR trailing stop on longs: exit when close < roll_max(120) - 2.5*ATR14 | 1.1371 | No | Z5=1.1371 H6=-0.2493 Z5pnl=$44,310 H6pnl=-$12,430 Trades_Z5=3040 Trades_H6=2201. Massive churn (3040 vs 689); price oscillates around 2.5 ATR threshold constantly on 1-min bars — vectorized trailing stop is fundamentally incompatible with this data granularity |
+
+| 334 | VR(30) >= 0.9 regime filter — trade only when trending | 0.2620 | No | Z5=0.2620 H6=0.3451 Z5pnl=$7,520 H6pnl=$6,050 Trades_Z5=672 Trades_H6=510. Catastrophic; VR(30) on 1-min NQ is backwards — 1-min bars mean-revert at 30-min scale so VR>=0.9 removes good trend trades, not bad ones |
+
+| 335 | ATR(14) > rolling_mean(ATR14, 120) as short filter (replace vol) | 3.3223 | No | Z5=3.3223 H6=0.4398 Z5pnl=$89,652 H6pnl=$17,038 Trades_Z5=1500 Trades_H6=1392. Churn and fails gate; ATR spikes/drops rapidly creating entry/exit churn; vol filter confirmed superior |
+
+| 336 | Long-only diagnostic: remove all shorts | 3.1321 | No | Z5=3.1321 H6=0.1758 Z5pnl=$53,838 H6pnl=$4,278 Trades_Z5=541 Trades_H6=467. DIAGNOSTIC: Shorts add +0.97 Z5 and +0.48 H6 (shorts are crucial to BOTH metrics, especially H6). Keep vol-based short structure. |
+
+| 337 | RSI(14) > 65 as short entry (dead-cat bounce pattern) | 1.0523 | No | Z5=1.0523 H6=-0.6333 Z5pnl=$22,562 H6pnl=-$24,452 Trades_Z5=2437 Trades_H6=2242. Massive churn; RSI(14) oscillates above/below 65 rapidly on 1-min data. Key lesson: short filters must be slow-moving (like vol_60 rolling mean) to avoid churn |
+
+| 338 | Vol + RSI(60)<50 double short filter | 2.4408 | No | Z5=2.4408 H6=0.0074 Z5pnl=$70,078 H6pnl=$268 Trades_Z5=1745 Trades_H6=1446. Same forced-flat churn as all AND-on-short experiments. CONFIRMED: vol_60/quantile(480) is optimal short filter; cannot be improved via AND conditions |
+
+| 339 | RSI(240) standalone signal — 4-hour momentum | -0.4637 | No | Z5=-0.4637 H6=-0.8426 Z5pnl=-$13,420 H6pnl=-$34,440 Trades_Z5=2029 Trades_H6=1418. Negative Calmar; RSI(240) oscillates around thresholds creating churn; 4-hour RSI direction is not predictive on 1-min NQ |
+
+| 340 | Bar Close Strength EWM(380/425/470) median > 0.55 signal | -0.8080 | No | Z5=-0.8080 H6=-0.2841 Z5pnl=-$6,355 H6pnl=-$2,030 Trades_Z5=84 Trades_H6=65. Almost always flat (84 trades); BCS_ewm stays near 0.50 regardless of trend — no discriminatory power at ±0.05 threshold |
+
+| 341 | ATR-normalized EMA: require 0.5 ATR margin before trading | 2.2981 | No | Z5=2.2981 H6=-0.1823 Z5pnl=$85,102 H6pnl=-$7,468 Trades_Z5=1012 Trades_H6=870. Same ±0.5 ATR dead zone creates oscillation churn near threshold. All entry-band variations confirmed bad. |
+
+| 342 | vol > rolling(720).quantile(0.40) — longer 12-hour vol baseline | 3.3966 | No | Z5=3.3966 H6=0.6764 Z5pnl=$93,222 H6pnl=$22,592 Trades_Z5=623 Trades_H6=572. H6 slightly better (+0.02) but Z5 much worse (-0.70). 480-bar window confirmed optimal for Z5. |
+
+| 343 | vol > rolling(480).quantile(0.35) — more permissive short filter | 3.7248 | No | Z5=3.7248 H6=0.5849 Z5pnl=$103,098 H6pnl=$22,618 Trades_Z5=674 Trades_H6=623. Fails gate; more shorts at pct35 hurts both metrics. pct40 is confirmed better. |
+
+| 344 | vol > rolling(480).quantile(0.45) — stricter short filter | 3.3788 | No | Z5=3.3788 H6=0.9510 Z5pnl=$98,248 H6pnl=$34,728 Trades_Z5=687 Trades_H6=609. Z5 drops but H6 excellent. Vol quantile sweep: pct35=3.72/0.58, pct40=4.10/0.66(champion), pct45=3.38/0.95. pct40 is optimal. |
+
+| 345 | vol_60 > rolling(240).quantile(0.40) — 4-hour vol window | 3.3004 | No | Z5=3.3004 H6=1.0621 Z5pnl=$90,198 H6pnl=$35,358 Trades_Z5=854 Trades_H6=733. Vol window sweep complete: 240=3.30/1.06, 480=4.10/0.66(champion), 720=3.40/0.68. Shorter window better H6, worse Z5 — exact inverse tradeoff. |
+
+| 346 | Close price for slow EMA ensemble (vs champion's HL2) | 3.8235 | No | Z5=3.8235 H6=0.5623 Z5pnl=$104,982 H6pnl=$21,228 Trades_Z5=687 Trades_H6=626. Fails gate; HL2 confirmed better than close for slow ensemble |
+
+| 347 | OHLC4 for slow EMA ensemble (vs champion's HL2) | 3.8974 | No | Z5=3.8974 H6=0.6367 Z5pnl=$105,778 H6pnl=$23,572 Trades_Z5=683 Trades_H6=627. Fails gate. Price input sweep complete: HL2=4.10/0.66(champion) > OHLC4=3.90/0.64 > Close=3.82/0.56. HL2 confirmed optimal. |
+
+| 348 | Bar body momentum EWM(380/425/470) median as signal | 1.4124 | No | Z5=1.4124 H6=-0.0925 Z5pnl=$71,298 H6pnl=-$4,838 Trades_Z5=1401 Trades_H6=1326. Churn; body_ewm oscillates near 0 → rapid long/flat transitions. Fixed-threshold comparisons always cause churn. EMA crossover (both sides track price) is fundamentally superior. |
+
+| 349 | Adaptive fast EMA: span=4 trending (ATR>1.1x), span=8 ranging (ATR<0.9x), span=6 neutral | 3.7041 | No | Z5=3.7041 H6=0.3663 Z5pnl=$106,968 H6pnl=$14,092 Trades_Z5=713 Trades_H6=635. Fails gate; adaptive spanning hurts both metrics. EWM(6) confirmed optimal regardless of ATR regime. |
+
+| 350 | Minimum vol pct10(480) floor for longs, pct40(480) for shorts | 3.2319 | No | Z5=3.2319 H6=0.8019 Z5pnl=$92,970 H6pnl=$27,980 Trades_Z5=895 Trades_H6=740. Z5 drops; even pct10 creates churn at vol transitions. No vol filter for longs confirmed optimal. |
+
+| 351 | Asymmetric: champion longs + pct40(240) shorts | 3.3004 | No | Z5=3.3004 H6=1.0621 Z5pnl=$90,198 H6pnl=$35,358 Trades_Z5=854 Trades_H6=733. Identical to exp_345 (longs were already vol-free in both). 240-bar window for shorts: better H6 but much worse Z5. Cannot close the Z5/H6 gap. |
+
+| 352 | Volume-weighted price momentum (VWPM) rolling(425) as signal | 1.5486 | No | Z5=1.5486 H6=-0.4318 Z5pnl=$82,325 H6pnl=-$12,090 Trades_Z5=884 Trades_H6=766. VWPM oscillates near 0; price_diff*volume is noisy. Confirms: fixed-threshold at 0 creates churn. Only cross-EMA (both sides adapt) avoids this. |
+
+| 353 | Stateful trailing stop 3 ATR peak, 30-bar cooldown | 2.4062 | No | Z5=2.4062 H6=-0.5412 Z5pnl=$71,918 H6pnl=-$33,312 Trades_Z5=1550 Trades_H6=1218. Still churn: stop fires, cooldown expires with EMA still bullish, immediately re-enters → stop fires again. 3 ATR too tight on 1-min NQ |
+
+| 354 | Stateful trailing stop 3 ATR + fresh EMA crossover required after stop | 2.7762 | No | Z5=2.7762 H6=-0.2165 Z5pnl=$65,425 H6pnl=-$8,760 Trades_Z5=784 Trades_H6=710. Fewer trades (784 vs 1550) but Z5 drops 1.3pts — 3 ATR too tight, misses too much upside waiting for fresh crossover |
+
+| 355 | Stateful trailing stop 8 ATR + fresh crossover | 2.7901 | No | Z5=2.7901 H6=0.5617 Z5pnl=$86,070 H6pnl=$18,505 Trades_Z5=724 Trades_H6=651. Fails gate. CONCLUSION: trailing stops fundamentally incompatible with long-duration EMA trend following — the slow EMA is designed to hold through pullbacks; any stop contradicts this and destroys Calmar |
+
+| 356 | EMA spread (std of e380/e425/e470) filter — strong trend only | 1.5571 | No | Z5=1.5571 H6=-0.0325 Z5pnl=$41,405 H6pnl=-$1,140 Trades_Z5=499 Trades_H6=445. Spread filter backwards: low spread = crossover zone = when we SHOULD enter. Prevents initial entries, only allows late participation in established trends. |
+
+| 357 | Champion + stateful dip-buying (3 ATR below slow, exit at slow) | 4.2837 | No | Z5=4.2837 H6=0.1637 Z5pnl=$128,648 H6pnl=$8,052 Trades_Z5=792 Trades_H6=731. HIGHEST Z5 SEEN (+0.19 vs champion) but H6 fails gate. Dip-buying works in Z5 bull market but fails H6 (deeper dips in Dec-Mar). Need H6-compatible gate for dip entries. |
+
+| 358 | Dip-buying gated by slow EMA rising (60-bar lookback), 3 ATR | 4.2676 | No | Z5=4.2676 H6=0.4181 Z5pnl=$115,398 H6pnl=$16,862 Trades_Z5=730 Trades_H6=657. H6 improved from 0.16→0.42 with rising gate but still fails. Need stricter conditions. |
+
+| 359 | Dip-buying 4 ATR + 120-bar slow rising | 4.0424 | No | Z5=4.0424 H6=0.6285 Z5pnl=$115,548 H6pnl=$21,852 Trades_Z5=720 Trades_H6=654. H6 passes gate (0.63>0.6) but Z5 below champion (-0.06). Progression: 3ATR/60=4.28/0.16, 3ATR/120=?, 4ATR/120=4.04/0.63. Need Z5>4.10 AND H6>=0.6. |
+
+| 360 | Dip-buying 3 ATR + 120-bar slow rising | 4.1771 | No | Z5=4.1771 H6=0.4454 Z5pnl=$114,712 H6pnl=$17,528 Trades_Z5=732 Trades_H6=665. Isolating lookback: 120 vs 60 gives Z5 -0.09, H6 +0.03. DIP_MULT is the main H6 driver. Matrix: 3.0/60=4.27/0.42, 3.0/120=4.18/0.45, 4.0/120=4.04/0.63 |
+
+| 361 | Dip-buying 3.5 ATR + 120-bar slow rising | 4.1232 | No | Z5=4.1232 H6=0.4475 Z5pnl=$115,728 H6pnl=$17,618 Trades_Z5=727 Trades_H6=659. Z5 above champion! But H6 still at 0.45. H6 jumps nonlinearly: 3.5→0.45, 4.0→0.63. Need DIP_MULT near 4.0 for H6>=0.6. |
+
+| 362 | Dip 4.0 ATR / 120-bar rising + smooth dip→champion + exit at slow+0.5ATR | 4.0895 | No | Z5=4.0895 H6=0.6337 Z5pnl=$115,372 H6pnl=$21,972 Trades_Z5=717 Trades_H6=652. SO CLOSE: H6 passes gate (0.63>0.6) but Z5=4.09 misses by 0.008. Smooth transition added +0.05 Z5 vs exp_359. Try EXIT=1.0 ATR |
+
+| 363 | Dip 4.0 ATR / 120-bar rising + smooth transition + exit at slow+1.0 ATR | 4.0681 | No | Z5=4.0681 H6=0.6394 Z5pnl=$114,768 H6pnl=$22,212 Trades_Z5=706 Trades_H6=642. H6 passes gate but Z5 dropped vs exp_362 (4.07 vs 4.09). Holding dip trade 1 ATR above slow captures less alpha than exiting at slow+0.5 ATR. Exit matrix: slow+0=4.04, slow+0.5=4.09, slow+1.0=4.07. Exit at slow+0.5 is optimal. |
+
+| 364 | Dip 4.0 ATR / 120-bar rising + smooth exit at slow+0.5 ATR + dip stop at slow-5.5 ATR | 4.0923 | No | Z5=4.0923 H6=0.6697 Z5pnl=$113,042 H6pnl=$23,452 Trades_Z5=721 Trades_H6=656. Stop-loss improved BOTH metrics vs exp_362 (Z5: 4.089→4.092, H6: 0.634→0.670). Stop at 5.5 ATR below slow cuts failed dip trades without affecting recoveries. Still 0.006 below champion Z5. Try tighter stop. |
+
+| 365 | Dip 4.0 ATR / stop at slow-5.0 ATR (tighter stop) | 4.0651 | No | Z5=4.0651 H6=0.6590 Z5pnl=$112,022 H6pnl=$23,212 Trades_Z5=722 Trades_H6=656. Tighter stop cuts winning dip trades too early. Stop sweep: no stop=4.089/0.634, 5.5 ATR=4.092/0.670(best), 5.0 ATR=4.065/0.659. Sweet spot is 5.5 ATR. |
+
+| 366 | **Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.5 ATR + stop at slow-5.5 ATR** | **4.2022** | **Yes** | Z5=4.2022 H6=0.6867 Z5pnl=$114,142 H6pnl=$23,728 Trades_Z5=724 Trades_H6=657. NEW CHAMPION! Lower DIP_MULT=3.9 (vs 4.0) catches more dips in Z5 while stop at 5.5 ATR protects H6. Both metrics beat target (Z5>4.0979, H6>=0.6). +0.104 Z5 over previous champion. |
 
 *(Agent appends rows here after each experiment)*
 
@@ -574,15 +654,15 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 ## Current champion — DO NOT touch
 
-OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(400/425/450) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0815, H6=0.6538 (exp_320, commit a49dfdd).
+OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: EMA crossover only (no vol filter). Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). → Z5=4.0979, H6=0.6570 (exp_321, commit d1555de).
 Key insights:
-- HL2 median(EMA_400, EMA_425, EMA_450) slightly more robust than single span=425
-- OHLC4 fast (includes open) is confirmed best for fast EMA
-- Longs: no vol filter needed — HL2 EMA provides quality anchor for long entries
-- Shorts: vol > 40th pct required — prevents false shorts in NQ's uptrend bias
-- Median ensemble averages out crossover noise across 3 slow spans
+- HL2 median(EMA_380, EMA_425, EMA_470) more robust than single span=425
+- Wider ensemble spread (±45) better than narrow (±25 in exp_320)
+- OHLC4 fast confirmed best; HL2 median slow confirmed best structure
+- Longs: vol-free; Shorts: vol > 40th pct (unchanged from original champion)
+- Median averaging reduces crossover noise vs single span
 
-New targets: Z5 > 4.0815 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.0979 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted
@@ -601,21 +681,43 @@ The following have been tested to death. Do not attempt any variation of these:
 - **Calendar/time-of-day features as primary signal** — Z5-specific overfit, H6=0.13
 - **GBM with calendar features** — all variants H6=0.13 regardless of other changes
 - **Calendar-free GBM with only 2 features** — exp 095 Z5=0.49, worse than simple rule
+- **Slow EMA span tuning around 380/425/470** — fully mapped (exps 320–332), center=425 ±45 optimal
+- **Fast EMA span tuning around 4–8** — fully mapped, EWM(6) on OHLC4 is optimal
+- **Ensemble spread/center tuning** — ±45 spread, center=425, 3-span all confirmed optimal
+- **Mean vs median ensemble** — median confirmed better (exp_323)
+- **5-span vs 3-span ensemble** — 3-span confirmed better (exp_328)
+- **AND conditions on short signal** — ALL create forced-flat churn (exps 308,309,311,312,315,317,319,338). Vol_60/quantile(480) is optimal; do not add any AND conditions
+- **OR conditions on short signal** — exp_313 tried, H6=0.5977 fails gate
+- **Alternative short filters (RSI, ATR, VR)** — all create churn or fail gate (exps 333,334,335,337,338)
+- **Trailing stops (vectorized or stateful)** — fundamentally incompatible with long-duration EMA trend following. The slow EMA(425) is designed to hold through pullbacks; any trailing stop contradicts this and destroys Calmar (exps 333,353,354,355)
+- **Fixed-threshold signals compared to 0 or a constant** — all create churn: bar body EWM, VWPM, RSI, BCS, ATR-normalized margin (exps 340,341,348,349,352). Only cross-EMA comparisons (both sides adaptive) avoid churn.
+- **Alternative price types for slow EMA** — HL2 > OHLC4 > Close confirmed (exps 346,347)
+- **Vol filter params beyond pct40(480)** — all worse: pct35/45 fail Z5 or H6, 240/720 bar windows trade off Z5 vs H6. pct40(480) is optimal (exps 342,343,344,345)
+- **Vol filter on longs** — no vol filter confirmed optimal for longs; any vol threshold creates churn (exp 350)
+- **Regime filters (VR, ATR-adaptive, EMA spread)** — all reduce Z5 by removing trend entries (exps 334,349,356)
+- **Adaptive fast EMA span by ATR regime** — EWM(6) is optimal regardless of volatility (exp 349)
+- **Asymmetric fast EMA for long/short** — exps 310, 316, single EWM(6) confirmed optimal
+- **VWEMA/VWAP blends for slow line** — exps 314, 318, HL2 EMA confirmed superior
 
 ## What to try next — signals that MUST generalize
 
 Only test signals with structural reasons to work across market regimes. NO calendar.
 
+Priority directions from user (post exp_332):
+- **Short signal redesign**: Longs and shorts use symmetric logic — try a completely different
+  entry condition for shorts. Example: RSI(14)-based, price-near-recent-high (failed breakout),
+  or ATR-expansion confirmation. The vol filter may not be optimal for shorts specifically.
+- **Trailing stop / dynamic exit**: Currently exit only on EMA crossover; an ATR-based trailing
+  stop on long positions could reduce max drawdown without cutting winners. Try rolling max over
+  N bars minus K*ATR as a "stay-long" condition (vectorized, no loop needed).
+- **Regime-based position sizing**: Scale to 0 in low-confidence regimes rather than binary in/out.
+  Example: go flat when variance ratio VR(30) < 0.8 (ranging market). Reduces drawdown in chop.
 - **Variance ratio regime**: VR(k) = Var(k-bar) / (k * Var(1-bar)) > 1 means trending.
-  Only trade VWAP EMA signal when VR confirms trending regime. Cuts mean-reverting noise.
-- **GBM with 5+ structural features**: trend_state + vol_state + rsi_14 + roc_60 + atr_relative.
-  More features but still NO calendar — tests if richer structural signal beats simple rule.
+  Only trade when VR confirms trending regime. Cuts mean-reverting noise.
 - **Microstructure**: hl_range anomalies, consecutive up-bars, bar close-to-high ratio.
-  NQ is liquid — price impact is real. Different mechanism entirely from trend-following.
-- **Mean reversion**: fade moves > N * atr_14. Opposite thesis from trend-following.
-- **Multi-timeframe momentum**: require BOTH short and medium-term EMA agree (non-trivially).
-- **Adaptive EMA**: span shrinks when VR > 1 (trending), expands when VR < 1 (ranging).
-  Structurally motivated, no calendar, adapts to regime.
+  NQ is liquid — different mechanism entirely from trend-following.
+- **Mean reversion (short-only)**: Fade moves > N * atr_14 as an alternative to current shorts.
+  Opposite thesis from trend-following — may be uncorrelated and combinable with current longs.
 
 ## Hypothesis quality bar
 

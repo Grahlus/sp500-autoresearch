@@ -1,11 +1,15 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 321: Median of HL2 EMA(380, 425, 470) slow ensemble — wider spread.
-Hypothesis: exp_320 used narrow span range (400/425/450, ±25).
-A wider range (380/425/470, ±45) might provide more meaningful averaging.
-The median would be the same as 425 when all 3 are in agreement,
-but diverges more on edge cases, potentially improving robustness.
+Exp 366: Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.5 ATR
+         + dip stop-loss at slow - 5.5 ATR.
+Hypothesis: exp_364 (DIP_MULT=4.0, stop=5.5) gives Z5=4.0923 — best dip result so far
+but still 0.006 below champion. Lower DIP_MULT=3.9 ATR entry threshold catches MORE
+dip trades in Z5 (more alpha) while the stop at slow-5.5 ATR protects H6 from
+continued drops. Previously 3.9 ATR without stop gave H6=0.45 (fails gate), but with
+the 1.6 ATR stop margin from entry (3.9 → 5.5), H6 dip trades that continue falling
+get stopped out before destroying the ratio. Net effect: Z5 should increase (more dips
+captured) and H6 might pass gate due to stop protection.
 """
 
 import numpy as np
@@ -17,17 +21,74 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     ema_fast = ohlc4.ewm(span=6, adjust=False).mean().values
 
     hl2 = (df["high"] + df["low"]) / 2.0
-    ema_slow_380 = hl2.ewm(span=380, adjust=False).mean().values
-    ema_slow_425 = hl2.ewm(span=425, adjust=False).mean().values
-    ema_slow_470 = hl2.ewm(span=470, adjust=False).mean().values
-    ema_slow = np.median([ema_slow_380, ema_slow_425, ema_slow_470], axis=0)
+    e380 = hl2.ewm(span=380, adjust=False).mean().values
+    e425 = hl2.ewm(span=425, adjust=False).mean().values
+    e470 = hl2.ewm(span=470, adjust=False).mean().values
+    ema_slow = np.median([e380, e425, e470], axis=0)
 
     vol_series = df["volume"].rolling(60).mean()
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
     vol_cur = vol_series.values
 
-    long_sig = ema_fast > ema_slow
-    short_sig = (ema_fast < ema_slow) & (vol_cur > vol_pct40)
+    atr14 = (df["high"] - df["low"]).rolling(14, min_periods=1).mean().values
+    close_arr = df["close"].values
 
-    signals = np.where(long_sig, 1, np.where(short_sig, -1, 0))
-    return signals.astype(int)
+    n = len(close_arr)
+    signals = np.zeros(n, dtype=np.int32)
+    position = 0
+    is_dip_trade = False
+
+    DIP_MULT = 3.9
+    SLOW_LOOKBACK = 120
+    EXIT_ABOVE_SLOW = 0.5
+    DIP_STOP_MULT = 5.5  # exit dip trade if price falls this far below slow EMA
+
+    for i in range(n):
+        close = close_arr[i]
+        slow = ema_slow[i]
+        atr = atr14[i]
+        base_long = ema_fast[i] > slow
+        base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
+        slow_prev = ema_slow[max(0, i - SLOW_LOOKBACK)]
+        slow_rising = slow > slow_prev
+        dip_entry = (
+            (not base_long)
+            and (not base_short)
+            and slow_rising
+            and (close < slow - DIP_MULT * atr)
+        )
+
+        if position == 1:
+            if is_dip_trade:
+                if base_long:
+                    is_dip_trade = False  # smooth transition to champion long
+                elif close >= slow + EXIT_ABOVE_SLOW * atr:
+                    position = 0
+                    is_dip_trade = False
+                elif close < slow - DIP_STOP_MULT * atr:
+                    position = 0  # stop-loss: dip is getting worse, not recovering
+                    is_dip_trade = False
+                elif base_short:
+                    position = 0
+                    is_dip_trade = False
+            else:
+                if not base_long:
+                    position = 0
+
+        elif position == -1:
+            if not base_short:
+                position = 0
+
+        if position == 0:
+            if base_long:
+                position = 1
+                is_dip_trade = False
+            elif base_short:
+                position = -1
+            elif dip_entry:
+                position = 1
+                is_dip_trade = True
+
+        signals[i] = position
+
+    return signals
