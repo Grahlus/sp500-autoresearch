@@ -1,11 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 662: roc_240-gated base_long exit (threshold=0.0005) + base_short override. NEW CHAMPION!
-Z5=4.7173, H6=0.6538. Gate non-dip long exit: hold when fast<slow but roc_240>0.05%.
-base_short override ensures we exit on high-vol downmoves regardless of 4h momentum.
-Threshold sweep: 0→4.97/0.40, 0.0001→4.70/0.66, 0.0003→4.69/0.68, 0.0005→4.72/0.65(peak Z5),
-0.0007→4.72/0.63, 0.001→4.53/0.62, 0.002→4.49/0.62, 0.003→4.49/0.60, 0.005→4.48/0.60.
+Exp 679: Emergency stop for normal long (dip_tier==0): close < slow - 3.6*ATR. NEW CHAMPION!
+Z5=4.7712, H6=0.6837. Stop sweep: 2.5→4.58, 3.0→4.68, 3.3→4.72, 3.5→4.76,
+3.6→4.7712(peak,same as 3.7), 3.7→4.7712, 3.8→4.76, 4.0→4.75, no stop→4.72.
+3.6 preferred over 3.7 (identical Z5, better H6=0.6837 vs 0.6684).
 """
 
 import numpy as np
@@ -88,7 +87,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0005) or base_short:
+                if (not base_long and roc_240_arr[i] <= 0.0005) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:

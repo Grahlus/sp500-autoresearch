@@ -994,6 +994,23 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 664 | roc_240 gate (0.0003) + base_short override | 4.6872 | No | Z5=4.6872 H6=0.6838 Trades_Z5=722. Z5 below peak. Higher H6 but 0.0005 remains best Z5. |
 | 665 | roc_240 gate (0.0007) + base_short override | 4.7162 | No | Z5=4.7162 H6=0.6349 Trades_Z5=736. Nearly tied with 0.0005 but just below. 0.0005 confirmed optimal. |
 
+| 666 | roc_240 gate on dip_tier→0 transition (base_long AND roc_240>0.0005) | 4.7173 | No | Identical to champion. dip_tier→normal transition is already well-specified; base_long is sufficient confirmation. roc_240 adds nothing here. |
+| 667 | roc_240-gated short exit (hold when roc_240 < -0.0005) | 3.8347 | No | Z5=3.8347 H6=1.3639. H6 explodes to 1.36 but Z5 drops to 3.83. Holding shorts prevents long re-entries in Z5 bull — same cascading opportunity cost as all short extension experiments. |
+| 668 | roc_240-boosted re-entry (dead band 0.01*ATR when roc_240>0.005) | 4.7173 | No | Identical Z5, H6=0.6564. The OR condition for entry never adds new trades. Dead band direction not promising. |
+| 669 | Additive tier0 dip entry (roc_240>0.005, close<slow-2.5*ATR) | 4.7173 | No | Identical. roc_240>0.005 AND close<slow-2.5*ATR AND fast_declining rarely coexist — structurally impossible in most bull corrections. |
+| 670 | Additive tier0 dip entry (roc_240>0, close<slow-2.0*ATR) | 4.5937 | No | Z5=4.5937 H6=0.6327 Trades_Z5=731. Fires 3 extra trades but they're lower quality (shallow 2.0*ATR dips don't bounce reliably). |
+| 671 | Additive tier0 dip entry (roc_240>0, close<slow-3.0*ATR) | 4.5681 | No | Z5=4.5681 H6=0.6147. Still worse — additive dip entries add noise at any ATR level. |
+| 672 | Re-sweep EXIT_ABOVE_SLOW=0.0 with roc_240 gate | 4.7121 | No | Slightly below champion. EAS=0.25 still optimal with new architecture. |
+| 673 | Re-sweep EXIT_ABOVE_SLOW=0.5 with roc_240 gate | 4.6988 | No | Z5=4.6988 H6=0.6671. Worse. EAS=0.25 confirmed optimal with roc_240 gate. |
+| 674 | Normal long stop loss (close < slow - 2.5*ATR) | 4.5818 | No | Z5=4.5818 H6=0.6621 Trades_Z5=746. Stop too tight — cuts profitable roc_240-held positions. |
+| 675 | Normal long stop loss (close < slow - 3.5*ATR) | 4.7575 | No | Z5=4.7575 H6=0.6860 Trades_Z5=734. BEATS CHAMPION Z5! Stop catches runaway drawdowns in H6 bear. New best found. |
+| 676 | Normal long stop loss (close < slow - 3.0*ATR) | 4.6808 | No | Z5=4.6808 H6=0.6965 Trades_Z5=740. Below 3.5 peak. |
+| 677 | Normal long stop loss (close < slow - 4.0*ATR) | 4.7537 | No | Z5=4.7537 H6=0.6021 Trades_Z5=732. Slightly below 3.5. |
+| 678 | Normal long stop loss (close < slow - 3.3*ATR) | 4.7213 | No | Z5=4.7213 H6=0.6972. Narrowing in on 3.5-3.7 range. |
+| 679 | Normal long stop loss (close < slow - 3.6*ATR) | 4.7712 | YES | Z5=4.7712 H6=0.6837 Z5pnl=$125,202 H6pnl=$23,958 Trades_Z5=733 Trades_H6=664. NEW CHAMPION! Peak of sweep (3.6=3.7, chose 3.6 for better H6). |
+| 680 | Normal long stop loss (close < slow - 3.8*ATR) | 4.7643 | No | Z5=4.7643 H6=0.6428. Slightly below 3.6 peak. |
+| 681 | Normal long stop loss (close < slow - 3.7*ATR) | 4.7712 | No | Identical to 3.6 (same trades=733, PnL=$125,202). 3.6 preferred for tighter stop and H6=0.6837. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -1082,17 +1099,19 @@ The following have been tested to death. Do not attempt any variation of these:
 
 ## Current champion — DO NOT touch
 
-**exp_662**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + roc_240-gated base_long exit (threshold=0.0005) with base_short override
+**exp_679**: Three-tier dip-buying + EMA(6/median(380/425/470)) bidirectional + vol gate + entry dead band + fast_declining filter + dynamic timeout (80/60) + 0.02*ATR magnitude threshold + roc_240-gated base_long exit (threshold=0.0005) with base_short override + normal long stop loss (close < slow - 3.6*ATR)
 
-- Z5 Calmar: **4.7173**
-- H6 Calmar: **0.6538**
-- Z5 PnL: **$123,788**
-- H6 PnL: **$23,128**
-- Trades Z5/H6: **728 / 660**
+- Z5 Calmar: **4.7712**
+- H6 Calmar: **0.6837**
+- Z5 PnL: **$125,202**
+- H6 PnL: **$23,958**
+- Trades Z5/H6: **733 / 664**
 
-Key change from exp_577: non-dip long positions now hold through brief fast<slow periods when roc_240 > 0.05% (4h momentum still positive). Exit is forced when base_short fires (high-vol downmove) regardless of momentum. This prevents false exits in Z5 bull-market corrections while correctly exiting in H6 volatile bear periods.
+Two key changes from exp_577:
+1. roc_240-gated exit: non-dip long holds through fast<slow when 4h momentum > 0.05% (with base_short override)
+2. Normal long stop at slow - 3.6*ATR: prevents runaway drawdown when roc_240 gate holds long into deep decline
 
-roc_240 threshold sweep confirmed: 0.0005 is the peak Z5 across all tested values (0, 0.0001, 0.0003, 0.0005, 0.0007, 0.001, 0.002, 0.003, 0.005, 0.010). All threshold values from 0.0001 to 0.005 beat the old champion Z5=4.4490 AND pass H6 >= 0.6.
+Stop sweep (3.6*ATR optimal): 2.5→4.58, 3.0→4.68, 3.3→4.72, 3.5→4.76, 3.6=3.7→4.7712(peak), 3.8→4.76, 4.0→4.75, no stop→4.72.
 
 ## What to try next — signals that MUST generalize
 
