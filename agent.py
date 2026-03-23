@@ -34,6 +34,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     position = 0
     dip_tier = 0
     dip_entry_bar = 0  # bar index when dip was entered
+    dip_entry_fast = 0.0  # fast EMA value at dip entry
 
     DIP_MULT1 = 3.9
     LOOKBACK1 = 130
@@ -72,7 +73,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     stop_mult = STOP3
                 if base_long:
                     dip_tier = 0
-                elif (i - dip_entry_bar) > 60:
+                elif (i - dip_entry_bar) > (80 if ema_fast[i] > dip_entry_fast else 60):
                     position = 0
                     dip_tier = 0
                 elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
@@ -107,6 +108,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                 else:
                     dip_tier = 3
                 dip_entry_bar = i
+                dip_entry_fast = ema_fast[i]
 
         signals[i] = position
 
