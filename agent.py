@@ -1,7 +1,8 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 736: roc_5 threshold tightened from 0.0002 to 0.0001 in non-dip exit gate.
+Exp 739: Add roc_15 <= 0.0001 as 5th AND condition to non-dip exit gate.
+15-min momentum bridging 5-min and 60-min timescales.
 """
 
 import numpy as np
@@ -28,6 +29,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     roc_240_arr = df["roc_240"].fillna(0).values
     roc_60_arr = df["roc_60"].fillna(0).values
     roc_5_arr = df["roc_5"].fillna(0).values
+    roc_15_arr = df["roc_15"].fillna(0).values
     rsi_14_arr = df["rsi_14"].fillna(50).values
 
     n = len(close_arr)
@@ -89,7 +91,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0005 and roc_60_arr[i] <= 0.0002 and roc_15_arr[i] <= 0.0001 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.6 * atr_val):
                     position = 0
 
         elif position == -1:
