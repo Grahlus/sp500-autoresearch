@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        745
-best_z5_calmar:  5.9521
-best_h6_calmar:  0.7262
-best_z5_pnl:     $143,902
-best_h6_pnl:     $27,668
-trades_z5:       963
-trades_h6:       1001
-next_exp:        747
+best_exp:        747
+best_z5_calmar:  5.9745
+best_h6_calmar:  0.7233
+best_z5_pnl:     $143,912
+best_h6_pnl:     $27,558
+trades_z5:       962
+trades_h6:       998
+next_exp:        752
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 5.9521 + 143902/25000 = **11.71**
+Current champion composite: 5.9745 + 143912/25000 = **11.73**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 11.71:
+elif z5_composite <= 11.73:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -945,3 +945,8 @@ Hypothesis quality bar — before coding, ask:
 | 744 | roc_60 threshold 0.00005 (even tighter) | 5.8536 | No | Z5=5.8536 H6=0.7012 Z5pnl=$143,568 composite=11.60. Z5 Calmar drops. roc_60=0.0001 confirmed optimal. |
 | 745 | roc_240 threshold 0.0003 (tighter from 0.0005) | 5.9521 | Yes | Z5=5.9521 H6=0.7262 Z5pnl=$143,902 H6pnl=$27,668 composite=11.71. New champion! |
 | 746 | roc_240 threshold 0.0001 (tighter from 0.0003) | 5.9522 | No | Z5=5.9522 H6=0.7114 Z5pnl=$143,938 composite=11.71. Essentially no change — tighter roc_240 has no effect. |
+| 747 | roc_240 threshold 0.0002 (between 0.0001 and 0.0003) | 5.9745 | Yes | Z5=5.9745 H6=0.7233 Z5pnl=$143,912 H6pnl=$27,558 composite=11.73. New champion! roc_240 sweet spot at 0.0002. |
+| 748 | RSI threshold 35 (lower from 40) in non-dip exit gate | 5.7858 | No | Z5=5.7858 H6=0.7492 Z5pnl=$142,612 composite=11.49. Looser RSI allows exits too early. |
+| 749 | RSI threshold 45 (higher from 40) in non-dip exit gate | 5.5641 | No | Z5=5.5641 H6=0.7131 Z5pnl=$142,272 composite=11.26. Tighter RSI hurts. RSI>40 confirmed optimal. |
+| 750 | non-dip hard stop 3.0*ATR (tighter from 3.6) | 5.7346 | No | Z5=5.7346 H6=0.6815 Z5pnl=$140,872 composite=11.37. Tighter stop hurts. |
+| 751 | non-dip hard stop 4.0*ATR (looser from 3.6) | 5.8897 | No | Z5=5.8897 H6=0.6781 Z5pnl=$142,428 composite=11.59. Looser stop also worse. 3.6*ATR confirmed optimal. |
