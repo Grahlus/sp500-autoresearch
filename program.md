@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        698
-best_z5_calmar:  5.2556
-best_h6_calmar:  0.8610
-best_z5_pnl:     $130,562
-best_h6_pnl:     $28,468
-trades_z5:       694
-trades_h6:       626
-next_exp:        709
+best_exp:        745
+best_z5_calmar:  5.9521
+best_h6_calmar:  0.7262
+best_z5_pnl:     $143,902
+best_h6_pnl:     $27,668
+trades_z5:       963
+trades_h6:       1001
+next_exp:        747
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 5.2556 + 130562/25000 = **10.48**
+Current champion composite: 5.9521 + 143902/25000 = **11.71**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 10.48:
+elif z5_composite <= 11.71:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -907,3 +907,41 @@ Hypothesis quality bar — before coding, ask:
 | 706 | roc_60=0.0003 with RSI gate | 5.2412 | No | Z5=5.2412. roc_60=0.0002 confirmed. |
 | 707 | Re-sweep stop=4.0*ATR with RSI gate | 5.1939 | No | Z5=5.1939. stop=3.6 confirmed optimal. |
 | 708 | Dynamic stop: 5.0*ATR when RSI<30, else 3.6*ATR | 5.0629 | No | Z5=5.0629. Looser stop in deeply oversold allows big losses in H6 bear. Fixed stop=3.6 confirmed. |
+| 709 | RSI<30 additive dip entry (OR to existing dip_entry) | 5.5119 | Yes | Z5=5.5119 H6=0.6658 Z5pnl=$139,102 H6pnl=$27,752 composite=11.08. New champion! |
+| 710 | RSI-only dip: assign tier1 stop (5.5*ATR) instead of tier3 (8.0*ATR) | 5.7034 | Yes | Z5=5.7034 H6=0.8133 Z5pnl=$141,088 H6pnl=$29,982 composite=11.35. New champion! |
+| 711 | RSI dip threshold <35 (more entries) | 5.5241 | No | Z5=5.5241 H6=0.4232 Z5pnl=$140,668 H6pnl=$17,972 composite=11.14. H6 collapsed — threshold <30 confirmed optimal. |
+| 712 | RSI dip threshold <25 (fewer, extreme entries) | 5.4465 | No | Z5=5.4465 H6=0.7415 Z5pnl=$136,698 composite=10.91. Too restrictive, fewer good trades. RSI<30 confirmed. |
+| 713 | RSI dip requires fast_declining (filter bouncing entries) | 5.7238 | Yes | Z5=5.7238 H6=0.7956 Z5pnl=$141,592 H6pnl=$29,552 composite=11.39. New champion! |
+| 714 | Dip timeout gate: skip if RSI<40 (still oversold) | 5.7238 | No | Z5=5.7238 identical. Timeout never binds in Z5 — other exits dominate. |
+| 715 | Require roc_240<0 for shorts (bearish momentum filter) | 3.9990 | No | Z5=3.9990 H6=0.4939 Z5pnl=$112,442. Both Z5 and H6 collapsed. Changing base_short breaks dip_entry logic (more false dip entries when base_short suppressed). |
+| 716 | EXIT_ABOVE_SLOW = 0.5 (was 0.25, let dip trades ride) | 5.6997 | No | Z5=5.6997 H6=0.7338 Z5pnl=$142,198 composite=11.39. Calmar and H6 both degraded despite tiny PnL gain. 0.25 confirmed optimal. |
+| 717 | roc_15>0 required for base_long_enter (15-min momentum confirm) | 5.6350 | No | Z5=5.6350 H6=0.7373 Z5pnl=$142,522 composite=11.34. Filtering entries by 15-min momentum hurts — misses valid early trend entries. |
+| 718 | Vol spike dip entry (vol_5 > 2.0*vol_240 + fast_declining) | 5.6675 | No | Z5=5.6675 H6=0.8054 Z5pnl=$139,948 composite=11.27. Capitulation signal adds noise — vol spike entries during neutral market are lower quality than RSI<30 entries. |
+| 719 | Large bar range dip entry (bar_range > 2.5*ATR + fast_declining) | 5.6903 | No | Z5=5.6903 H6=0.8371 Z5pnl=$140,762 composite=11.32. Same pattern: extra entries improve H6 but reduce Z5 Calmar. RSI<30 is the best additive signal. |
+| 720 | 3 consecutive down bars dip entry (microstructure) | 5.4342 | No | Z5=5.4342 H6=0.1847 Z5pnl=$139,282 1197 trades. H6 catastrophic — 3-bar down pattern fires constantly in bear market creating mass losing longs. Microstructure bar patterns banned. |
+| 721 | RSI>=60 recovery exit for dip positions | 5.6836 | No | Z5=5.6836 H6=0.6858 Z5pnl=$140,092 composite=11.29. Exits ATR-tier dips too early before full recovery. EXIT_ABOVE_SLOW=0.25 already handles this cleanly. |
+| 722 | EXIT_ABOVE_SLOW = 0.0 (exit dip exactly at slow EMA) | 5.5397 | No | Z5=5.5397 H6=0.7643 Z5pnl=$137,468 composite=11.04. Exits too early, misses recovery. EXIT_ABOVE_SLOW sweep: 0.0→11.04, 0.25→11.39(champion), 0.5→11.39-. 0.25 confirmed optimal. |
+| 723 | RSI dip: roc_5<-0.001 instead of fast_declining | 5.4709 | No | Z5=5.4709 H6=1.0334 Z5pnl=$137,672 composite=10.98. Too restrictive: 768 trades vs 995. H6 outstanding (1.03) but Z5 drops. roc_5 threshold 10x larger than fast_declining EMA magnitude. fast_declining confirmed for RSI path. |
+| 724 | RSI dip: require roc_60 > -0.001 (hourly momentum not negative) | 5.2201 | No | Z5=5.2201 H6=0.9303 Z5pnl=$130,898 composite=10.46. Z5 very bad. RSI<30 occurs BECAUSE of sharp declines — filtering by negative roc_60 removes most valid RSI dips. Momentum filters on RSI dip entries are contradictory. |
+| 725 | RSI>70 dead-cat bounce short (exit when RSI<50 or base_long) | 5.0918 | No | Z5=5.0918 H6=1.0438 Z5pnl=$136,582 H6pnl=$35,448 composite=10.56. H6 excellent (1.04) but Z5 Calmar drops. RSI>70 fires during bull market continuation → false shorts in Z5. Needs bear regime filter. |
+| 726 | RSI>70 short with roc_240<0 regime filter | 5.2975 | No | Z5=5.2975 H6=1.0582 Z5pnl=$141,982 composite=10.98. Z5 still hurt by corrections where roc_240<0 briefly. |
+| 727 | RSI>70 short with roc_240<-0.002 regime filter | 5.5855 | No | Z5=5.5855 H6=1.0018 Z5pnl=$141,178 composite=11.23. Closer but still below champion. |
+| 728 | RSI>70 short with roc_240<-0.005 regime filter | 5.6523 | No | Z5=5.6523 H6=1.0427 Z5pnl=$139,822 composite=11.25. Still below. RSI>70 mean-reversion short direction exhausted — even strict bear-regime filters hurt Z5 Calmar through Z5 corrections. BANNED. |
+| 729 | fast_declining window=8 (beyond previous sweep of 3-7) | 5.6786 | No | Z5=5.6786 H6=0.7600 Z5pnl=$140,472 composite=11.30. Window=8 worse than 5 even with RSI dip. fast_declining window sweep fully confirmed at 5. |
+| 730 | LOOKBACK1=125 (was 130) | 5.7172 | No | Z5=5.7172 H6=0.7991 Z5pnl=$141,428 composite=11.37. Essentially identical to champion. |
+| 731 | LOOKBACK1=135 (was 130) | 5.7234 | No | Z5=5.7234 H6=0.7799 Z5pnl=$141,582 composite=11.387. Essentially identical. LOOKBACK1 extremely stable — 125/130/135 all equivalent. Confirmed at 130. |
+| 732 | RSI-only dip: assign dip_tier=2 (STOP2=5.0 tighter) instead of tier1 | 5.7137 | No | Z5=5.7137 H6=0.7407 Z5pnl=$141,818 composite=11.386. Essentially identical to champion. Stop difference (5.0 vs 5.5) negligible. tier1 assignment confirmed. |
+| 733 | DIP_MULT1=4.0 (was 3.9, deepen tier1 since RSI handles shallows) | 5.7161 | No | Z5=5.7161 H6=0.7954 Z5pnl=$141,528 composite=11.377. Essentially same. DIP_MULT1 extremely stable at 3.9. |
+| 734 | Slow EMA base HLC3 = (H+L+C)/3 instead of HL2 = (H+L)/2 | 5.5471 | No | Z5=5.5471 H6=0.7833 Z5pnl=$139,098 composite=11.11. HL2 confirmed significantly better basis for slow EMA. |
+| 735 | Add roc_5<=0.0002 as 4th AND condition to non-dip exit gate | 5.7713 | Yes | Z5=5.7713 H6=0.7926 Z5pnl=$141,998 H6pnl=$29,408 composite=11.45. New champion! 5-min momentum check prevents exits during brief 5-min dips within longer uptrends. |
+| 736 | roc_5 threshold 0.0001 (tighter, only exit when 5-min clearly negative) | 5.8850 | Yes | Z5=5.8850 H6=0.7963 Z5pnl=$142,378 H6pnl=$29,588 composite=11.58. New champion! |
+| 737 | roc_5 threshold 0.0 (must be negative) | 5.8083 | No | Z5=5.8083 H6=0.7847 composite=11.48. Too restrictive. |
+| 738 | roc_5 threshold 0.00005 (between 0 and 0.0001) | 5.8686 | No | Z5=5.8686 H6=0.7862 composite=11.55. roc_5 sweep: 0.0→11.48, 0.00005→11.55, 0.0001→11.58(peak), 0.0002→11.45. roc_5=0.0001 confirmed optimal. |
+| 739 | Add roc_15<=0.0001 as 5th AND condition to exit gate | 5.8884 | Yes | Z5=5.8884 H6=0.7271 Z5pnl=$143,408 H6pnl=$27,918 composite=11.62. New champion! H6 dipped (0.7271) but still passes gate. |
+| 740 | roc_15 threshold 0.0002 (looser) | 5.8536 | No | Z5=5.8536 H6=0.7440 Z5pnl=$142,202 composite=11.54. Looser 15-min threshold is worse. |
+| 741 | roc_15 threshold 0.00005 (tighter than 0.0001) | 5.8895 | Yes | Z5=5.8895 H6=0.7299 Z5pnl=$143,532 H6pnl=$28,018 composite=11.63. New champion! Marginal improvement. |
+| 742 | roc_15 threshold 0.0 (must be negative) | 5.8858 | No | Z5=5.8858 H6=0.7578 Z5pnl=$143,442 composite=11.62. roc_15 sweep: 0.0→11.62, 0.00005→11.63(peak), 0.0001→11.62, 0.0002→11.54. roc_15=0.00005 confirmed. |
+| 743 | roc_60 threshold 0.0001 (tighter from 0.0002) | 5.9170 | Yes | Z5=5.9170 H6=0.7063 Z5pnl=$143,742 H6pnl=$27,112 composite=11.67. New champion! H6=0.7063 near gate floor. |
+| 744 | roc_60 threshold 0.00005 (even tighter) | 5.8536 | No | Z5=5.8536 H6=0.7012 Z5pnl=$143,568 composite=11.60. Z5 Calmar drops. roc_60=0.0001 confirmed optimal. |
+| 745 | roc_240 threshold 0.0003 (tighter from 0.0005) | 5.9521 | Yes | Z5=5.9521 H6=0.7262 Z5pnl=$143,902 H6pnl=$27,668 composite=11.71. New champion! |
+| 746 | roc_240 threshold 0.0001 (tighter from 0.0003) | 5.9522 | No | Z5=5.9522 H6=0.7114 Z5pnl=$143,938 composite=11.71. Essentially no change — tighter roc_240 has no effect. |
