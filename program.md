@@ -652,6 +652,16 @@ if your approach requires fitting (it will be called automatically before `get_s
 
 | 368 | **Dip 3.9 ATR / 120-bar + stop 5.5 ATR + exit at slow+0.25 ATR** | **4.2128** | **Yes** | Z5=4.2128 H6=0.6776 Z5pnl=$114,432 H6pnl=$23,472 Trades_Z5=725 Trades_H6=658. NEW CHAMPION! Earlier exit (slow+0.25 vs slow+0.5) improves Z5. Exit sweep: 0.0=?, 0.25=4.2128(peak?), 0.5=4.2022, 1.0=4.0681. Try EXIT=0.0. |
 
+| 369 | Dip 3.9 ATR / stop 5.5 ATR + exit at slow+0.0 ATR | 4.1957 | No | Z5=4.1957 H6=0.6747 Z5pnl=$114,292 H6pnl=$23,378 Trades_Z5=726 Trades_H6=658. Exit sweep complete. Results: EXIT=0.0→4.1957, EXIT=0.25→4.2128(champion), EXIT=0.5→4.2022, EXIT=1.0→4.0681. EXIT=0.25 is optimal. |
+
+| 370 | Dip 3.9 ATR / 90-bar lookback + stop 5.5 + exit 0.25 | 4.0761 | No | Z5=4.0761 H6=0.7479 Z5pnl=$110,332 H6pnl=$25,868 Trades_Z5=726 Trades_H6=657. Shorter lookback hurts Z5 despite excellent H6. SLOW_LOOKBACK sweep: 90=4.076, 120=4.213(champion). Try 150. |
+
+| 371 | Dip 3.9 ATR / 150-bar lookback + stop 5.5 + exit 0.25 | 4.1881 | No | Z5=4.1881 H6=0.5944 Z5pnl=$114,712 H6pnl=$20,518 Trades_Z5=727 Trades_H6=662. SLOW_LOOKBACK sweep done: 90=4.076/0.748, 120=4.213/0.678(champion), 150=4.188/0.594. 120 bars is confirmed optimal — H6 drops below 0.6 target at 150. |
+
+| 372 | Dip 3.9 ATR / stop 6.0 ATR (looser stop) | 4.2099 | No | Z5=4.2099 H6=0.6402 Z5pnl=$114,352 H6pnl=$22,492 Trades_Z5=725 Trades_H6=658. Stop sweep done. Results: stop=5.0→4.065, stop=5.5→4.213(champion), stop=6.0→4.210. 5.5 ATR is confirmed optimal. |
+
+| 373 | **Dip 3.9 ATR / 120-bar / stop 5.5 / exit+0.25 + ATR(20) smoothing** | **4.2201** | **Yes** | Z5=4.2201 H6=0.6197 Z5pnl=$114,678 H6pnl=$22,202 Trades_Z5=724 Trades_H6=657. NEW CHAMPION! ATR(20) smoother → more consistent dip thresholds vs ATR(14). H6 dropped slightly (0.678→0.620) but still passes gate. ATR sweep: try ATR(30). |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -667,7 +677,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.2022 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.2201 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

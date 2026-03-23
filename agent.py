@@ -1,13 +1,13 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 368: Dip 3.9 ATR / 120-bar rising + smooth exit at slow+0.25 ATR
-         + dip stop-loss at slow - 5.5 ATR.
-Hypothesis: exp_366 champion uses EXIT_ABOVE_SLOW=0.5 (exit at slow+0.5 ATR). DIP_MULT=3.9
-confirmed optimal. Test EXIT_ABOVE_SLOW=0.25 — exit sooner, before the trend ema stabilizes.
-This books profits earlier and allows re-entry on subsequent base_long signal at a better price.
-If profit target is the constraint, earlier exit = more closed winning trades = lower drawdown.
-Or it might reduce Z5 if dips often recover further than slow+0.25.
+Exp 373: Dip 3.9 ATR / 120-bar / stop 5.5 ATR / exit+0.25 ATR + ATR(20) period.
+Hypothesis: Champion uses ATR(14). ATR(20) is smoother (less noisy) — the absolute
+threshold levels (DIP_MULT*ATR, STOP*ATR) would be based on a more stable volatility
+estimate. In high-vol periods, ATR(14) may spike and prevent valid dip entries
+(threshold too high). ATR(20) smooths over vol spikes → more consistent dip entries.
+Conversely, fewer false signals when vol is temporarily low. All params unchanged:
+DIP_MULT=3.9, STOP=5.5, EXIT=0.25, LOOKBACK=120.
 """
 
 import numpy as np
@@ -28,7 +28,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
     vol_cur = vol_series.values
 
-    atr14 = (df["high"] - df["low"]).rolling(14, min_periods=1).mean().values
+    atr20 = (df["high"] - df["low"]).rolling(20, min_periods=1).mean().values
     close_arr = df["close"].values
 
     n = len(close_arr)
@@ -44,7 +44,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     for i in range(n):
         close = close_arr[i]
         slow = ema_slow[i]
-        atr = atr14[i]
+        atr = atr20[i]
         base_long = ema_fast[i] > slow
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
         slow_prev = ema_slow[max(0, i - SLOW_LOOKBACK)]
