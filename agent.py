@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 783: fast EMA using HL2 price instead of OHLC4.
+Exp 799: ATR window 30 re-sweep with HL2.
 """
 
 import numpy as np
@@ -23,7 +23,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     vol_cur = vol_series.values
 
     bar_range = (df["high"] - df["low"]).values
-    atr = pd.Series(bar_range).rolling(25, min_periods=1).mean().values
+    atr = pd.Series(bar_range).rolling(30, min_periods=1).mean().values
     close_arr = df["close"].values
     roc_240_arr = df["roc_240"].fillna(0).values
     roc_60_arr = df["roc_60"].fillna(0).values
