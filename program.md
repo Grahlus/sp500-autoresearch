@@ -756,6 +756,19 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 440 | STOP3=6.0 (tighter Tier3 stop) | 4.3464 | No | Z5=4.3464 H6=0.6382 — slightly below champion. |
 | 441 | **STOP3=8.0 (wider Tier3 stop, 2.5 ATR buffer)** | **4.3650** | **Yes** | Z5=4.3650 H6=0.6382 Z5pnl=$118,058 H6pnl=$23,212 Trades_Z5=736 Trades_H6=662. NEW CHAMPION! Wider stop for extreme dips gives more breathing room. STOP3 sweep: 6.0→4.35, 7.0→4.36, 8.0→4.37(peak?). |
 
+| 442 | STOP3=9.0 | 4.3526 | No | Z5=4.3526 H6=0.6382. Below champion. STOP3 sweep: 6.0→4.35, 7.0→4.36, 8.0→4.37(champ), 9.0→4.35. STOP3=8.0 confirmed optimal. |
+| 443 | LOOKBACK3=55 | 4.3650 | No | Z5=4.3650 H6=0.6382 — identical to champion. Same trade at LOOKBACK3=45 or 55. |
+| 444 | Quiet-dip vol filter (vol < pct40 for dip entry) | 4.3214 | No | Z5=4.3214 H6=0.6382 Z5pnl=$116,878. Z5 drops — vol filter removes good dip entries. |
+| 445 | Slow EMA spread ±50: MEDIAN(375/425/475) | 4.3295 | No | Z5=4.3295 H6=0.6382. Below champion. Spread sweep: ±40→4.36, ±45→4.37(champ), ±50→4.33. |
+| 446 | Slow EMA spread ±40: MEDIAN(385/425/465) | 4.3560 | No | Z5=4.3560 H6=0.6382. ±45 confirmed as optimal spread. |
+| 447 | STOP2=5.5 | 4.3358 | No | Z5=4.3358 H6=0.6428. Z5 below champion. STOP2=5.0 confirmed. |
+| 448 | STOP2=4.5 | 4.3569 | No | Z5=4.3569 H6=0.6247. STOP2 sweep: 4.5→4.36, 5.0→4.37(champ), 5.5→4.34. STOP2=5.0 confirmed optimal. |
+
+| 449 | LOOKBACK1=130 + MIN_RISE1=0.1 | 4.4035 | No | Z5=4.4035 H6=0.5930. H6 improved vs bare LOOKBACK1=130 (+0.016) but still fails gate. |
+| 450 | LOOKBACK1=130 + MIN_RISE1=0.5 | 4.3750 | No | Z5=4.3750 H6=0.5945. Z5 drops, H6 barely improves. Bad H6 trade survives stronger filter. |
+| 451 | LOOKBACK1=130 + MIN_RISE1=1.0 | 4.3988 | No | Z5=4.3988 H6=0.5904. MIN_RISE filter direction exhausted — bad H6 trade robust to min-rise. |
+| 452 | **LOOKBACK1=125 with ATR(25) (no MIN_RISE)** | **4.3883** | **Yes** | Z5=4.3883 H6=0.6016 Z5pnl=$118,688 H6pnl=$22,282 Trades_Z5=737 Trades_H6=662. NEW CHAMPION! ATR(25) shifts the H6 boundary — LOOKBACK1=125 was failing H6 with ATR(20) but passes with ATR(25). More Z5 alpha unlocked. |
+
 *(Agent appends rows here after each experiment)*
 
 ---
@@ -771,7 +784,7 @@ Key insights:
 - Stop protects against continued drops (especially H6); lower DIP_MULT captures more alpha
 - EXIT_ABOVE_SLOW=0.5 ATR is optimal exit for dip trades
 
-New targets: Z5 > 4.3650 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3883 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

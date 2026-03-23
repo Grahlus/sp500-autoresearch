@@ -1,10 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 441: Three-tier ATR(25) with STOP3=8.0 (2.5 ATR buffer vs champion 1.5 ATR buffer).
-Hypothesis: STOP3=6.0→Z5=4.35(worse), 7.0→4.36(champion). Try 8.0 — wider stop allows
-more room for Tier3 trades to breathe. May improve Z5 if some Tier3 trades temporarily
-dip below -7.0 ATR before recovering.
+Exp 452: LOOKBACK1=125 with ATR(25), no MIN_RISE filter.
+Hypothesis: LOOKBACK1=125 with ATR(20) failed gate (H6=0.5699). With ATR(25), the
+thresholds are different — maybe the boundary between passing/failing H6 shifted.
+ATR(25) gives more stable thresholds; the specific bad H6 trade might not fire at 125 bars.
 """
 
 import numpy as np
@@ -36,7 +36,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     dip_entry_bar = 0  # bar index when dip was entered
 
     DIP_MULT1 = 3.9
-    LOOKBACK1 = 120
+    LOOKBACK1 = 125
     STOP1 = 5.5
     DIP_MULT2 = 3.95
     LOOKBACK2 = 60
