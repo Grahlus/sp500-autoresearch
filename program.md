@@ -796,6 +796,51 @@ if your approach requires fitting (it will be called automatically before `get_s
 | 477 | Fast EMA span=5 | 4.2060 | No | REVERT H6=0.2233. Span=5 also terrible. Span=6 is the only viable value. |
 | 478 | LOOKBACK1=120 with ATR(25) | 4.3650 | No | Z5=4.3650 H6=0.6382. Pattern: LOOKBACK monotonically improves Z5 until H6 gate fails at 126. Optimum is LOOKBACK1=125. |
 | 479 | vol_pct60 filter on dip entry | 4.3458 | No | Z5=4.3458 H6=0.6016 Trades_Z5=736. Same result as vol_pct80/90 — same 1 extreme-vol dip trade blocked. Vol filter approach fully exhausted. |
+| 480 | Close-to-high ratio > 0.5 filter on dip entry | 4.1681 | No | Z5=4.1681 H6=0.6083 Trades_Z5=762. More trades, worse Z5. CTH filter creates re-entries like recovery-bar. |
+| 481 | 2-bar short confirmation (fast < slow for 2 consecutive bars) | 3.8104 | No | Z5=3.8104 H6=0.6509. More trades (886), terrible Z5. AND conditions on short = banned. |
+| 482 | EWM-based ATR (span=25) instead of rolling mean | 4.3056 | No | Z5=4.3056 H6=0.5968. Fails gate. Rolling mean ATR confirmed optimal. |
+| 483 | Smoothed LOOKBACK1=126: mean(slow[i-124:i-129]) | 4.3893 | No | Z5=4.3893 H6=0.5966. Same as plain LOOKBACK1=126 — smoothing doesn't change trades. |
+| 484 | Smoothed LOOKBACK1=125: mean(slow[i-123:i-128]) | 4.3883 | No | Z5=4.3883 H6=0.6016. Identical to champion — smoothing at 125 changes nothing. |
+| 485 | fast_declining filter (fast[i] < fast[i-5]) + LOOKBACK1=125 | 4.3828 | No | Z5=4.3828 H6=0.6555. H6 significantly improved (+0.054)! Z5 slightly lower. Filter is promising. |
+| 486 | fast_declining + LOOKBACK1=126 | 4.3813 | No | Z5=4.3813 H6=0.6524. Passes gate but Z5 below champion. Continue sweeping. |
+| 487 | fast_declining + LOOKBACK1=127 | 4.3828 | No | Z5=4.3828 H6=0.6556. Same as LOOKBACK1=125. Pattern non-monotonic. |
+| **488** | **fast_declining + LOOKBACK1=130** | **4.3924** | **Yes** | Z5=4.3924 H6=0.6621 Z5pnl=$118,798 H6pnl=$23,748 Trades_Z5=741 Trades_H6=667. NEW CHAMPION! fast_declining unlocks LOOKBACK1=130+. Commit d880b85. |
+| 489 | fast_declining + LOOKBACK1=135 | 4.3894 | No | Z5=4.3894 H6=0.5755. Fails gate. Upper boundary around 132-134. |
+| 490 | fast_declining + LOOKBACK1=132 | 4.3896 | No | Z5=4.3896 H6=0.6388. Passes gate but Z5 below 130 champion. |
+| 491 | fast_declining + LOOKBACK1=131 | 4.3885 | No | Z5=4.3885 H6=0.6586. Passes gate. LOOKBACK1=130 confirmed as optimal peak. |
+| 492 | fast_declining window=3 (fast[i] < fast[i-3]) | 4.3872 | No | Z5=4.3872. Below champion. Window=5 confirmed optimal. |
+| 493 | fast_declining window=7 (fast[i] < fast[i-7]) | 4.3774 | No | Z5=4.3774. Worse. Window=5 confirmed optimal. |
+| 494 | fast_declining on tier1 only (tier2/3 no filter) | 4.3905 | No | Z5=4.3905. Slightly worse than all-tier champion. All-tier filter is better. |
+| 495 | DIP_MULT1=3.85 | 4.3203 | No | Z5=4.3203. Much worse. DIP_MULT1=3.9 confirmed optimal. |
+| 496 | DIP_MULT1=3.95 | 4.3906 | No | Z5=4.3906. Slightly worse. DIP_MULT1=3.9 confirmed optimal. |
+| 497 | STOP1=5.7 | 4.3673 | No | Z5=4.3673. Worse. STOP1=5.5 confirmed optimal. |
+| 498 | STOP1=6.0 | 4.3869 | No | Z5=4.3869. Passes gate but below Z5 champion. STOP1=5.5 confirmed. |
+| 499 | ATR(27) with fast_declining | 4.2994 | No | Z5=4.2994. Worse. ATR(25) remains optimal even with fast_declining. |
+| 500 | LOOKBACK2=65 | 4.3726 | No | Z5=4.3726. Worse. LOOKBACK2=60 confirmed optimal. |
+| 501 | LOOKBACK3=40 | 4.3874 | No | Z5=4.3874 H6=0.6535. Passes gate but Z5 below champion. LOOKBACK3=45 confirmed optimal. |
+
+| 502 | DIP_MULT3=5.7 | 4.3924 | No | Z5=4.3924 H6=0.6621. Identical to champion — all existing tier3 entries deeper than 5.7*ATR. |
+| 503 | DIP_MULT3=6.0 | 4.3924 | No | Z5=4.3924 H6=0.6621. Identical to champion. All tier3 entries deeper than 6.0*ATR. |
+| diag | DIP_MULT3=100 (diagnostic) | 4.3837 | No | Z5=4.3837 H6=0.6621. Confirms tier3 does contribute alpha. Trades=741 (same). |
+| 504 | DIP_MULT3=5.3 | 4.3783 | No | Z5=4.3783 H6=0.6544. Trades=742. More tier3 entries hurt. DIP_MULT3=5.5 confirmed optimal. |
+| 505 | STOP3=7.5 | 4.3889 | No | Z5=4.3889 H6=0.6621. Slightly worse. STOP3=8.0 confirmed optimal. |
+| 506 | STOP3=9.0 | 4.3800 | No | Z5=4.3800 H6=0.6621. Worse than 7.5 and 8.0. STOP3=8.0 confirmed. |
+| 507 | STOP2=5.5 | 4.3632 | No | Z5=4.3632 H6=0.6669. H6 slightly better but Z5 worse. STOP2=5.0 confirmed optimal. |
+
+| 508 | DIP_MULT2=4.0 | 4.3787 | No | Z5=4.3787 H6=0.6621. Trades=740. Worse. DIP_MULT2=3.95 confirmed optimal. |
+| 509 | DIP_MULT2=3.9 | 4.3874 | No | Z5=4.3874 H6=0.6621. Below champion. DIP_MULT2=3.95 confirmed. |
+| 510 | ATR(24) | 4.3706 | No | Z5=4.3706 H6=0.6183. Worse on both. ATR(25) confirmed. |
+| 511 | Reversed tier priority (tier3 > tier2 > tier1) | 4.3591 | No | Z5=4.3591 H6=0.6365. Both worse. Current priority (tier1 first) is correct. |
+| 512 | LOOKBACK1=128 | 4.3828 | No | Z5=4.3828 H6=0.6718. H6 best seen, but Z5 below champion. |
+| 513 | LOOKBACK1=129 | 4.3891 | No | Z5=4.3891 H6=0.6660. Close to champion but still below. LB1=130 confirmed peak. |
+
+| 514 | EXIT_ABOVE_SLOW=0.0 | 4.3850 | No | Z5=4.3850 H6=0.6574. Slightly worse. EAS=0.25 confirmed. |
+| 515 | EXIT_ABOVE_SLOW=0.5 | 4.3684 | No | Z5=4.3684 H6=0.6444. Worse. EAS=0.25 confirmed optimal. |
+| 516 | slow_rising_fast filter (slow[i] > slow[i-5]) | 4.0979 | No | Z5=4.0979 H6=0.6258. Blocks too many entries (689 vs 741). Dead end. |
+| 517 | slow_rising_fast filter (slow[i] > slow[i-1]) | 4.0979 | No | Z5=4.0979 H6=0.6570. Identical to 5-bar — slow EMA dip/flat events are same set. Dead end. |
+| 518 | LOOKBACK3=50 | 4.3924 | No | Z5=4.3924 H6=0.6621. Identical to champion. Tier3 range 45-50 captures same entries. |
+| 519 | vol_pct35 (more shorts) | 4.0642 | No | Z5=4.0642 H6=0.5970. Fails gate. More shorts destroy Z5. |
+| 520 | vol_pct45 (fewer shorts) | 3.5856 | No | Z5=3.5856 H6=0.9655. H6 dramatically better but Z5 crashes. vol_pct40 confirmed optimal. |
 
 *(Agent appends rows here after each experiment)*
 
@@ -804,21 +849,22 @@ if your approach requires fitting (it will be called automatically before `get_s
 ## Current champion — DO NOT touch
 
 OHLC4 EMA(6) fast vs MEDIAN of HL2 EMA(380/425/470) slow. Longs: vol-free EMA crossover. Shorts: EMA crossover + vol_60 > rolling(480).quantile(0.40). PLUS three-tier stateful dip-buying with ATR(25):
-- Tier1: enter long when slow rising (125-bar), close < slow - 3.9*ATR. Stop at slow-5.5*ATR.
-- Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR. Stop at slow-5.0*ATR.
-- Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR. Stop at slow-8.0*ATR.
+- Tier1: enter long when slow rising (130-bar), close < slow - 3.9*ATR, AND fast_declining (fast[i] < fast[i-5]). Stop at slow-5.5*ATR.
+- Tier2: enter long when slow rising (60-bar), close < slow - 3.95*ATR, AND fast_declining. Stop at slow-5.0*ATR.
+- Tier3: enter long when slow rising (45-bar), close < slow - 5.5*ATR, AND fast_declining. Stop at slow-8.0*ATR.
 - Exit dip when base_long fires (smooth transition). EXIT_ABOVE_SLOW=0.25 ATR rarely fires.
-→ Z5=4.3883, H6=0.6016 (exp_452, commit e0b2364)
+→ Z5=4.3924, H6=0.6621 (exp_488, commit d880b85)
 Key insights:
-- ATR(25) of H-L range confirmed optimal (ATR(20): 4.34, ATR(22): 4.32, ATR(27): 4.30)
-- LOOKBACK1=125 is the H6 gate boundary with ATR(25) (126+ fails H6 < 0.6)
+- fast_declining filter (fast[i] < fast[i-5]) unlocks LOOKBACK1=130+ — without it, 126+ fails H6
+- ATR(25) of H-L range optimal; LOOKBACK1=130 optimal with fast_declining
 - Three-tier dip system adds Z5-exclusive alpha: Tier2/3 fire in Z5 bull, rare in H6
-- Trailing stops confirmed bad: consistently hurt H6 (exps 461-463)
 - Fast EMA span=6 is very specific optimum: span=5 and span=7 both catastrophic
-- HL2 for slow EMA, OHLC4 for fast EMA — confirmed optimal (exps 468,469,476)
-- Vol quantile window=480, pct=0.40 confirmed optimal (exps 466,467)
+- HL2 for slow EMA, OHLC4 for fast EMA — confirmed optimal
+- Vol quantile window=480, pct=0.40 confirmed optimal
+- Trailing stops confirmed bad for dip trades (exps 461-463)
+- Vol filter on dip entry confirmed dead end (exps 457-458, 479)
 
-New targets: Z5 > 4.3883 AND H6 >= 0.6 to commit.
+New targets: Z5 > 4.3924 AND H6 >= 0.6 to commit.
 H6 test: `python -c "import prepare, importlib; a=importlib.import_module('agent'); fwd=prepare.load_forward_test(); fwd_feat=prepare.add_basic_features(fwd); sig=a.get_signals(fwd_feat); r=prepare.run_backtest(fwd_feat,sig); print(prepare.calmar_ratio(r['equity']))"`
 
 ## Banned approaches — already exhausted

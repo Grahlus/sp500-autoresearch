@@ -1,12 +1,10 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 488: fast_declining filter (fast[i] < fast[i-5]) + LOOKBACK1=130. NEW CHAMPION.
-Z5=4.3924, H6=0.6621. fast_declining unlocks LOOKBACK1=130 — without it, 126+ fails H6.
-The filter confirms genuine declining momentum before entering dips, improving H6 robustness.
-Hypothesis: fast_declining at LOOKBACK1=125 improved H6 from 0.6016 to 0.6555 (+0.054).
-At LOOKBACK1=126 without filter: H6=0.5966. Adding fast_declining might push it to 0.65+,
-unlocking LOOKBACK1=126 for more Z5 alpha while maintaining H6 >= 0.6.
+Exp 524: Time-based dip exit after 60 bars. NEW CHAMPION!
+Z5=4.4026, H6=0.6556. 90-bar version was identical to champion (never fired).
+60 bars = 60 min. Cuts extended failing dips — improves Z5 by $274/trade.
+Previously dip_entry_bar was tracked but never used in exit logic.
 """
 
 import numpy as np
@@ -72,6 +70,9 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                 else:
                     stop_mult = STOP3
                 if base_long:
+                    dip_tier = 0
+                elif (i - dip_entry_bar) > 60:
+                    position = 0
                     dip_tier = 0
                 elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
                     position = 0
