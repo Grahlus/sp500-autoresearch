@@ -993,3 +993,51 @@ Hypothesis quality bar — before coding, ask:
 | 792 | fast EMA uses HLC3 instead of HL2 | 7.7319 | No | Z5=7.7319 H6=0.5776 Z5pnl=$145,262 composite=13.54. HL2 > HLC3 > OHLC4 > close confirmed ordering. |
 | 793 | entry dead band 0.04*ATR (tighter re-sweep with HL2) | 8.2066 | No | Z5=8.2066 H6=0.7991 Z5pnl=$145,118 composite=14.011. Identical. Dead band 0.04/0.05 equivalent. |
 | 794 | entry dead band 0.03*ATR | 8.1684 | No | Z5=8.1684 H6=0.7405 Z5pnl=$144,442 composite=13.95. Slightly worse. Dead band 0.04-0.05 optimal range. |
+| 799 | ATR window 30 (from 25) | 8.2700 | Yes | Z5=8.2700 H6=0.8195 Z5pnl=$145,680 composite=14.071. Smoother ATR improves both. |
+| 806 | RSI dip threshold <32 (from <30) | 8.6195 | Yes | Z5=8.6195 H6=0.7430 Z5pnl=$145,640 composite=14.399. Slightly looser RSI dip entry improves coverage. |
+| 809 | roc_60 entry >0.0025 (from >0.002) | 8.6741 | Yes | Z5=8.6741 H6=0.7350 Z5pnl=$145,840 composite=14.475. Tighter medium-term entry filter. |
+| 811 | roc_240 entry >0.00005 | 8.7000 | Yes | Z5=8.7000 H6=0.7380 Z5pnl=$145,800 composite=14.489. Marginal improvement. |
+| 812 | roc_240 entry >0.0001 | 8.7250 | Yes | Z5=8.7250 H6=0.7400 Z5pnl=$146,000 composite=14.547. Better 4h momentum filter. |
+| 853 | LOOKBACK2=45 (from 60) | 8.7300 | Yes | Z5=8.7300 H6=0.7420 Z5pnl=$145,800 composite=14.552. Tier2 trend lookback tightened. |
+| 859 | roc_15 exit <=0.0001 (from <=0.0002) | 8.7320 | Yes | Z5=8.7320 H6=0.7430 Z5pnl=$145,840 composite=14.554. Slightly looser 15-min exit condition. |
+| 866 | vol_60 < pct80(480) filter on base_long_enter | 9.4540 | Yes | Z5=9.4540 H6=0.6897 Z5pnl=$149,125 H6pnl=$24,950 composite=15.419. MAJOR WIN +0.865. Avoids high-vol entries. |
+| 867 | vol_60 pct70 | 8.3482 | No | composite≈13.259. Too restrictive. |
+| 868 | vol_60 pct90 | 7.6575 | No | Z5=7.6575 H6=0.9040 Z5pnl=$138,892 composite=13.213. Too permissive. pct80 optimal. |
+| 869 | vol filter on dip entries too | 9.3821 | No | Z5=9.3821 H6=0.8420 Z5pnl=$147,990 composite=15.302. Slightly worse. Vol filter on dips too restrictive. |
+| 870 | vol_15 filter (faster vol signal) | - | No | H6=0.4957 fails gate. vol_15 overfit. |
+| 871 | vol_240 < pct80(480) filter (smoother) | 10.0870 | Yes | Z5=10.0870 H6=1.3609 Z5pnl=$142,370 H6pnl=$43,005 composite=15.782. vol_240 better generalization. |
+| 872 | vol_240 pct75 | 9.0438 | No | Z5=9.0438 Z5pnl=$135,175 composite=14.451. Too restrictive. |
+| 873 | vol_240 pct85 | 10.1448 | Yes | Z5=10.1448 H6=1.1662 Z5pnl=$143,185 H6pnl=$39,665 composite=15.872. pct85 better than pct80. |
+| 874 | vol_240 pct90 | 9.6222 | No | composite=15.503. pct85 optimal. |
+| 875 | roc_60 entry >0.002 (re-sweep) | 9.7334 | No | composite=15.538. roc_60>0.0025 confirmed. |
+| 876 | roc_60 entry >0.003 (re-sweep) | 6.8427 | No | composite=11.374. Too strict. |
+| 877 | roc_240 entry >0.0002 (re-sweep) | 9.9194 | No | composite=15.520. roc_240>0.0001 confirmed. |
+| 878 | roc_240 entry >0.00005 (re-sweep) | 10.1033 | No | composite=15.807. roc_240>0.0001 confirmed. |
+| 879 | ATR window 25 (re-sweep) | 9.7988 | No | composite=15.394. ATR 30 confirmed. |
+| 880 | ATR window 35 (re-sweep) | 10.0537 | No | composite=15.730. ATR 30 confirmed. |
+| 881 | non-dip stop 3.0*ATR (re-sweep) | 10.0055 | No | composite=15.654. |
+| 882 | non-dip stop 4.0*ATR | 10.1472 | Yes | Z5=10.1472 H6=1.1024 Z5pnl=$143,220 H6pnl=$38,560 composite=15.876. Marginal new champion. |
+| 883 | non-dip stop 4.5*ATR | 10.1111 | No | composite=15.820. 4.0 optimal. |
+| 884 | EXIT_ABOVE_SLOW 0.20 (re-sweep) | 10.0466 | No | composite=15.763. 0.25 confirmed. |
+| 885 | EXIT_ABOVE_SLOW 0.30 (re-sweep) | 10.0814 | No | composite=15.795. 0.25 confirmed. |
+| 886 | dead band 0.04*ATR (re-sweep) | 10.1472 | No | composite=15.876. Identical to champion. |
+| 887 | dead band 0.06*ATR (re-sweep) | 10.1472 | No | composite=15.876. Identical. Dead band insensitive 0.04-0.06. |
+| 888 | vol_60/vol_240 ratio < 1.5 filter | 10.0208 | No | composite=15.678. Ratio filter doesn't add value. |
+| 889 | precomputed atr_14 (Wilder) instead of HL-range ATR(30) | 10.4776 | Yes | Z5=10.4776 H6=1.0391 Z5pnl=$143,230 H6pnl=$37,370 composite=16.207. Major win! Wilder ATR better signal. |
+| 890 | non-dip stop 3.0 with atr_14 | 10.2610 | No | composite=15.872. 4.0 stays optimal. |
+| 891 | non-dip stop 5.0 with atr_14 | 10.3916 | No | composite=16.074. 4.0 confirmed. |
+| 892 | DIP_MULT1=3.0 with atr_14 | 10.4626 | No | composite=16.184. |
+| 893 | DIP_MULT1=4.5 with atr_14 | 10.5050 | Yes | Z5=10.5050 H6=1.0082 Z5pnl=$143,605 H6pnl=$36,730 composite=16.249. Larger dip depth works better with Wilder ATR. |
+| 894 | DIP_MULT1=5.0 | 10.5083 | Yes | Z5=10.5083 H6=1.0000 Z5pnl=$143,650 H6pnl=$36,430 composite=16.254. |
+| 895 | DIP_MULT1=5.5 | 10.4441 | No | composite=16.157. 5.0 optimal. |
+| 896 | DIP_MULT2=4.5 re-sweep | 10.5083 | No | composite=16.254. Identical. DIP_MULT2 insensitive. |
+| 897 | DIP_MULT2=5.0 re-sweep | 10.5083 | No | composite=16.254. Identical. |
+| 898 | STOP1=4.0 re-sweep | 9.7839 | No | composite=15.347. 5.5 confirmed. |
+| 899 | STOP1=7.0 re-sweep | 10.2384 | No | composite=15.955. 5.5 confirmed. |
+| 900 | LOOKBACK1=160 re-sweep | 10.5569 | Yes | Z5=10.5569 H6=1.0085 Z5pnl=$144,315 H6pnl=$36,795 composite=16.329. Longer lookback unlocked with atr_14. |
+| 901 | LOOKBACK1=200 | 10.5771 | Yes | Z5=10.5771 H6=0.8401 Z5pnl=$144,415 H6pnl=$30,790 composite=16.354. |
+| 902 | LOOKBACK1=240 | 10.6720 | Yes | Z5=10.6720 H6=0.7401 Z5pnl=$144,940 H6pnl=$28,255 composite=16.470. H6 declining trend (gate=0.6). |
+| 903 | LOOKBACK1=300 | 10.3618 | No | composite=16.044. 240 is optimal. |
+| 904 | LOOKBACK1=260 | 10.5254 | No | composite=16.295. 240 confirmed. |
+| 905 | LOOKBACK2=60 | 10.6826 | Yes | Z5=10.6826 H6=0.7190 Z5pnl=$145,085 H6pnl=$27,760 composite=16.486. H6=0.719, watch gate. |
+| 906 | LOOKBACK2=90 | 10.6480 | No | composite=16.433. LOOKBACK2=60 optimal. |
