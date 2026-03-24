@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 943: STOP3 raised to 10.0.
+Exp 991: fast_declining lookback changed to 3 bars.
 """
 
 import numpy as np
@@ -67,7 +67,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         tier1_ok = (slow > slow_prev1) and (close < slow - DIP_MULT1 * atr_val)
         tier2_ok = (slow > slow_prev2) and (close < slow - DIP_MULT2 * atr_val)
         tier3_ok = (slow > slow_prev3) and (close < slow - DIP_MULT3 * atr_val)
-        fast_declining = (ema_fast[max(0, i - 5)] - ema_fast[i]) > 0.02 * atr_val
+        fast_declining = (ema_fast[max(0, i - 3)] - ema_fast[i]) > 0.02 * atr_val
         rsi_dip_ok = (rsi_14_arr[i] < 32) and fast_declining and (not base_long) and (not base_short)
         dip_entry = (not base_long) and (not base_short) and fast_declining and (tier1_ok or tier2_ok or tier3_ok)
         dip_entry = dip_entry or rsi_dip_ok
