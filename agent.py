@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1216: tighten entry filter to roc_5 > -0.0025 (exit stays at -0.003).
+Exp 1219: entry roc_5 > -0.0025 only (no exit, no slow_rising5).
 """
 
 import numpy as np
@@ -94,9 +94,6 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
                 elif base_short:
-                    position = 0
-                    dip_tier = 0
-                elif roc_5_arr[i] < -0.003:
                     position = 0
                     dip_tier = 0
             else:
