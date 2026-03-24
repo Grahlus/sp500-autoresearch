@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 859: roc_15 exit threshold 0.0001 re-sweep.
+Exp 866: vol_60 < pct80(480) filter on base_long_enter.
 """
 
 import numpy as np
@@ -17,6 +17,10 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     e425 = hl2.ewm(span=425, adjust=False).mean().values
     e470 = hl2.ewm(span=470, adjust=False).mean().values
     ema_slow = np.median([e380, e425, e470], axis=0)
+
+    vol_realized = df["vol_60"].bfill()
+    vol_realized_pct80 = vol_realized.rolling(480).quantile(0.80).values
+    vol_realized_arr = vol_realized.values
 
     vol_series = df["volume"].rolling(60).mean()
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
@@ -54,7 +58,8 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         slow = ema_slow[i]
         atr_val = atr[i]
         base_long = ema_fast[i] > slow
-        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0.0001 and roc_60_arr[i] > 0.0025
+        low_vol = vol_realized_arr[i] < vol_realized_pct80[i]
+        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0.0001 and roc_60_arr[i] > 0.0025 and low_vol
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
         slow_prev1 = ema_slow[max(0, i - LOOKBACK1)]
         slow_prev2 = ema_slow[max(0, i - LOOKBACK2)]
