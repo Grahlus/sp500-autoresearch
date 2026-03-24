@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1116: remove roc_240 from transition (keep only roc_60 > 0.0003).
+Exp 1125: RSI-only tier4 with same STOP but EXIT_RSI=0.20.
 """
 
 import numpy as np
@@ -51,6 +51,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     LOOKBACK3 = 45
     STOP3 = 10.0
     EXIT_ABOVE_SLOW = 0.12
+    EXIT_RSI = 0.20
 
     for i in range(n):
         close = close_arr[i]
@@ -78,14 +79,16 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     stop_mult = STOP1
                 elif dip_tier == 2:
                     stop_mult = STOP2
-                else:
+                elif dip_tier == 3:
                     stop_mult = STOP3
+                else:
+                    stop_mult = STOP1  # tier4 RSI: same stop as tier1
                 if base_long and roc_60_arr[i] > 0.0003:
                     dip_tier = 0
                 elif (i - dip_entry_bar) > (90 if ema_fast[i] > dip_entry_fast else 70):
                     position = 0
                     dip_tier = 0
-                elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
+                elif close >= slow + (EXIT_RSI if dip_tier == 4 else EXIT_ABOVE_SLOW) * atr_val:
                     position = 0
                     dip_tier = 0
                 elif close < slow - stop_mult * atr_val:
@@ -117,7 +120,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                 elif tier3_ok:
                     dip_tier = 3
                 else:
-                    dip_tier = 1  # RSI-only: use tier1 (tighter stop)
+                    dip_tier = 4  # RSI-only: tier4 with wider exit
                 dip_entry_bar = i
                 dip_entry_fast = ema_fast[i]
 
