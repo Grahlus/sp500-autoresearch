@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        882
-best_z5_calmar:  10.1472
-best_h6_calmar:  1.1024
-best_z5_pnl:     $143,220
-best_h6_pnl:     $38,560
-trades_z5:       999
-trades_h6:       1014
-next_exp:        883
+best_exp:        889
+best_z5_calmar:  10.4776
+best_h6_calmar:  1.0391
+best_z5_pnl:     $143,230
+best_h6_pnl:     $37,370
+trades_z5:       979
+trades_h6:       1002
+next_exp:        890
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 10.1472 + 143220/25000 = **15.876**
+Current champion composite: 10.4776 + 143230/25000 = **16.207**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 15.876:
+elif z5_composite <= 16.207:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")

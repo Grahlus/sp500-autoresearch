@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 882: non-dip stop 4.0*ATR (re-sweep with vol_240).
+Exp 889: use precomputed atr_14 (Wilder) instead of custom HL-range ATR(30).
 """
 
 import numpy as np
@@ -26,8 +26,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     vol_pct40 = vol_series.rolling(480).quantile(0.40).values
     vol_cur = vol_series.values
 
-    bar_range = (df["high"] - df["low"]).values
-    atr = pd.Series(bar_range).rolling(30, min_periods=1).mean().values
+    atr = df["atr_14"].bfill().values
     close_arr = df["close"].values
     roc_240_arr = df["roc_240"].fillna(0).values
     roc_60_arr = df["roc_60"].fillna(0).values
