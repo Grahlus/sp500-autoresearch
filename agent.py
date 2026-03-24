@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 939: STOP2 lowered to 4.0.
+Exp 940: STOP2 lowered to 3.5.
 """
 
 import numpy as np
@@ -46,7 +46,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     STOP1 = 5.5
     DIP_MULT2 = 3.95
     LOOKBACK2 = 60
-    STOP2 = 4.0
+    STOP2 = 3.5
     DIP_MULT3 = 5.5
     LOOKBACK3 = 45
     STOP3 = 8.0
