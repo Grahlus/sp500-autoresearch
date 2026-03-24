@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1168: EXIT_RSI=0.18 (re-sweep with OHLC4 slow).
+Exp 1170: EXIT_RSI=0.19 (between 0.18 and 0.20).
 """
 
 import numpy as np
@@ -52,7 +52,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     LOOKBACK3 = 45
     STOP3 = 10.0
     EXIT_ABOVE_SLOW = 0.12
-    EXIT_RSI = 0.18
+    EXIT_RSI = 0.19
 
     for i in range(n):
         close = close_arr[i]
