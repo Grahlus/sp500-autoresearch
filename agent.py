@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 905: LOOKBACK2=60.
+Exp 921: base_long_enter requires slow EMA rising over 10 bars.
 """
 
 import numpy as np
@@ -58,7 +58,8 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         atr_val = atr[i]
         base_long = ema_fast[i] > slow
         low_vol = vol_realized_arr[i] < vol_realized_pct80[i]
-        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0.0001 and roc_60_arr[i] > 0.0025 and low_vol
+        slow_rising10 = slow > ema_slow[max(0, i - 10)]
+        base_long_enter = ema_fast[i] > slow + 0.05 * atr_val and roc_240_arr[i] > 0.0001 and roc_60_arr[i] > 0.0025 and low_vol and slow_rising10
         base_short = (ema_fast[i] < slow) and (vol_cur[i] > vol_pct40[i])
         slow_prev1 = ema_slow[max(0, i - LOOKBACK1)]
         slow_prev2 = ema_slow[max(0, i - LOOKBACK2)]
