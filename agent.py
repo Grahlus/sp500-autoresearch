@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 933: EXIT_ABOVE_SLOW lowered to 0.15.
+Exp 939: STOP2 lowered to 4.0.
 """
 
 import numpy as np
@@ -46,7 +46,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     STOP1 = 5.5
     DIP_MULT2 = 3.95
     LOOKBACK2 = 60
-    STOP2 = 5.0
+    STOP2 = 4.0
     DIP_MULT3 = 5.5
     LOOKBACK3 = 45
     STOP3 = 8.0
