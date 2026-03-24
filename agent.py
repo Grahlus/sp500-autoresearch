@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1044: non-dip stop = 3.75*ATR (was 4.0).
+Exp 1053: dip timeout 90/70 (was 80/60).
 """
 
 import numpy as np
@@ -82,7 +82,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     stop_mult = STOP3
                 if base_long:
                     dip_tier = 0
-                elif (i - dip_entry_bar) > (80 if ema_fast[i] > dip_entry_fast else 60):
+                elif (i - dip_entry_bar) > (90 if ema_fast[i] > dip_entry_fast else 70):
                     position = 0
                     dip_tier = 0
                 elif close >= slow + EXIT_ABOVE_SLOW * atr_val:
