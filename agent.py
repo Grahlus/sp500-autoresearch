@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 900: LOOKBACK1=160 (re-sweep with atr_14).
+Exp 901: LOOKBACK1=200.
 """
 
 import numpy as np
@@ -42,7 +42,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     dip_entry_fast = 0.0  # fast EMA value at dip entry
 
     DIP_MULT1 = 5.0
-    LOOKBACK1 = 160
+    LOOKBACK1 = 200
     STOP1 = 5.5
     DIP_MULT2 = 3.95
     LOOKBACK2 = 45
