@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1170: EXIT_RSI=0.19 (between 0.18 and 0.20).
+Exp 1185: single EMA(425) instead of 3-span ensemble.
 """
 
 import numpy as np
@@ -14,10 +14,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
 
     hl2 = (df["high"] + df["low"]) / 2.0
     slow_basis = (df["open"] + df["high"] + df["low"] + df["close"]) / 4.0
-    e380 = slow_basis.ewm(span=380, adjust=False).mean().values
-    e425 = slow_basis.ewm(span=425, adjust=False).mean().values
-    e470 = slow_basis.ewm(span=470, adjust=False).mean().values
-    ema_slow = np.median([e380, e425, e470], axis=0)
+    ema_slow = slow_basis.ewm(span=425, adjust=False).mean().values
 
     vol_realized = df["vol_240"].bfill()
     vol_realized_pct80 = vol_realized.rolling(480).quantile(0.85).values
