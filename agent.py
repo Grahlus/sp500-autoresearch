@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1125: RSI-only tier4 with same STOP but EXIT_RSI=0.20.
+Exp 1154: slow EMA basis OHLC4 instead of HL2.
 """
 
 import numpy as np
@@ -13,9 +13,10 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     ema_fast = ((df["high"] + df["low"]) / 2.0).ewm(span=6, adjust=False).mean().values
 
     hl2 = (df["high"] + df["low"]) / 2.0
-    e380 = hl2.ewm(span=380, adjust=False).mean().values
-    e425 = hl2.ewm(span=425, adjust=False).mean().values
-    e470 = hl2.ewm(span=470, adjust=False).mean().values
+    slow_basis = (df["open"] + df["high"] + df["low"] + df["close"]) / 4.0
+    e380 = slow_basis.ewm(span=380, adjust=False).mean().values
+    e425 = slow_basis.ewm(span=425, adjust=False).mean().values
+    e470 = slow_basis.ewm(span=470, adjust=False).mean().values
     ema_slow = np.median([e380, e425, e470], axis=0)
 
     vol_realized = df["vol_240"].bfill()
