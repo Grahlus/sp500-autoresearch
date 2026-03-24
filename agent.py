@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1225: also require roc_5[i-2] < 0 for dip entry (two bars ago declining).
+Exp 1250: tier1/2/3 dip exit added RSI > 65 overbought condition (take profits earlier on bounce).
 """
 
 import numpy as np
@@ -88,6 +88,9 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
                 elif close >= slow + (EXIT_RSI if dip_tier == 4 else EXIT_ABOVE_SLOW) * atr_val:
+                    position = 0
+                    dip_tier = 0
+                elif dip_tier in (1, 2, 3) and rsi_14_arr[i] > 65:
                     position = 0
                     dip_tier = 0
                 elif close < slow - stop_mult * atr_val:
