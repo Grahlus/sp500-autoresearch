@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1084: use ohlc4 for non-dip stop (was close).
+Exp 1103: require roc_240 > 0 for dip_tier to 0 transition.
 """
 
 import numpy as np
@@ -80,7 +80,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     stop_mult = STOP2
                 else:
                     stop_mult = STOP3
-                if base_long:
+                if base_long and roc_240_arr[i] > 0:
                     dip_tier = 0
                 elif (i - dip_entry_bar) > (90 if ema_fast[i] > dip_entry_fast else 70):
                     position = 0
