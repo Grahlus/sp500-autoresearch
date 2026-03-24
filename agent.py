@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1113: roc_60 > 0.0003 for dip_tier transition.
+Exp 1116: remove roc_240 from transition (keep only roc_60 > 0.0003).
 """
 
 import numpy as np
@@ -80,7 +80,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     stop_mult = STOP2
                 else:
                     stop_mult = STOP3
-                if base_long and roc_240_arr[i] > 0 and roc_60_arr[i] > 0.0003:
+                if base_long and roc_60_arr[i] > 0.0003:
                     dip_tier = 0
                 elif (i - dip_entry_bar) > (90 if ema_fast[i] > dip_entry_fast else 70):
                     position = 0
