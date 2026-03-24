@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1378: DIP_MULT2 3.95 → 3.75.
+Exp 1380: DIP_MULT2 3.75 → 3.85.
 """
 
 import numpy as np
@@ -42,7 +42,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     DIP_MULT1 = 4.5
     LOOKBACK1 = 240
     STOP1 = 5.25
-    DIP_MULT2 = 3.75
+    DIP_MULT2 = 3.85
     LOOKBACK2 = 90
     STOP2 = 3.0
     DIP_MULT3 = 5.0
