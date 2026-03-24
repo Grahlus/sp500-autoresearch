@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1302: LOOKBACK2=90 (tighter tier2 — longer uptrend confirmation for moderate dips).
+Exp 1310: DIP_MULT1=4.5.
 """
 
 import numpy as np
@@ -39,7 +39,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     dip_entry_bar = 0  # bar index when dip was entered
     dip_entry_fast = 0.0  # fast EMA value at dip entry
 
-    DIP_MULT1 = 5.0
+    DIP_MULT1 = 4.5
     LOOKBACK1 = 240
     STOP1 = 5.25
     DIP_MULT2 = 3.95
