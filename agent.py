@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1053: dip timeout 90/70 (was 80/60).
+Exp 1084: use ohlc4 for non-dip stop (was close).
 """
 
 import numpy as np
@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def get_signals(df: pd.DataFrame) -> np.ndarray:
-    ohlc4 = (df["open"] + df["high"] + df["low"] + df["close"]) / 4.0
+    ohlc4_arr = ((df["open"] + df["high"] + df["low"] + df["close"]) / 4.0).values
     ema_fast = ((df["high"] + df["low"]) / 2.0).ewm(span=6, adjust=False).mean().values
 
     hl2 = (df["high"] + df["low"]) / 2.0
@@ -95,7 +95,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0003 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.0001 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.75 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0003 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.0001 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (ohlc4_arr[i] < slow - 3.75 * atr_val):
                     position = 0
 
         elif position == -1:
