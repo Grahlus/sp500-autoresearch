@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1202: dip entry roc_5 > -0.003 (tighten freefall filter).
+Exp 1214: exit dip on roc_5 < -0.003 (match entry filter).
 """
 
 import numpy as np
@@ -94,6 +94,9 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
                 elif base_short:
+                    position = 0
+                    dip_tier = 0
+                elif roc_5_arr[i] < -0.003:
                     position = 0
                     dip_tier = 0
             else:
