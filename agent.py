@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1272: not_freefall adds BOTH roc_15 AND roc_60 prior bar declining conditions.
+Exp 1302: LOOKBACK2=90 (tighter tier2 — longer uptrend confirmation for moderate dips).
 """
 
 import numpy as np
@@ -43,7 +43,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     LOOKBACK1 = 240
     STOP1 = 5.25
     DIP_MULT2 = 3.95
-    LOOKBACK2 = 60
+    LOOKBACK2 = 90
     STOP2 = 3.5
     DIP_MULT3 = 5.5
     LOOKBACK3 = 45
