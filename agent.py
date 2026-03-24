@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 866: vol_60 < pct80(480) filter on base_long_enter.
+Exp 871: vol_240 < pct80(480) filter on base_long_enter (smoother vol signal).
 """
 
 import numpy as np
@@ -18,7 +18,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     e470 = hl2.ewm(span=470, adjust=False).mean().values
     ema_slow = np.median([e380, e425, e470], axis=0)
 
-    vol_realized = df["vol_60"].bfill()
+    vol_realized = df["vol_240"].bfill()
     vol_realized_pct80 = vol_realized.rolling(480).quantile(0.80).values
     vol_realized_arr = vol_realized.values
 

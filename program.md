@@ -5,14 +5,14 @@
 ## CURRENT STATE
 
 ```
-best_exp:        763
-best_z5_calmar:  7.8468
-best_h6_calmar:  0.6620
-best_z5_pnl:     $142,892
-best_h6_pnl:     $25,418
-trades_z5:       946
-trades_h6:       989
-next_exp:        783
+best_exp:        871
+best_z5_calmar:  10.0870
+best_h6_calmar:  1.3609
+best_z5_pnl:     $142,370
+best_h6_pnl:     $43,005
+trades_z5:       997
+trades_h6:       1012
+next_exp:        872
 run_command:     uv run python run.py
 editable_files:  [agent.py, program.md]
 frozen_files:    [prepare.py]
@@ -35,7 +35,7 @@ Maximize the **composite score** on Z5 validation:
 composite = Z5_calmar + Z5_pnl / 25000
 ```
 
-Current champion composite: 7.8468 + 142892/25000 = **13.56**
+Current champion composite: 10.0870 + 142370/25000 = **15.782**
 
 Both components matter equally. A strategy with Calmar 6.0 and PnL $50k
 scores 6.0 + 2.0 = 8.0 — worse than champion. Do not sacrifice PnL for Calmar
@@ -54,7 +54,7 @@ z5_composite = z5_calmar + z5_pnl / 25000
 
 if h6_calmar < 0.6:
     → REVERT  (git checkout agent.py)
-elif z5_composite <= 13.562:
+elif z5_composite <= 15.782:
     → REVERT  (git checkout agent.py)
 else:
     → KEEP    (git commit -am "exp_NNN: <hypothesis> → z5=X.XX h6=X.XX pnl=$XX,XXX composite=XX.XX")
@@ -981,3 +981,15 @@ Hypothesis quality bar — before coding, ask:
 | 780 | DIP_MULT1 = 4.0 re-sweep | 7.8441 | No | Z5=7.8441 H6=0.6617 Z5pnl=$142,842 composite=13.558. Marginally below. DIP_MULT1 insensitive in 3.8-4.0 range. |
 | 781 | remove roc_240 from exit gate (test redundancy) | 7.6359 | No | Z5=7.6359 H6=0.6429 Z5pnl=$139,052 composite=13.20. roc_240 exit condition not redundant. Keep it. |
 | 782 | fast EMA uses close price (instead of OHLC4) | 6.8103 | No | Z5=6.8103 H6=0.5447 Z5pnl=$141,518 composite=12.47. Fails H6 gate. OHLC4 confirmed for fast EMA. |
+| 783 | fast EMA uses HL2 price instead of OHLC4 | 8.2066 | Yes | Z5=8.2066 H6=0.8029 Z5pnl=$145,118 H6pnl=$28,002 composite=14.01. MASSIVE win! +0.45 composite, H6 rebounds to 0.80. |
+| 784 | fast EMA span = 5 (re-sweep with HL2) | 6.5347 | No | Z5=6.5347 H6=0.6154 Z5pnl=$136,408 composite=11.99. Span 5 too reactive. |
+| 785 | fast EMA span = 7 (re-sweep with HL2) | 6.7294 | No | Z5=6.7294 H6=0.3711 Z5pnl=$139,202 composite=n/a. Fails H6 gate hard. Span 6 confirmed optimal with HL2. |
+| 786 | roc_60>0.001 entry re-sweep with HL2 | 7.1017 | No | Z5=7.1017 H6=1.0752 Z5pnl=$150,058 composite=13.10. Lower Z5 calmar. roc_60>0.002 confirmed optimal. |
+| 787 | roc_60>0.003 entry re-sweep with HL2 | 5.7302 | No | Z5=5.7302 H6=1.2094 Z5pnl=$118,565 composite=10.47. PnL drops $27k. roc_60>0.002 confirmed. |
+| 788 | slow EMA center=426 re-sweep (was forbidden) | 8.1523 | No | Z5=8.1523 H6=0.8034 Z5pnl=$144,158 composite=13.92. Center=425 still optimal. |
+| 789 | slow EMA center=424 re-sweep | 7.7358 | No | Z5=7.7358 H6=0.8575 Z5pnl=$142,588 composite=13.44. Center=425 confirmed optimal. |
+| 790 | slow EMA spread ±44 (381/425/469) | 8.2066 | No | Z5=8.2066 H6=0.8029 Z5pnl=$145,118 composite=14.011. Identical to champion. Spread insensitive ±44 vs ±45. |
+| 791 | slow EMA spread ±46 (379/425/471) | 8.2066 | No | Z5=8.2066 H6=0.8029 Z5pnl=$145,118 composite=14.011. Identical. Spread ±44-46 all equivalent. |
+| 792 | fast EMA uses HLC3 instead of HL2 | 7.7319 | No | Z5=7.7319 H6=0.5776 Z5pnl=$145,262 composite=13.54. HL2 > HLC3 > OHLC4 > close confirmed ordering. |
+| 793 | entry dead band 0.04*ATR (tighter re-sweep with HL2) | 8.2066 | No | Z5=8.2066 H6=0.7991 Z5pnl=$145,118 composite=14.011. Identical. Dead band 0.04/0.05 equivalent. |
+| 794 | entry dead band 0.03*ATR | 8.1684 | No | Z5=8.1684 H6=0.7405 Z5pnl=$144,442 composite=13.95. Slightly worse. Dead band 0.04-0.05 optimal range. |
