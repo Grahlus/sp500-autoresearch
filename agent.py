@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 991: fast_declining lookback changed to 3 bars.
+Exp 1034: STOP1 = 5.25 (between 5.0 and 5.5).
 """
 
 import numpy as np
@@ -43,7 +43,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
 
     DIP_MULT1 = 5.0
     LOOKBACK1 = 240
-    STOP1 = 5.5
+    STOP1 = 5.25
     DIP_MULT2 = 3.95
     LOOKBACK2 = 60
     STOP2 = 3.5
