@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1034: STOP1 = 5.25 (between 5.0 and 5.5).
+Exp 1041: EXIT_ABOVE_SLOW = 0.12 (was 0.15).
 """
 
 import numpy as np
@@ -50,7 +50,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
     DIP_MULT3 = 5.5
     LOOKBACK3 = 45
     STOP3 = 10.0
-    EXIT_ABOVE_SLOW = 0.15
+    EXIT_ABOVE_SLOW = 0.12
 
     for i in range(n):
         close = close_arr[i]
