@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1409: not_freefall — add roc_60[i] < 0.
+Exp 1412: not_freefall — add roc_15[i] < 0.0005.
 """
 
 import numpy as np
@@ -68,7 +68,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
         tier3_ok = (slow > slow_prev3) and (close < slow - DIP_MULT3 * atr_val)
         fast_declining = (ema_fast[max(0, i - 3)] - ema_fast[i]) > 0.02 * atr_val
         rsi_dip_ok = (rsi_14_arr[i] < 32) and fast_declining and (not base_long) and (not base_short)
-        not_freefall = (roc_5_arr[i] > -0.0025) and (roc_5_arr[max(0, i - 1)] < 0.001) and (roc_5_arr[max(0, i - 2)] < 0) and (roc_15_arr[max(0, i - 1)] < 0.001) and (roc_15_arr[max(0, i - 2)] < 0) and (roc_60_arr[i] < 0) and (roc_60_arr[max(0, i - 1)] < 0) and (roc_60_arr[max(0, i - 2)] < 0.0002) and (roc_240_arr[i] < 0.002)
+        not_freefall = (roc_5_arr[i] > -0.0025) and (roc_5_arr[max(0, i - 1)] < 0.001) and (roc_5_arr[max(0, i - 2)] < 0) and (roc_15_arr[i] < 0.0005) and (roc_15_arr[max(0, i - 1)] < 0.001) and (roc_15_arr[max(0, i - 2)] < 0) and (roc_60_arr[i] < 0) and (roc_60_arr[max(0, i - 1)] < 0) and (roc_60_arr[max(0, i - 2)] < 0.0002) and (roc_240_arr[i] < 0.002)
         dip_entry = (not base_long) and (not base_short) and fast_declining and (tier1_ok or tier2_ok or tier3_ok) and not_freefall
         dip_entry = dip_entry or (rsi_dip_ok and not_freefall)
 
