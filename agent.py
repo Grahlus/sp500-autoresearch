@@ -1,7 +1,7 @@
 """
 agent.py — THIS FILE IS EDITED BY THE AGENT. Humans do not touch this.
 
-Exp 1041: EXIT_ABOVE_SLOW = 0.12 (was 0.15).
+Exp 1044: non-dip stop = 3.75*ATR (was 4.0).
 """
 
 import numpy as np
@@ -95,7 +95,7 @@ def get_signals(df: pd.DataFrame) -> np.ndarray:
                     position = 0
                     dip_tier = 0
             else:
-                if (not base_long and roc_240_arr[i] <= 0.0003 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.0001 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 4.0 * atr_val):
+                if (not base_long and roc_240_arr[i] <= 0.0003 and roc_60_arr[i] <= 0.0001 and roc_15_arr[i] <= 0.0001 and roc_5_arr[i] <= 0.0001 and rsi_14_arr[i] > 40) or base_short or (close < slow - 3.75 * atr_val):
                     position = 0
 
         elif position == -1:
