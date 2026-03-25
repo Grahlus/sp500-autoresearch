@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-031: STOP_LOSS_PCT=13% (fine-tune between 12% and 15%)"
+HYPOTHESIS = "S3-044: 16w secondary factor (vs 13w) — slightly longer confirmation period"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -109,7 +109,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                            volume.iloc[max(0, i - VOL_MA_DAYS):i]).mean()
             high_vol    = dollar_vol >= dollar_vol.quantile(0.70)  # top 30%
 
-            mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
+            mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 80)] - 1)
             mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
             combo       = mom.rank(pct=True) + mom_13w.rank(pct=True)
             combo_filt  = combo.where(above_ma & high_vol).dropna()
