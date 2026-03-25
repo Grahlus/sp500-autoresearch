@@ -27,7 +27,8 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp072: trailing stop 15%→20% from position HIGH — more room during 2022 bear volatility"
+    "exp079: adaptive breadth — top 1% when <40% SP500 above 200d MA (bear), "
+    "top 2.5% normal, top 1.5% greed>70"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -107,8 +108,17 @@ def generate_signals(data: dict) -> pd.DataFrame:
             combo_filtered = combo.where(above_ma & high_volume).dropna()
 
             if not combo_filtered.empty:
-                # F&G regime: tighten concentration in extreme greed
-                eff_pct = 0.015 if fg_val > 70.0 else TOP_PCT
+                # Market breadth: fraction of stocks above 200d MA
+                ma_200  = close.iloc[max(0, i - 200):i].mean()
+                breadth = float((today > ma_200).mean())
+
+                # Adaptive concentration: defensive in bear, tight in greed
+                if breadth < 0.40:
+                    eff_pct = 0.010   # bear market — top 1%, very selective
+                elif fg_val > 70.0:
+                    eff_pct = 0.015   # greed — top 1.5%
+                else:
+                    eff_pct = TOP_PCT  # normal — top 2.5%
                 n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
 
