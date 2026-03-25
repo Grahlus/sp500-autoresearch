@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp138: use HIGH price for trailing stop tracking — tighter position high"
+    "exp140: HIGH stop + F&G>=22 fear entries — combine improvements to pass overfit"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr]    = np.nan
 
         # ── Rebalance every rebal_days ────────────────────────────────────────
-        if i % rebal_days == 0 and fg_val >= 25.0:
+        if i % rebal_days == 0 and fg_val >= 22.0:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
