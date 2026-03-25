@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp140 + fix: MIN_HOLD_DAYS=5 prevents stop-loss churn on intraday HIGH spikes in high-vol OOS regime"
+    "exp140 + fix: trailing stop tracks CLOSE highs not intraday HIGH — removes lookahead, stops 604→~3/yr"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -88,10 +88,11 @@ def generate_signals(data: dict) -> pd.DataFrame:
         for tkr in current_pos[current_pos > 0].index:
             ph = pos_high.get(tkr, np.nan)
             if not np.isnan(ph) and ph > 0:
-                # Update rolling high using daily HIGH (always, regardless of hold period)
-                if today_high[tkr] > ph:
-                    pos_high[tkr] = today_high[tkr]
-                    ph = today_high[tkr]
+                # Update rolling high using daily CLOSE (not intraday high — intraday
+                # highs are not tradeable at signal time and cause phantom stop triggers)
+                if today[tkr] > ph:
+                    pos_high[tkr] = today[tkr]
+                    ph = today[tkr]
                 # Only trigger stop after minimum holding period
                 days_held = i - int(entry_day.get(tkr, i))
                 if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - STOP_LOSS_PCT):
