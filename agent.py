@@ -27,8 +27,8 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol top50% + vol accel composite 15%stop top2.5%: "
-    "JT skip 3 weeks (vs 4)"
+    "RSL + vol top50% + vol accel composite skip3 top2.5%: "
+    "trailing stop 15% from position HIGH (not entry) — protects gains"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -61,18 +61,25 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
     weights     = pd.DataFrame(0.0, index=dates, columns=tickers)
     entry_price = pd.Series(np.nan, index=tickers)
+    pos_high    = pd.Series(np.nan, index=tickers)  # rolling high since entry
     current_pos = pd.Series(0.0,   index=tickers)
 
     for i in range(lb_days, n):
         today = close.iloc[i]
 
-        # ── Stop-loss check every day ─────────────────────────────────────────
+        # ── Trailing stop from position high (not entry) ──────────────────────
         for tkr in current_pos[current_pos > 0].index:
-            ep = entry_price.get(tkr, np.nan)
-            if not np.isnan(ep) and ep > 0:
-                if today[tkr] < ep * (1 - STOP_LOSS_PCT):
+            ph = pos_high.get(tkr, np.nan)
+            if not np.isnan(ph) and ph > 0:
+                # Update rolling high
+                if today[tkr] > ph:
+                    pos_high[tkr] = today[tkr]
+                    ph = today[tkr]
+                # Trailing stop: exit if price drops 15% from rolling high
+                if today[tkr] < ph * (1 - STOP_LOSS_PCT):
                     current_pos[tkr] = 0.0
                     entry_price[tkr] = np.nan
+                    pos_high[tkr]    = np.nan
 
         # ── Rebalance every rebal_days ────────────────────────────────────────
         if i % rebal_days == 0:
@@ -111,9 +118,11 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 for tkr in top_tickers:
                     if current_pos.get(tkr, 0.0) == 0.0:
                         entry_price[tkr] = today[tkr]
+                        pos_high[tkr]    = today[tkr]
                 for tkr in current_pos[current_pos > 0].index:
                     if new_pos[tkr] == 0.0:
                         entry_price[tkr] = np.nan
+                        pos_high[tkr]    = np.nan
 
                 current_pos = new_pos.copy()
 
