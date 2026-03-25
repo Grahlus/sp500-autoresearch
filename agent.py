@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp103: inv-vol sizing window 7d→6d — search for optimal window"
+    "exp138: use HIGH price for trailing stop tracking — tighter position high"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -48,6 +48,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
     - Normal: top 2.5%
     """
     close   = data["close"]
+    high    = data["high"]
     volume  = data["volume"]
     fg_raw  = data["fear_greed"]
     dates   = close.index
@@ -68,22 +69,23 @@ def generate_signals(data: dict) -> pd.DataFrame:
     prev_in_bear = False   # breadth was < 0.40 at last rebalance
 
     for i in range(lb_days, n):
-        today  = close.iloc[i]
-        fg_val = float(fg[i])
+        today      = close.iloc[i]
+        today_high = high.iloc[i]
+        fg_val     = float(fg[i])
 
         # Compute breadth for recovery trigger
         ma_200_now  = close.iloc[max(0, i - 200):i].mean()
         breadth_now = float((today > ma_200_now).mean())
 
-        # ── Trailing stop from position high (not entry) ──────────────────────
+        # ── Trailing stop from position HIGH (not entry, uses daily high) ───────
         for tkr in current_pos[current_pos > 0].index:
             ph = pos_high.get(tkr, np.nan)
             if not np.isnan(ph) and ph > 0:
-                # Update rolling high
-                if today[tkr] > ph:
-                    pos_high[tkr] = today[tkr]
-                    ph = today[tkr]
-                # Trailing stop: exit if price drops 15% from rolling high
+                # Update rolling high using daily HIGH
+                if today_high[tkr] > ph:
+                    pos_high[tkr] = today_high[tkr]
+                    ph = today_high[tkr]
+                # Trailing stop: exit if close drops 20% from rolling HIGH
                 if today[tkr] < ph * (1 - STOP_LOSS_PCT):
                     current_pos[tkr] = 0.0
                     entry_price[tkr] = np.nan
