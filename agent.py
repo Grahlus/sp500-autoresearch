@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-020: inv-vol window 10d (smoother position sizing for R1000)"
+HYPOTHESIS = "S3-023: remove greed concentration reduction — stay at 2.5% in F&G>70 too"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -117,8 +117,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
             if not combo_filt.empty:
                 if breadth < 0.40:
                     eff_pct = 0.010
-                elif fg_val > 70.0:
-                    eff_pct = 0.015
                 else:
                     eff_pct = TOP_PCT
 
