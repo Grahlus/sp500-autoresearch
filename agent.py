@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp102: inv-vol sizing window 10d→7d — between 5d (fails) and 10d (passes)"
+    "exp103: inv-vol sizing window 7d→6d — search for optimal window"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
 
-                vol_ret      = close.iloc[max(0, i - 7):i][top_tickers].pct_change().std()
+                vol_ret      = close.iloc[max(0, i - 6):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
