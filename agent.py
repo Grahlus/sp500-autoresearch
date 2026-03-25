@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-055: inv-vol window 15d (fill gap between 10d and 20d)"
+HYPOTHESIS = "S3-056: inv-vol window 12d (check if less than 15d is better)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -123,7 +123,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 n_top       = max(1, int(len(combo_filt) * eff_pct))
                 top_tickers = combo_filt.nlargest(n_top).index
 
-                vol_ret      = close.iloc[max(0, i - 15):i][top_tickers].pct_change().std()
+                vol_ret      = close.iloc[max(0, i - 12):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
