@@ -66,12 +66,37 @@ regimes, the top 2.5% is crowded and correlated = high vol, lower Sharpe.
 
 ---
 
+## Universe Change — Session 3
+
+**SP500 → Russell 1000** (via iShares IWB ETF holdings, ~1000 names)
+
+Why: The strategy scored only +27% OOS (2024-2026) vs possible +100%+ because:
+1. SP500 excludes mid-cap miners, uranium, royalty streamers, materials that ran 60-100%
+2. The volume filter (top 50% by share count) systematically excluded resource stocks
+   — NVDA trades 500M shares/day, a gold miner trades 5M. Dollar-volume fixes this.
+3. 26-week lookback is too slow for sector rotation — by the time gold ranked top 2.5%
+   the move was mostly done.
+
+Russell 1000 adds: AEM, AG, CCJ, UEC, WPM, RGLD, FNV, TECK, CLF, KTOS, MP, LAC and
+~500 more mid-caps that were the actual winners in 2024-2026.
+
+**Key agent changes for the new universe:**
+- Replace share-volume filter with **dollar-volume filter** (price × volume)
+  so $5 miners and $500 megacaps compete on equal footing
+- Let the agent tune the optimal lookback — 26w may be too slow for this broader universe
+- The dispersion problem partially solves itself: more diverse universe = more dispersion
+
 ## Research Frontier — Session 3
 
-The fixed engine changes the playing field. All prior Sharpe numbers were inflated.
-The real val baseline with fixed engine is Sharpe ~1.6, OOS is 0.564.
+The fixed engine + Russell 1000 universe is a clean new starting point.
+Val baseline (S3-001) was on SP500 — first priority is re-establishing baseline on R1000.
 
-### Priority 1: Dispersion-aware regime filter (highest impact)
+### Priority 1: R1000 baseline — re-run champion config on new universe
+Just swap the universe. Keep all other parameters identical to exp140.
+Expected: similar or better Sharpe since universe is richer.
+Dollar-volume filter is mandatory — implement before running anything else.
+
+### Priority 2: Dispersion-aware regime filter (highest impact)
 The OOS underperformance is explained by low cross-sectional momentum dispersion.
 Measure it directly and reduce exposure when it's low:
 - Compute cross-sectional std of 13w returns across the universe each rebalance

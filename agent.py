@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-001: exp140 champion — session 3 fixed-engine baseline"
+HYPOTHESIS = "S3-002: R1000 universe + dollar-volume filter baseline (champion config)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -103,15 +103,21 @@ def generate_signals(data: dict) -> pd.DataFrame:
             ma       = close.iloc[max(0, i - ma_days):i].mean()
             above_ma = today > ma
 
-            avg_vol    = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
-            high_vol   = avg_vol >= avg_vol.median()
-            recent_vol = volume.iloc[max(0, i - 5):i].mean()
-            vol_accel  = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
+            # Dollar-volume filter: price × shares — levels playing field across
+            # universe sizes. A $5 miner and a $500 megacap compete equally.
+            dollar_vol  = (close.iloc[max(0, i - VOL_MA_DAYS):i] *
+                           volume.iloc[max(0, i - VOL_MA_DAYS):i]).mean()
+            high_vol    = dollar_vol >= dollar_vol.median()
+
+            avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
+            recent_vol  = volume.iloc[max(0, i - 5):i].mean()
+            vol_accel   = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
 
             mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
             mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
             combo       = mom.rank(pct=True) * vol_accel.rank(pct=True) * mom_13w.rank(pct=True)
             combo_filt  = combo.where(above_ma & high_vol).dropna()
+            # Note: vol_accel still uses share volume (ratio — units cancel out)
 
             if not combo_filt.empty:
                 if breadth < 0.40:
