@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-017: STOP_LOSS_PCT=15% (tighter stop for volatile R1000 mid-caps)"
+HYPOTHESIS = "S3-019: drop vol_accel from composite — 26w × 13w only (simpler signal for R1000)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -109,15 +109,10 @@ def generate_signals(data: dict) -> pd.DataFrame:
                            volume.iloc[max(0, i - VOL_MA_DAYS):i]).mean()
             high_vol    = dollar_vol >= dollar_vol.quantile(0.70)  # top 30%
 
-            avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
-            recent_vol  = volume.iloc[max(0, i - 5):i].mean()
-            vol_accel   = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
-
             mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
             mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
-            combo       = mom.rank(pct=True) * vol_accel.rank(pct=True) * mom_13w.rank(pct=True)
+            combo       = mom.rank(pct=True) * mom_13w.rank(pct=True)
             combo_filt  = combo.where(above_ma & high_vol).dropna()
-            # Note: vol_accel still uses share volume (ratio — units cancel out)
 
             if not combo_filt.empty:
                 if breadth < 0.40:
