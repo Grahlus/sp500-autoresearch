@@ -27,7 +27,8 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL baseline + VIX regime sizing: VIX<20=100%, VIX20-30=60%, VIX>30=20% exposure"
+    "RSL baseline + volume confirmation: only hold stocks where "
+    "20-day avg volume is in top 50% of universe at rebalance"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -37,21 +38,20 @@ REBAL_WEEKS    = 4
 TOP_PCT        = 0.03
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
+VOL_MA_DAYS    = 20   # days to average volume
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
     """
-    RSL momentum + VIX-based position scaling.
-    VIX < 20: full exposure; VIX 20-30: 60%; VIX > 30: 20%.
+    RSL momentum + volume confirmation:
+    Only enter stocks where their 20-day average volume ranks in the top 50%
+    of the universe. Filters out low-liquidity/low-interest stocks.
     """
-    close   = data["close"]
-    vix_raw = data["vix"]
-    dates   = close.index
+    close  = data["close"]
+    volume = data["volume"]
+    dates  = close.index
     tickers = close.columns
     n       = len(dates)
-
-    # Align VIX to close index
-    vix = vix_raw.reindex(dates).ffill().fillna(20.0).values
 
     lb_days    = LOOKBACK_WEEKS * 5
     skip_days  = SKIP_WEEKS * 5
@@ -63,16 +63,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
     current_pos = pd.Series(0.0,   index=tickers)
 
     for i in range(lb_days, n):
-        today   = close.iloc[i]
-        vix_val = float(vix[i])
-
-        # VIX regime scalar
-        if vix_val < 20.0:
-            vix_scale = 1.0
-        elif vix_val < 30.0:
-            vix_scale = 0.6
-        else:
-            vix_scale = 0.2
+        today = close.iloc[i]
 
         # ── Stop-loss check every day ─────────────────────────────────────────
         for tkr in current_pos[current_pos > 0].index:
@@ -86,16 +77,23 @@ def generate_signals(data: dict) -> pd.DataFrame:
         if i % rebal_days == 0:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
-            ma           = close.iloc[max(0, i - ma_days):i].mean()
-            above_ma     = today > ma
-            mom_filtered = mom.where(above_ma).dropna()
+            ma       = close.iloc[max(0, i - ma_days):i].mean()
+            above_ma = today > ma
+
+            # Volume filter: top 50% by 20-day average volume
+            avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
+            vol_median  = avg_vol.median()
+            high_volume = avg_vol >= vol_median
+
+            # Apply both filters
+            mom_filtered = mom.where(above_ma & high_volume).dropna()
 
             if not mom_filtered.empty:
                 n_top       = max(1, int(len(mom_filtered) * TOP_PCT))
                 top_tickers = mom_filtered.nlargest(n_top).index
 
-                vol          = close.iloc[max(0, i - 60):i][top_tickers].pct_change().std()
-                inv_vol      = (1.0 / vol.replace(0, np.nan)).fillna(0.0)
+                vol_ret      = close.iloc[max(0, i - 60):i][top_tickers].pct_change().std()
+                inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
                 new_pos = pd.Series(0.0, index=tickers)
@@ -111,7 +109,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
                 current_pos = new_pos.copy()
 
-        # Apply VIX scaling daily (weights output, not position tracking)
-        weights.iloc[i] = current_pos * vix_scale
+        weights.iloc[i] = current_pos
 
     return weights
