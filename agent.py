@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp089: VOL_MA_DAYS=10 + breadth recovery trigger — force rebalance on bear→bull transition"
+    "exp094: triple composite (26w × vol_accel × 13w rank) — soft multi-horizon momentum signal"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -107,10 +107,15 @@ def generate_signals(data: dict) -> pd.DataFrame:
             recent_vol  = volume.iloc[max(0, i - 5):i].mean()
             vol_accel   = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
 
-            # Composite score: percentile ranks multiplied
+            # 13-week momentum for soft multi-horizon signal
+            mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
+            mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
+
+            # Triple composite: 26w × vol_accel × 13w (all percentile ranks)
             mom_rank    = mom.rank(pct=True)
             accel_rank  = vol_accel.rank(pct=True)
-            combo       = mom_rank * accel_rank
+            mom13w_rank = mom_13w.rank(pct=True)
+            combo       = mom_rank * accel_rank * mom13w_rank
 
             combo_filtered = combo.where(above_ma & high_volume).dropna()
 
