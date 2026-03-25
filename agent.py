@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp094: triple composite (26w × vol_accel × 13w rank) — soft multi-horizon momentum signal"
+    "exp097: triple composite WITHOUT recovery trigger — test if trigger hurts val"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -89,11 +89,8 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     entry_price[tkr] = np.nan
                     pos_high[tkr]    = np.nan
 
-        # Recovery trigger: force rebalance when breadth crosses back above 40%
-        recovery_trigger = prev_in_bear and breadth_now >= 0.40
-
-        # ── Rebalance every rebal_days or on recovery trigger ─────────────────
-        if (i % rebal_days == 0 or recovery_trigger) and fg_val >= 25.0:
+        # ── Rebalance every rebal_days ────────────────────────────────────────
+        if i % rebal_days == 0 and fg_val >= 25.0:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
@@ -150,8 +147,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                         entry_price[tkr] = np.nan
                         pos_high[tkr]    = np.nan
 
-                current_pos  = new_pos.copy()
-                prev_in_bear = (breadth < 0.40)  # update for recovery trigger
+                current_pos = new_pos.copy()
 
         weights.iloc[i] = current_pos
 
