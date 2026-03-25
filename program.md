@@ -182,3 +182,11 @@ This is mandatory. Do not skip it.
 | 051 | RSL + vol top50% + vol accel + F&G regime + VIX-gated short leg: short bottom 1.5% JT below MA when VIX>20 | 1.860 | 3.919 | 0.491 | -19.3% | +208.4% | No |
 | 052 | trailing stop uses daily HIGH for watermark (vs close); exit on close<high_wm*(1-15%) | 1.432 | 2.370 | 0.331 | -21.2% | +125.5% | No |
 | 053 | F&G regime: top1.5% when F&G>70 greed, skip entries F&G<25 fear — lower greed threshold | 2.248 | 5.622 | 0.671 | -19.3% | +334.6% | Yes |
+| 054 | F&G regime: top1.5% when F&G>65, skip entries F&G<25 (65 slightly worse than 70) | 2.229 | 5.635 | 0.674 | -19.3% | +335.6% | No |
+| 055 | F&G greed>70: top1.2% tighter than 1.5%, skip entries F&G<25 | 2.158 | 5.719 | 0.688 | -19.3% | +342.4% | No |
+| 056 | F&G greed>70: top2.0% wider than 1.5%, skip entries F&G<25 | 2.173 | 5.552 | 0.622 | -17.9% | +297.1% | No |
+| 057 | F&G greed>70 top1.5%, skip entries F&G<22 (tighter fear vs 25) | 2.167 | 5.281 | 0.638 | -19.3% | +307.6% | No |
+| 058 | F&G greed>70 top1.5%, skip entries F&G<28 (looser fear hurts) | 1.793 | 3.592 | 0.454 | -19.4% | +187.9% | No |
+| 059 | F&G 3-tier concentration: <25=skip, 25-45=top3.5%, 45-70=top2.5%, >70=top1.5% | 2.134 | 4.336 | 0.528 | -19.3% | +237.3% | No |
+| 060 | linear combo 60%JT_rank + 30%vol_accel_rank + 10%4wk_mom_rank vs product (much worse) | 1.146 | 1.022 | 0.307 | -42.7% | +106.4% | No |
+| 061 | inv-vol sizing uses 20-day window vs current 60-day — more responsive to recent vol | 2.281 | 5.922 | 0.685 | -18.8% | +346.7% | Yes |
