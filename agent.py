@@ -27,18 +27,18 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol top50% + vol accel composite top2%: "
-    "tighter 15% stop-loss (vs 20%)"
+    "RSL + vol top50% + vol accel composite 15%stop: "
+    "top 2.5% (between 2% and 3%)"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 4
 REBAL_WEEKS    = 4
-TOP_PCT        = 0.02
+TOP_PCT        = 0.025  # 2.5% (between 2% and 3%)
 MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.15   # 15% (tighter)
-VOL_MA_DAYS    = 20   # days for baseline avg volume
+STOP_LOSS_PCT  = 0.15
+VOL_MA_DAYS    = 20
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
