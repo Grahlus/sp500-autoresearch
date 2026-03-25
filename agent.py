@@ -27,15 +27,15 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol filter top50% + volume acceleration: "
-    "composite score = JT_mom_rank * vol_accel_rank (recent 5d vol / 20d avg)"
+    "RSL + vol filter top50% + vol accel composite: top 2% concentration "
+    "(more concentrated than 3%)"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 4
 REBAL_WEEKS    = 4
-TOP_PCT        = 0.03
+TOP_PCT        = 0.02
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
 VOL_MA_DAYS    = 20   # days for baseline avg volume
