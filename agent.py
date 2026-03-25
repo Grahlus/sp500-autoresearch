@@ -27,13 +27,13 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol top50% + vol accel composite 15%stop: "
-    "top 2.5% (between 2% and 3%)"
+    "RSL + vol top50% + vol accel composite 15%stop top2.5%: "
+    "JT skip 3 weeks (vs 4)"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
 LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 4
+SKIP_WEEKS     = 3   # 3-week skip (vs 4)
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025  # 2.5% (between 2% and 3%)
 MA_WEEKS       = 20
