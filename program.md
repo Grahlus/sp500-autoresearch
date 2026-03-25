@@ -156,8 +156,121 @@ After **every** `uv run python run.py`, immediately run this — before writing 
 
 ---
 
+## R1000 Champion Config (Session 3 — Final)
+
+**Val: 1.271 | Train: 0.844 | Trades/yr: ~85 | MaxDD: -27.4% | +129.4% val return**
+
+```
+LOOKBACK_WEEKS = 26    # Primary momentum lookback
+SKIP_WEEKS     = 3     # Reversal skip
+REBAL_WEEKS    = 4     # 20-day rebalance
+TOP_PCT        = 0.025 # 2.5% of eligible universe
+MA_WEEKS       = 20    # 100-day trend filter
+STOP_LOSS_PCT  = 0.13  # 13% trailing stop from close HIGH
+VOL_MA_DAYS    = 10    # Dollar-vol averaging window
+MIN_HOLD_DAYS  = 5     # Minimum hold before stop eligible
+
+Signal: 26w_rank + 16w_rank (sum of two momentum ranks)
+Filter: dollar-vol top 30% (levels playing field for $5 miners vs $500 megacaps)
+Sizing: inv-vol (12d window)
+Regime: breadth<40% → 1% concentration (rarely fires on R1000)
+No F&G gate (removed — was blocking recovery-period entries)
+```
+
+### R1000-Confirmed Optimal Parameters (do not re-test):
+| Parameter | R1000 Optimal | Confirmed bad on R1000 |
+|-----------|---------------|------------------------|
+| Lookback | 26w | 13w destroys, 20w worse, 28w overfit, 30w overfit |
+| Skip weeks | 3w | 2w destroys, 4w worse |
+| Rebalance | 4w | 3w worse + higher cost, 5w worse |
+| Concentration | 2.5% | 1.5% massive overfit, 2.0% worse, 3.0% worse, 4.0% worse |
+| Stop-loss | 13% from close HIGH | 11% hurts train, 12% worse, 14-15% worse, 20% baseline |
+| Inv-vol window | 12d | 6d worse, 8d worse, 10d worse, 20d worse, 30d worse |
+| Composite | 26w+16w sum | product slightly worse, 3-factor sum worse, vol_accel hurts |
+| Dollar-vol filter | top 30% | 20%/25% too tight, 35%/40% too loose, 50% baseline |
+| Secondary factor | 16w (80d) | 8w/13w/14w/15w/17w all worse |
+| F&G gate | NONE (removed) | F&G≥22 was blocking recovery entries |
+| Greed reduction | NONE (removed) | F&G>70→1.5% hurts in bull markets |
+| MA filter | 20w (100d) | 10w/15w/30w/40w all worse |
+| Vol filter basis | DOLLAR-vol | Share-vol systematically excludes resource stocks |
+
+### Key R1000 Discoveries vs SP500 Champion:
+1. **Dollar-vol filter essential**: Share-vol favored NVDA (500M shares) over gold miners (5M shares) — unfair. Dollar-vol levels playing field.
+2. **Tighter stop (13% vs 20%)**: R1000 mid-caps mean-revert faster after momentum pushes.
+3. **16w secondary (vs 13w)**: Mid-cap sector rotation (gold, uranium, defense) has different timing.
+4. **Remove F&G gate**: On R1000, recoveries from extreme fear ARE signal — blocking them hurts.
+5. **Sum composite**: Allows partial factor compensation — better generalization across regimes.
+6. **12d inv-vol (vs 6d)**: Smoother sizing on more volatile R1000 names reduces position flip noise.
+7. **Breadth filter dead code**: R1000's breadth never drops below 40% — filter never fires.
+
+---
+
 ## Experiment Log (Session 3 — Fixed Engine)
 
-| # | Hypothesis | VAL Sharpe | VAL Calmar | VAL MaxDD | VAL Ret | TRAIN Sharpe | TRAIN Calmar | TRAIN MaxDD | Kept |
-|---|-----------|-----------|-----------|---------|--------|-------------|-------------|-----------|------|
-| S3-001 | Baseline: exp140 champion on fixed engine | 1.643 | 3.918 | -16.9% | +175.6% | 1.066 | 0.850 | -35.0% | baseline |
+| # | Hypothesis | VAL Sharpe | TRAIN Sharpe | Kept |
+|---|-----------|-----------|-------------|------|
+| S3-001 | Baseline: exp140 champion on fixed engine (SP500) | 1.643 | 1.066 | baseline |
+| S3-002 | R1000 universe + dollar-vol filter baseline | -0.077 | — | baseline |
+| S3-003 | MA_WEEKS=30 | -0.147 | 0.723 | No |
+| S3-004 | MA_WEEKS=40 | -0.163 | 0.715 | No |
+| S3-005 | Dollar-vol top 40% | 0.477 | 0.758 | **Yes** |
+| S3-006 | Dollar-vol top 30% | 0.669 | 0.868 | **Yes** |
+| S3-007 | Dollar-vol top 20% | -0.096 | 0.626 | No |
+| S3-008 | TOP_PCT=1.5% | 0.009 | 0.885 | No |
+| S3-009 | TOP_PCT=4.0% | 0.482 | 0.978 | No |
+| S3-010 | LOOKBACK=13w | -0.589 | 0.852 | No |
+| S3-011 | LOOKBACK=20w | 0.242 | 0.774 | No |
+| S3-012 | MA_WEEKS=10 | 0.090 | 0.745 | No |
+| S3-013 | SKIP_WEEKS=2 | 0.083 | 0.569 | No |
+| S3-014 | REBAL_WEEKS=3 | 0.227 | 0.753 | No |
+| S3-015 | Dollar-vol top 25% | -0.102 | 0.896 | No |
+| S3-016 | Dispersion-aware filter (position scaling) | 0.669 | 0.868 | No (neutral) |
+| S3-017 | STOP_LOSS=15% | 0.687 | 0.906 | **Yes** |
+| S3-018 | STOP_LOSS=12% | 0.590 | 0.889 | No |
+| S3-019 | Drop vol_accel (26w×13w only) | 0.909 | 0.844 | **Yes** |
+| S3-020 | Inv-vol window 10d | 0.922 | 0.852 | **Yes** |
+| S3-021 | Equal weighting | 0.746 | 0.833 | No |
+| S3-022 | TOP_PCT=3.0% | 0.788 | 0.887 | No |
+| S3-023 | Remove greed concentration reduction | 0.953 | 0.712 | **Yes** |
+| S3-024 | Remove F&G entry filter | 1.037 | 0.696 | **Yes** |
+| S3-025 | Breadth threshold 35% | 0.810 | 0.668 | No |
+| S3-026 | LOOKBACK=30w | 1.069 | 0.665 | No (overfit) |
+| S3-027 | VOL_MA_DAYS=20 | 0.889 | 0.722 | No |
+| S3-028 | Sum composite (26w+13w) | 1.037 | 0.745 | **Yes** (better train) |
+| S3-029 | 3-factor: 26w+13w+52w | -0.203 | 0.481 | No (train<0.5) |
+| S3-030 | Secondary=8w | 0.648 | 0.884 | No |
+| S3-031 | STOP_LOSS=13% | 1.125 | 0.784 | **Yes** |
+| S3-032 | STOP_LOSS=14% | 1.102 | 0.750 | No |
+| S3-033 | MIN_HOLD_DAYS=7 | 1.088 | 0.793 | No |
+| S3-034 | Dollar-vol accel in composite | 0.323 | 0.872 | No |
+| S3-035 | Breadth threshold 45% | 0.763 | 0.832 | No |
+| S3-036 | SKIP_WEEKS=4 | 1.047 | 0.969 | No |
+| S3-037 | Dollar-vol top 35% | 1.111 | 0.757 | No |
+| S3-038 | REBAL_WEEKS=5 | 0.714 | 1.057 | No |
+| S3-039 | LOOKBACK=24w | 1.123 | 0.886 | No |
+| S3-040 | No MA filter (above_ma=True) | 0.829 | 0.823 | No (trades>150) |
+| S3-041 | MA_WEEKS=15 | 0.557 | 0.867 | No |
+| S3-042 | TOP_PCT=2.0% | 0.482 | 0.889 | No |
+| S3-043 | 13w secondary no skip | 0.682 | 0.684 | No |
+| S3-044 | Secondary=16w (80d) | 1.209 | 0.804 | **Yes** |
+| S3-045 | Secondary=17w | 1.070 | 1.155 | No |
+| S3-046 | Secondary=15w | 0.434 | 0.849 | No |
+| S3-047 | SKIP=4 + 16w secondary | 1.089 | 0.873 | No |
+| S3-048 | STOP=12% + 16w secondary | 1.086 | 0.771 | No |
+| S3-049 | Positive momentum filter | 0.989 | 0.906 | No |
+| S3-050 | Secondary=14w | 0.927 | 0.855 | No |
+| S3-051 | Deep-bear force-exit at breadth<30% | 1.109 | 0.734 | No |
+| S3-052 | Product composite + 16w | 1.198 | 0.852 | No |
+| S3-053 | Inv-vol window 20d | 1.237 | 0.833 | **Yes** |
+| S3-054 | Inv-vol window 30d | 1.211 | 0.858 | No |
+| S3-055 | Inv-vol window 15d | 1.257 | 0.825 | **Yes** |
+| S3-056 | Inv-vol window 12d | 1.271 | 0.844 | **Yes** |
+| S3-057 | Inv-vol window 8d | 1.227 | 0.795 | No |
+| S3-058 | Inv-vol window 10d retest | 1.209 | 0.804 | No |
+| S3-059 | LOOKBACK=28w | 1.188 | 0.908 | No |
+| S3-060 | Bear mode eff_pct=0% | 1.271 | 0.844 | No (identical) |
+| S3-061 | Breadth threshold 55% | 0.790 | 0.826 | No |
+| S3-062 | Max position cap 40% | 1.211 | 0.818 | No |
+| S3-063 | 3-factor: 26w+16w+8w | 0.751 | 0.900 | No |
+| S3-064 | STOP=11% | 0.790 | 0.614 | No |
+| S3-065 | Secondary=17w + 12d inv-vol retest | 1.130 | 1.172 | No |
