@@ -27,8 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol top50% + vol accel + inv-vol 20d + greed-only short leg: "
-    "short bottom 1.5% JT below MA when F&G>75 (greed regime only)"
+    "exp072: trailing stop 15%→20% from position HIGH — more room during 2022 bear volatility"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -36,9 +35,8 @@ LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
-SHORT_PCT      = 0.015
 MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.15
+STOP_LOSS_PCT  = 0.20
 VOL_MA_DAYS    = 20
 
 
@@ -108,10 +106,8 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
             combo_filtered = combo.where(above_ma & high_volume).dropna()
 
-            new_pos = pd.Series(0.0, index=tickers)
-
             if not combo_filtered.empty:
-                # F&G regime: tighten concentration in extreme greed (>70)
+                # F&G regime: tighten concentration in extreme greed
                 eff_pct = 0.015 if fg_val > 70.0 else TOP_PCT
                 n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
@@ -120,6 +116,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
+                new_pos = pd.Series(0.0, index=tickers)
                 for tkr in top_tickers:
                     new_pos[tkr] = inv_vol_norm.get(tkr, 0.0)
 
@@ -132,20 +129,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                         entry_price[tkr] = np.nan
                         pos_high[tkr]    = np.nan
 
-            # ── Greed-only short leg (F&G > 75): bottom 1.5% JT, below MA ───────
-            if fg_val > 75.0:
-                below_ma    = today < ma
-                short_cands = mom.where(below_ma).dropna()
-                if not short_cands.empty:
-                    n_short = max(1, int(len(short_cands) * SHORT_PCT))
-                    short_tickers = short_cands.nsmallest(n_short).index
-                    vol_s = close.iloc[max(0, i - 20):i][short_tickers].pct_change().std()
-                    inv_s = (1.0 / vol_s.replace(0, np.nan)).fillna(0.0)
-                    inv_s_norm = inv_s / inv_s.sum() if inv_s.sum() > 0 else inv_s
-                    for tkr in short_tickers:
-                        new_pos[tkr] = -inv_s_norm.get(tkr, 0.0)
-
-            current_pos = new_pos.copy()
+                current_pos = new_pos.copy()
 
         weights.iloc[i] = current_pos
 

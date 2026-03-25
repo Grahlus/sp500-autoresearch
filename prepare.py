@@ -53,16 +53,20 @@ def load_data() -> dict:
     vix_aligned    = vix["vix"].reindex(idx).ffill()
     fg_aligned     = fg["fg_value"].reindex(idx).ffill()
 
-    # Train / validation split: last 2 years held out
-    cutoff = idx[-int(252 * 2)]
+    # Train / validation / test split: fixed dates per program.md
+    # Train: 2014-01-01 → 2022-06-30
+    # Validation: 2022-07-01 → 2024-06-30  (~504 days, includes 2022 bear)
+    # Test: 2024-07-01 → present           (hidden — evaluate.py only)
+    cutoff  = pd.Timestamp("2022-07-01")
+    val_end = pd.Timestamp("2024-07-01")
     print(f"  Universe  : {close.shape[1]} stocks")
     print(f"  Train     : {idx[0].date()} → {cutoff.date()}")
-    print(f"  Validation: {cutoff.date()} → {idx[-1].date()}")
+    print(f"  Validation: {cutoff.date()} → {val_end.date()} (~{(idx[(idx >= cutoff) & (idx < val_end)]).shape[0]} days)")
 
     return dict(
         close=close, open=open_, high=high, low=low, volume=volume,
         vix=vix_aligned, fear_greed=fg_aligned,
-        train_end=cutoff, index=idx,
+        train_end=cutoff, val_end=val_end, index=idx,
     )
 
 
@@ -81,18 +85,25 @@ def run_backtest(weights: pd.DataFrame, data: dict, split: str = "validation") -
       Day T+2: exit / rebalance at open[T+2]
       P&L[T+1] = weight[T] * (open[T+2] / open[T+1] - 1)
     """
-    close  = data["close"]
-    open_  = data["open"]
-    cutoff = data["train_end"]
+    close   = data["close"]
+    open_   = data["open"]
+    cutoff  = data["train_end"]
+    val_end = data.get("val_end", None)
 
     if split == "validation":
-        close   = close.loc[cutoff:]
-        open_   = open_.loc[cutoff:]
+        if val_end is not None:
+            close   = close.loc[cutoff:val_end]
+            open_   = open_.loc[cutoff:val_end]
+        else:
+            close   = close.loc[cutoff:]
+            open_   = open_.loc[cutoff:]
         weights = (
             weights.loc[cutoff:]
             if cutoff in weights.index
             else weights.iloc[-int(252 * 2):]
         )
+        if val_end is not None:
+            weights = weights.loc[:val_end]
     else:
         close   = close.loc[:cutoff]
         open_   = open_.loc[:cutoff]
@@ -126,6 +137,12 @@ def run_backtest(weights: pd.DataFrame, data: dict, split: str = "validation") -
     costs      = turnover * 0.0005
     strat_ret -= costs
 
+    # Approximate trade count: days where any position changed × avg active positions
+    ann_local = 252
+    position_changes = (w_norm.diff().abs() > 1e-6).sum(axis=1)
+    total_trades = int(position_changes.sum())
+    trades_per_year = round(total_trades / (len(strat_ret) / ann_local), 1)
+
     # Benchmark: SPY open-to-open (consistent with strategy execution)
     if "SPY" in open_.columns:
         bench_ret = (open_["SPY"].shift(-1) / open_["SPY"] - 1).fillna(0.0)
@@ -154,17 +171,26 @@ def run_backtest(weights: pd.DataFrame, data: dict, split: str = "validation") -
     bench_tot = bench_cum.iloc[-1] - 1
     alpha_ann = (strat_ret - bench_ret).mean() * ann
 
+    start_cap   = 100_000
+    final_value = round(start_cap * strat_cum.iloc[-1], 0)
+    total_cost  = round(costs.sum() * start_cap, 0)
+    cost_pct    = round(total_cost / start_cap * 100, 2)
+
     metrics = {
-        "split"        : split,
-        "sharpe"       : round(sharpe(strat_ret), 3),
-        "calmar"       : round(calmar(strat_ret), 3),
-        "total_return" : round(total_ret, 4),
-        "bench_return" : round(bench_tot, 4),
-        "alpha_ann"    : round(alpha_ann, 4),
-        "max_drawdown" : round(max_dd(strat_ret), 4),
-        "win_rate"     : round((strat_ret > 0).mean(), 3),
-        "ann_vol"      : round(strat_ret.std() * np.sqrt(ann), 4),
-        "n_days"       : len(strat_ret),
+        "split"           : split,
+        "sharpe"          : round(sharpe(strat_ret), 3),
+        "calmar"          : round(calmar(strat_ret), 3),
+        "total_return"    : round(total_ret, 4),
+        "bench_return"    : round(bench_tot, 4),
+        "alpha_ann"       : round(alpha_ann, 4),
+        "max_drawdown"    : round(max_dd(strat_ret), 4),
+        "win_rate"        : round((strat_ret > 0).mean(), 3),
+        "ann_vol"         : round(strat_ret.std() * np.sqrt(ann), 4),
+        "n_days"          : len(strat_ret),
+        "trades_per_year" : trades_per_year,
+        "final_value"     : f"${final_value:,.0f}",
+        "total_cost"      : f"${total_cost:,.0f}",
+        "cost_pct_capital": cost_pct,
     }
     return metrics
 
