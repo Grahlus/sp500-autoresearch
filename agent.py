@@ -1,36 +1,47 @@
 #!/usr/bin/env python3
 """
 agent.py — AGENT EDITS THIS FILE each experiment.
-Implement generate_signals() and set METRIC + HYPOTHESIS.
 
 Rules:
   - generate_signals() receives the full data dict (see prepare.py: load_data)
   - Return a DataFrame: index=dates, columns=tickers, values in [-1, 1]
-    Positive = long, Negative = short. Gross exposure normalised to 1.0 by engine.
-  - NO lookahead: at row T you may only use data up to and including row T.
-    (open[T+1] is the execution price — never use it as a signal input.)
-  - Do NOT edit prepare.py or run.py.
+  - NO lookahead: at row T use only data up to T.
+  - Do NOT edit prepare.py, run.py, or evaluate.py.
 
 ─────────────────────────────────────────────────────────────────────────────
-KNOWN BASELINE (from prior 10-year backtest on ~400 SP500 stocks, $100k):
-  RSL / Jegadeesh-Titman momentum:
-    skip=4, top3%, inv-vol sizing, 20-week MA filter, 20% stop-loss
-    → +4,455% | Sharpe 1.37 | MaxDD -33.7% | 343 trades
+ENGINE STATUS: FIXED (session 3)
+  - Daily drift rebalancing bug removed — trades only on weight changes
+  - Trailing stop uses close-price HIGH (not intraday — intraday not tradeable)
+  - All session 1/2 numbers were inflated. Session 3 is the truth.
 
-  This is the benchmark to beat. Do NOT retest configs already in program.md.
-  Focus on: adding shorts, VIX/Fear&Greed filters, multi-factor combos, ML.
+COST MODEL:
+  Starting capital : $100,000
+  Commission       : $20 per ticker traded
+  Slippage         : 5bps one-way
+  Execution        : open[T+1] ± slippage
+
+HARD CONSTRAINTS — auto-checked by run.py, revert if violated:
+  1. trades_per_year > 150  → REVERT (rebalance_days >= 20 minimum)
+  2. train sharpe < 0.5     → REVERT
+  3. train_sharpe < val_sharpe / 1.6  → REVERT (overfit)
+  4. ONE change per experiment
+
+SESSION 3 BASELINE (exp140, fixed engine):
+  Val Sharpe 1.643 | Calmar 3.918 | MaxDD -16.9% | +175.6% | ~55 trades/yr
+  Train Sharpe 1.066 | ratio 1.54 (passes 1.6 threshold)
+  OOS Sharpe 0.564 (2024-07 → 2026-03) — weak in low-dispersion regime
+
+  Beat val Sharpe 1.643 on chosen METRIC.
+  Primary goal: strategy that also works in low-dispersion/high-VIX regimes.
+  Do NOT retest anything already in program.md.
 ─────────────────────────────────────────────────────────────────────────────
 """
 import numpy as np
 import pandas as pd
 
-# ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
-HYPOTHESIS = (
-    "exp140 + fix: trailing stop tracks CLOSE highs not intraday HIGH — removes lookahead, stops 604→~3/yr"
-)
+HYPOTHESIS = "S3-001: exp140 champion — session 3 fixed-engine baseline"
 
-# ── Strategy parameters ──────────────────────────────────────────────────────
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
@@ -38,23 +49,16 @@ TOP_PCT        = 0.025
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
 VOL_MA_DAYS    = 10
-MIN_HOLD_DAYS  = 5   # minimum days before trailing stop can trigger (prevents intraday-spike churn)
+MIN_HOLD_DAYS  = 5
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
-    """
-    RSL + vol filter + vol accel composite + F&G regime:
-    - Extreme Greed (F&G > 75): tighten to top 1.5%
-    - Extreme Fear (F&G < 25): skip new entries (hold existing until stop-loss)
-    - Normal: top 2.5%
-    """
     close   = data["close"]
     high    = data["high"]
     volume  = data["volume"]
     fg_raw  = data["fear_greed"]
     dates   = close.index
-
-    fg = fg_raw.reindex(dates).ffill().fillna(50.0).values
+    fg      = fg_raw.reindex(dates).ffill().fillna(50.0).values
     tickers = close.columns
     n       = len(dates)
 
@@ -65,83 +69,60 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
     weights     = pd.DataFrame(0.0, index=dates, columns=tickers)
     entry_price = pd.Series(np.nan, index=tickers)
-    pos_high    = pd.Series(np.nan, index=tickers)  # rolling high since entry
-    entry_day   = pd.Series(-999,   index=tickers)  # row index when position was entered
-    current_pos = pd.Series(0.0,   index=tickers)
-    prev_in_bear = False   # breadth was < 0.40 at last rebalance
+    pos_high    = pd.Series(np.nan, index=tickers)
+    entry_day   = pd.Series(-999,   index=tickers)
+    current_pos = pd.Series(0.0,    index=tickers)
 
-    # ── Diagnostic counters ───────────────────────────────────────────────────
-    _stop_exits   = 0
-    _rebal_exits  = 0
-    _rebal_enters = 0
+    _stop_exits = _rebal_exits = _rebal_enters = 0
 
     for i in range(lb_days, n):
-        today      = close.iloc[i]
-        today_high = high.iloc[i]
-        fg_val     = float(fg[i])
+        today    = close.iloc[i]
+        fg_val   = float(fg[i])
+        ma_200   = close.iloc[max(0, i - 200):i].mean()
+        breadth  = float((today > ma_200).mean())
 
-        # Compute breadth for recovery trigger
-        ma_200_now  = close.iloc[max(0, i - 200):i].mean()
-        breadth_now = float((today > ma_200_now).mean())
-
-        # ── Trailing stop from position HIGH (not entry, uses daily high) ───────
+        # ── Trailing stop (close-price HIGH only — no intraday) ───────────────
         for tkr in current_pos[current_pos > 0].index:
             ph = pos_high.get(tkr, np.nan)
             if not np.isnan(ph) and ph > 0:
-                # Update rolling high using daily CLOSE (not intraday high — intraday
-                # highs are not tradeable at signal time and cause phantom stop triggers)
                 if today[tkr] > ph:
                     pos_high[tkr] = today[tkr]
                     ph = today[tkr]
-                # Only trigger stop after minimum holding period
                 days_held = i - int(entry_day.get(tkr, i))
                 if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - STOP_LOSS_PCT):
                     current_pos[tkr] = 0.0
                     entry_price[tkr] = np.nan
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
-                    _stop_exits += 1
+                    _stop_exits     += 1
 
-        # ── Rebalance every rebal_days ────────────────────────────────────────
+        # ── Rebalance every rebal_days when F&G >= 22 ─────────────────────────
         if i % rebal_days == 0 and fg_val >= 22.0:
-            mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
-            mom = mom.replace([np.inf, -np.inf], np.nan)
+            mom      = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
+            mom      = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
             above_ma = today > ma
 
-            # Volume filter: top 50% by 20-day avg volume
-            avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
-            high_volume = avg_vol >= avg_vol.median()
+            avg_vol    = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
+            high_vol   = avg_vol >= avg_vol.median()
+            recent_vol = volume.iloc[max(0, i - 5):i].mean()
+            vol_accel  = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
 
-            # Volume acceleration: recent 5-day avg / 20-day avg
-            recent_vol  = volume.iloc[max(0, i - 5):i].mean()
-            vol_accel   = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
-
-            # 13-week momentum for soft multi-horizon signal
             mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
             mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
+            combo       = mom.rank(pct=True) * vol_accel.rank(pct=True) * mom_13w.rank(pct=True)
+            combo_filt  = combo.where(above_ma & high_vol).dropna()
 
-            # Triple composite: 26w × vol_accel × 13w (all percentile ranks)
-            mom_rank    = mom.rank(pct=True)
-            accel_rank  = vol_accel.rank(pct=True)
-            mom13w_rank = mom_13w.rank(pct=True)
-            combo       = mom_rank * accel_rank * mom13w_rank
-
-            combo_filtered = combo.where(above_ma & high_volume).dropna()
-
-            if not combo_filtered.empty:
-                # Use pre-computed breadth
-                breadth = breadth_now
-
-                # Adaptive concentration: defensive in bear, tight in greed
+            if not combo_filt.empty:
                 if breadth < 0.40:
-                    eff_pct = 0.010   # bear market — top 1%, very selective
+                    eff_pct = 0.010
                 elif fg_val > 70.0:
-                    eff_pct = 0.015   # greed — top 1.5%
+                    eff_pct = 0.015
                 else:
-                    eff_pct = TOP_PCT  # normal — top 2.5%
-                n_top   = max(1, int(len(combo_filtered) * eff_pct))
-                top_tickers = combo_filtered.nlargest(n_top).index
+                    eff_pct = TOP_PCT
+
+                n_top       = max(1, int(len(combo_filt) * eff_pct))
+                top_tickers = combo_filt.nlargest(n_top).index
 
                 vol_ret      = close.iloc[max(0, i - 6):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
@@ -155,14 +136,14 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     if current_pos.get(tkr, 0.0) == 0.0:
                         entry_price[tkr] = today[tkr]
                         pos_high[tkr]    = today[tkr]
-                        entry_day[tkr]   = i          # record entry row for min-hold check
-                        _rebal_enters += 1
+                        entry_day[tkr]   = i
+                        _rebal_enters   += 1
                 for tkr in current_pos[current_pos > 0].index:
                     if new_pos[tkr] == 0.0:
                         entry_price[tkr] = np.nan
                         pos_high[tkr]    = np.nan
                         entry_day[tkr]   = -999
-                        _rebal_exits += 1
+                        _rebal_exits    += 1
 
                 current_pos = new_pos.copy()
 

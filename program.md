@@ -1,88 +1,117 @@
-# SP500 Autoresearch — Research Program
+# SP500 Autoresearch — Research Program (Session 3)
 
-## Objective
-Beat SP500 buy-and-hold on the **validation set** (2022-07 → 2024-06, held-out from training).
-Long AND short positions allowed. Full universe ~500 stocks, daily bars.
-
----
-
-## Data Splits (hardcoded in prepare.py — never change these)
-
-| Split | Period | Days | Purpose |
-|-------|--------|------|---------|
-| Train | 2014-01-01 → 2022-06-30 | ~2142 | Agent fits freely here |
-| Validation | 2022-07-01 → 2024-06-30 | ~504 | **Agent optimises METRIC here** |
-| Test | 2024-07-01 → present | ~190+ | **HIDDEN — run evaluate.py only when done** |
-
-**Critical rules:**
-- `run.py` shows Train + Validation only. Test is never shown during experiments.
-- `evaluate.py` shows all 3 splits — run ONLY when a strategy is truly finalised.
-- Looking at test results and then continuing to iterate invalidates the test set.
-- The 47 experiments from session 1 used an older 2-year window. The new validation
-  window (2022-07 → 2024-06) is partially fresh — re-establish baseline scores first.
-
----
+## Engine Status — FIXED
+The backtest engine was corrected in session 3:
+- **Bug fixed**: daily dollar-drift rebalancing removed — engine now only trades when weights change
+- **Bug fixed**: trailing stop now uses close-price HIGH, not intraday HIGH (intraday not tradeable)
+- All session 1/2 Sharpe numbers were inflated by phantom daily churn — do not rely on them
+- The correct engine is in prepare.py + evaluate.py as of the session 3 baseline commit
 
 ## Execution Model
+- Signal observed at **close[T]** → filled at **open[T+1]** ± slippage
+- Trades ONLY executed when weights change (new entry, exit, or stop trigger)
+- No daily drift rebalancing — positions are held until intentionally changed
 
-- Signal observed at **close[T]**
-- Position entered at **open[T+1]** ← realistic fill price
-- Position exited/rebalanced at **open[T+2]**
-- `generate_signals()` must only use data up to row T
-- `run.py` runs `validate_no_lookahead()` automatically — violations abort the run
+## Cost Model (enforced by prepare.py)
+- Starting capital: $100,000
+- Commission: $20 per ticker traded (IB-style flat fee)
+- Slippage: 5bps one-way on execution price
 
-**Lookahead rules for agent.py:**
-- Never use `.shift(-N)` for N > 0
-- Never index future rows: `close.iloc[i + k]` where k > 0 is forbidden
-- Global stats like `close.mean()` over the full dataset are lookahead — use rolling windows
-- `.iloc[a:i]` is safe (excludes row i). `.iloc[a:i+1]` includes today's close (also fine)
+## Hard Constraints (enforced by run.py — violations auto-flagged)
+1. **trades_per_year > 150** → REVERT. Use rebalance_days >= 20.
+2. **train sharpe < 0.5** → REVERT. No edge on 9 years.
+3. **train_sharpe < val_sharpe / 1.6** → REVERT. Overfit.
+4. Change ONE thing per experiment. Isolate variables.
+
+## Benchmark to Beat
+**OOS result (2024-07 → 2026-03, 431 days, never touched during training):**
+- Champion exp140: Sharpe 0.564 | Calmar 0.516 | +27.2% vs SPY +25.0%
+- Thin edge in a tough regime (mega-cap crowding, low momentum dispersion)
+- Val Sharpe 1.643 | Train Sharpe 1.066 | ~55 trades/yr | $2,186 costs
+
+**The goal: beat OOS Sharpe 0.564 on a strategy that is robust across regimes.**
 
 ---
 
-## Hard Constraints
+## What We Know (Confirmed with Fixed Engine)
 
-- Max gross exposure: 1.0 (normalised by prepare.py)
-- Transaction costs: 5 bps per turnover unit (enforced by prepare.py)
-- Time budget: 60 minutes per experiment (hard timeout in prepare.py)
-- **Do NOT edit prepare.py, run.py, or evaluate.py**
+### Champion stack (exp140, val window 2022-07 → 2024-06):
+- RSL Jegadeesh-Titman: 26w lookback, skip 3w, rebalance 4w
+- Triple composite signal: 26w_rank × vol_accel_rank × 13w_rank (product)
+- Volume filter: top 50% by 20d avg volume
+- Vol acceleration: 5d avg / 10d avg volume ratio
+- Adaptive concentration: top 1% bear (breadth<40%), top 1.5% greed (F&G>70), top 2.5% normal
+- F&G entry filter: skip new entries when F&G < 22
+- Trailing stop: 20% from close-price HIGH since entry
+- Position sizing: inv-vol (6d window)
+
+### Confirmed optimal parameters (do not re-test):
+| Parameter | Optimal | Confirmed bad |
+|-----------|---------|---------------|
+| Lookback | 26w | 24w/28w overfit |
+| Skip weeks | 3w | 2w destroys, 4w fails train |
+| Rebalance | 4w | 5w/6w overfit |
+| Concentration | 2.5% | 2% worse, 3% fails train |
+| Stop-loss | 20% from close HIGH | 15% too tight, 25% fails train |
+| Inv-vol window | 6d | 5d overfit |
+| Composite | 26w×vol_accel×13w product | sum overfits, duo worse |
+| Vol filter | top 50% | 30% too restrictive |
+| F&G entry | ≥22 | ≥21 fails overfit, ≥25 too restrictive |
+| 2nd factor | 13w | 8w/10w much worse |
+
+### Why OOS underperformed val:
+The 2024-2025 regime had low momentum dispersion — mega-cap tech dominated,
+everything moved together. The strategy thrives on dispersion. In low-dispersion
+regimes, the top 2.5% is crowded and correlated = high vol, lower Sharpe.
 
 ---
 
-## What We Know (confirmed over 47 experiments — DO NOT re-test)
+## Research Frontier — Session 3
 
-### Confirmed winners (additive — each improved on the previous)
+The fixed engine changes the playing field. All prior Sharpe numbers were inflated.
+The real val baseline with fixed engine is Sharpe ~1.6, OOS is 0.564.
 
-| Finding | Effect | Exp |
-|---------|--------|-----|
-| JT skip=3 weeks (not 4) | Optimal with vol-accel filter | #024 |
-| Vol top 50% pre-filter | +0.09 Sharpe vs no filter | #005 |
-| Vol acceleration composite (JT × vol_accel rank) | +0.30 Sharpe, major | #007 |
-| Top 2.5% concentration (not 2%, not 3%) | Optimal concentration | #020 |
-| Trailing stop 15% from position HIGH (not from entry) | Better than fixed stop | #028 |
-| F&G regime: skip new entries fear<25, top1.5% greed>75 | +0.32 Sharpe, huge | #039 |
+### Priority 1: Dispersion-aware regime filter (highest impact)
+The OOS underperformance is explained by low cross-sectional momentum dispersion.
+Measure it directly and reduce exposure when it's low:
+- Compute cross-sectional std of 13w returns across the universe each rebalance
+- When dispersion (std) is below median historical → reduce top_pct or cut position size 50%
+- When dispersion is high → full position
+- This directly addresses the 2024-25 regime failure
 
-### Confirmed dead ends (do not retry)
+### Priority 2: Mean reversion overlay (different regime, different edge)
+When momentum dispersion is low (bad for RSL), mean reversion tends to work better.
+Build a hybrid: RSL in high-dispersion, mean-reversion in low-dispersion:
+- Mean reversion signal: stocks down 5-15% in past 10 days, above 200d MA, high volume
+- Weight: 100% RSL in high-dispersion, 50/50 RSL+MR in low-dispersion
+- Different alpha source, potentially smoother equity curve across regimes
 
-| Idea | Result | Why |
-|------|--------|-----|
-| Short bottom 3% momentum | Hurts | Bull market period, longs dominate |
-| VIX position scaling | No effect | Engine normalises gross exposure to 1.0, scaling has no impact |
-| VIX cash regime (VIX>35) | -0.20 Sharpe | Too many false positives |
-| RSI < 70 filter | -1.1 Sharpe | Kills best momentum stocks |
-| Stop-loss from entry (vs from HIGH) | Worse | Locked in less of each winner |
-| Stop-loss 10-12.5% | Worse than 15% | Too tight, premature exits |
-| 7 or 10 holdings (vs top 2.5%) | Worse | Dilutes the edge |
-| Hard regime filter (SPY 200 MA) | No effect | SPY barely crossed in test period |
-| Sector diversification cap | Reduces returns | Concentration is the edge |
-| 3-day vol accel window | Worse | Noisy |
-| 2-week rebalance | Worse | Too frequent, txn costs hurt |
-| Multi-horizon momentum avg(13w+26w) | Worse | 26w alone is better |
-| Dollar-volume (vs raw volume) | Slightly worse | Raw volume better signal |
-| Intraday filter (close > open) | -1.1 Sharpe | Too restrictive |
-| Vol accel as hard filter (binary) | -0.6 Sharpe | Rank combination is better |
-| Sticky exit threshold | No improvement | Not worth the complexity |
-| F&G thresholds 20/80 or 30/70 | Worse than 25/75 | 25/75 is optimal |
-| Both VIX+F&G dual regime | Same as F&G alone | VIX adds nothing |
+### Priority 3: Sector rotation overlay
+The 2024-25 AI bull was sector-specific. A sector momentum layer might capture it:
+- Rank GICS sectors by 13w momentum
+- Overweight top 2 sectors by 25%, underweight bottom 2 by 25%
+- Use yfinance sector ETFs (XLK, XLF, XLE etc.) as sector proxies
+- Add as weight modifier on top of individual stock RSL
+
+### Priority 4: Volatility-adjusted concentration
+When VIX > 25 (high fear), the top 2.5% are high-beta stocks that get punished hardest.
+In high-VIX environments, wider diversification (top 4-5%) actually helps:
+- top_pct = 2.5% when VIX < 20
+- top_pct = 4.0% when VIX 20-30
+- top_pct = 5.0% when VIX > 30
+Different from breadth-based bear filter — this is vol-level not price-level
+
+### Priority 5: Earnings blackout filter
+High-vol stop triggers often happen around earnings. If earnings date is within 5 days,
+skip new entries for that ticker. Reduces the "catching a falling knife on earnings" problem.
+Use yfinance calendar data.
+
+### Do NOT re-test (exhausted in sessions 1-2):
+- All lookback/skip/rebalance/concentration variations (fully grid-searched)
+- VIX as a binary skip filter (redundant with breadth)
+- Dual-window vol_accel, LightGBM overlays, 52-week high factor
+- Short leg (multiple failures, kills train sharpe)
+- F&G threshold variations (all fail overfit or too restrictive)
 
 ---
 
@@ -91,58 +120,19 @@ Long AND short positions allowed. Full universe ~500 stocks, daily bars.
 After **every** `uv run python run.py`, immediately run this — before writing any new code:
 
 ```bash
-./log_exp.sh NNN "hypothesis" "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX%" Yes|No
+./log_exp.sh NNN "hypothesis" \
+  "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX% final=$XXXk cost=$XXX trades=XXX" \
+  "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX% final=$XXXk cost=$XXX trades=XXX" \
+  Yes|No
 ```
-
-- `NNN` = experiment number
-- metrics = exact values from the `>>> SCORE` block
-- `Yes` = committed (improved validation METRIC), `No` = reverted
-
-**This is mandatory. Do not skip it.**
+- 3rd arg = VALIDATION metrics, 4th arg = TRAIN metrics
+- Overfitting check: revert if train_sharpe < val_sharpe / 1.6
+- This is mandatory. Do not skip it.
 
 ---
 
-## Research Frontier (priority order — all untested on new val window)
+## Experiment Log (Session 3 — Fixed Engine)
 
-### 1. Re-establish baseline (first run)
-Re-run the current agent.py (exp #039 config) on the NEW validation window.
-This is exp #001 in the new log. Record the score — it becomes the new benchmark.
-
-### 2. Short side (revisit with tighter filter)
-Previous attempt (#002) shorted broadly. Try a more surgical approach:
-- Short only stocks that triggered trailing stop (momentum broke down)
-- Short bottom 1% (not 3%) by composite rank, only when F&G > 60 (not fear)
-- Short must also be below 20-week MA
-- Target: improve Sharpe AND reduce MaxDD
-
-### 3. ML signal layer
-LightGBM or random forest trained on TRAIN set only (2014-2022):
-- Features per stock per week: JT_26w, JT_13w, vol_accel_10/20, vol_accel_5/20,
-  MA_distance (price/MA20w - 1), VIX level, F&G level, 4w return
-- Target: top 2.5% composite rank label (binary classification)
-- Use ML score as a weight modifier on the RSL composite rank
-- Train on train split only — validate on validation split
-
-### 4. Earnings/event avoidance
-- Don't enter positions within 3 days before earnings (use a calendar or infer from
-  abnormal volume spikes as proxy)
-- Reduces gap-down risk on long positions
-
-### 5. Sector momentum overlay
-- Rank GICS sectors by 3-month momentum
-- Overweight stocks in top 2 sectors by 1.5x, underweight bottom 2 by 0.5x
-- Keep stock-level composite ranking as primary signal
-
-### 6. Adaptive top% based on market breadth
-- When > 60% of SP500 is above 200-day MA: use top 2.5% (normal)
-- When < 40% of SP500 is above 200-day MA: shrink to top 1% (defensive)
-- Breadth computed as of close[T], no lookahead
-
----
-
-## Experiment Log (new validation window: 2022-07 → 2024-06)
-
-| # | Hypothesis | Sharpe | Calmar | Alpha | MaxDD | Return | Kept |
-|---|-----------|--------|--------|-------|-------|--------|------|
-| 001 | Re-baseline: best config from session 1 on new val window | — | — | — | — | — | pending |
-| 068 | F&G<25 AND VIX>20 skip entries dual filter — AND condition less effective than F&G alone | 1.924 | 3.789 | 0.575 | -23.4% | +256.5% | — | — | — | 0.657 | 0.410 | -36.7% | +318.0% | — | No |
+| # | Hypothesis | VAL Sharpe | VAL Calmar | VAL MaxDD | VAL Ret | TRAIN Sharpe | TRAIN Calmar | TRAIN MaxDD | Kept |
+|---|-----------|-----------|-----------|---------|--------|-------------|-------------|-----------|------|
+| S3-001 | Baseline: exp140 champion on fixed engine | 1.643 | 3.918 | -16.9% | +175.6% | 1.066 | 0.850 | -35.0% | baseline |
