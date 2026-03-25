@@ -27,8 +27,8 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL baseline + volume confirmation: only hold stocks where "
-    "20-day avg volume is in top 50% of universe at rebalance"
+    "RSL + vol filter top50% + volume acceleration: "
+    "composite score = JT_mom_rank * vol_accel_rank (recent 5d vol / 20d avg)"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -38,18 +38,19 @@ REBAL_WEEKS    = 4
 TOP_PCT        = 0.03
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
-VOL_MA_DAYS    = 20   # days to average volume
+VOL_MA_DAYS    = 20   # days for baseline avg volume
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
     """
-    RSL momentum + volume confirmation:
-    Only enter stocks where their 20-day average volume ranks in the top 50%
-    of the universe. Filters out low-liquidity/low-interest stocks.
+    RSL + volume filter + volume acceleration composite:
+    - Volume filter: top 50% by 20-day avg volume
+    - Composite rank = JT_momentum_rank × volume_acceleration_rank
+      where vol_accel = recent 5-day avg vol / 20-day avg vol
     """
-    close  = data["close"]
-    volume = data["volume"]
-    dates  = close.index
+    close   = data["close"]
+    volume  = data["volume"]
+    dates   = close.index
     tickers = close.columns
     n       = len(dates)
 
@@ -80,17 +81,24 @@ def generate_signals(data: dict) -> pd.DataFrame:
             ma       = close.iloc[max(0, i - ma_days):i].mean()
             above_ma = today > ma
 
-            # Volume filter: top 50% by 20-day average volume
+            # Volume filter: top 50% by 20-day avg volume
             avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
-            vol_median  = avg_vol.median()
-            high_volume = avg_vol >= vol_median
+            high_volume = avg_vol >= avg_vol.median()
 
-            # Apply both filters
-            mom_filtered = mom.where(above_ma & high_volume).dropna()
+            # Volume acceleration: recent 5-day avg / 20-day avg
+            recent_vol  = volume.iloc[max(0, i - 5):i].mean()
+            vol_accel   = (recent_vol / avg_vol.replace(0, np.nan)).fillna(1.0)
 
-            if not mom_filtered.empty:
-                n_top       = max(1, int(len(mom_filtered) * TOP_PCT))
-                top_tickers = mom_filtered.nlargest(n_top).index
+            # Composite score: percentile ranks multiplied
+            mom_rank    = mom.rank(pct=True)
+            accel_rank  = vol_accel.rank(pct=True)
+            combo       = mom_rank * accel_rank
+
+            combo_filtered = combo.where(above_ma & high_volume).dropna()
+
+            if not combo_filtered.empty:
+                n_top       = max(1, int(len(combo_filtered) * TOP_PCT))
+                top_tickers = combo_filtered.nlargest(n_top).index
 
                 vol_ret      = close.iloc[max(0, i - 60):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
