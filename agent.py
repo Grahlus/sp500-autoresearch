@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp140: HIGH stop + F&G>=22 fear entries — combine improvements to pass overfit"
+    "exp140 + fix: MIN_HOLD_DAYS=5 prevents stop-loss churn on intraday HIGH spikes in high-vol OOS regime"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ TOP_PCT        = 0.025
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
 VOL_MA_DAYS    = 10
+MIN_HOLD_DAYS  = 5   # minimum days before trailing stop can trigger (prevents intraday-spike churn)
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
@@ -65,8 +66,14 @@ def generate_signals(data: dict) -> pd.DataFrame:
     weights     = pd.DataFrame(0.0, index=dates, columns=tickers)
     entry_price = pd.Series(np.nan, index=tickers)
     pos_high    = pd.Series(np.nan, index=tickers)  # rolling high since entry
+    entry_day   = pd.Series(-999,   index=tickers)  # row index when position was entered
     current_pos = pd.Series(0.0,   index=tickers)
     prev_in_bear = False   # breadth was < 0.40 at last rebalance
+
+    # ── Diagnostic counters ───────────────────────────────────────────────────
+    _stop_exits   = 0
+    _rebal_exits  = 0
+    _rebal_enters = 0
 
     for i in range(lb_days, n):
         today      = close.iloc[i]
@@ -81,15 +88,18 @@ def generate_signals(data: dict) -> pd.DataFrame:
         for tkr in current_pos[current_pos > 0].index:
             ph = pos_high.get(tkr, np.nan)
             if not np.isnan(ph) and ph > 0:
-                # Update rolling high using daily HIGH
+                # Update rolling high using daily HIGH (always, regardless of hold period)
                 if today_high[tkr] > ph:
                     pos_high[tkr] = today_high[tkr]
                     ph = today_high[tkr]
-                # Trailing stop: exit if close drops 20% from rolling HIGH
-                if today[tkr] < ph * (1 - STOP_LOSS_PCT):
+                # Only trigger stop after minimum holding period
+                days_held = i - int(entry_day.get(tkr, i))
+                if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - STOP_LOSS_PCT):
                     current_pos[tkr] = 0.0
                     entry_price[tkr] = np.nan
                     pos_high[tkr]    = np.nan
+                    entry_day[tkr]   = -999
+                    _stop_exits += 1
 
         # ── Rebalance every rebal_days ────────────────────────────────────────
         if i % rebal_days == 0 and fg_val >= 22.0:
@@ -144,13 +154,21 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     if current_pos.get(tkr, 0.0) == 0.0:
                         entry_price[tkr] = today[tkr]
                         pos_high[tkr]    = today[tkr]
+                        entry_day[tkr]   = i          # record entry row for min-hold check
+                        _rebal_enters += 1
                 for tkr in current_pos[current_pos > 0].index:
                     if new_pos[tkr] == 0.0:
                         entry_price[tkr] = np.nan
                         pos_high[tkr]    = np.nan
+                        entry_day[tkr]   = -999
+                        _rebal_exits += 1
 
                 current_pos = new_pos.copy()
 
         weights.iloc[i] = current_pos
 
+    n_years = (n - lb_days) / 252
+    print(f"  [DIAG] stop_exits/yr={_stop_exits/n_years:.1f}  "
+          f"rebal_exits/yr={_rebal_exits/n_years:.1f}  "
+          f"rebal_enters/yr={_rebal_enters/n_years:.1f}", flush=True)
     return weights
