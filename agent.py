@@ -40,14 +40,14 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-028: sum composite 26w+13w ranks (vs product — may generalize better)"
+HYPOTHESIS = "S3-031: STOP_LOSS_PCT=13% (fine-tune between 12% and 15%)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.15
+STOP_LOSS_PCT  = 0.13
 VOL_MA_DAYS    = 10
 MIN_HOLD_DAYS  = 5
 
