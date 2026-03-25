@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-002: R1000 universe + dollar-volume filter baseline (champion config)"
+HYPOTHESIS = "S3-005: dollar-vol top 40% (tighter vol filter, remove noisiest R1000 names)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -107,7 +107,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
             # universe sizes. A $5 miner and a $500 megacap compete equally.
             dollar_vol  = (close.iloc[max(0, i - VOL_MA_DAYS):i] *
                            volume.iloc[max(0, i - VOL_MA_DAYS):i]).mean()
-            high_vol    = dollar_vol >= dollar_vol.median()
+            high_vol    = dollar_vol >= dollar_vol.quantile(0.60)  # top 40%
 
             avg_vol     = volume.iloc[max(0, i - VOL_MA_DAYS):i].mean()
             recent_vol  = volume.iloc[max(0, i - 5):i].mean()
