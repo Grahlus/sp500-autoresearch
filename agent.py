@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-019: drop vol_accel from composite — 26w × 13w only (simpler signal for R1000)"
+HYPOTHESIS = "S3-020: inv-vol window 10d (smoother position sizing for R1000)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -125,7 +125,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 n_top       = max(1, int(len(combo_filt) * eff_pct))
                 top_tickers = combo_filt.nlargest(n_top).index
 
-                vol_ret      = close.iloc[max(0, i - 6):i][top_tickers].pct_change().std()
+                vol_ret      = close.iloc[max(0, i - 10):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
