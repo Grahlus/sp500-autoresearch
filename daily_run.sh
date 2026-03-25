@@ -26,8 +26,10 @@ Find the next experiment number in the log. \
 Form a hypothesis, edit agent.py (set HYPOTHESIS, METRIC, and generate_signals), \
 run `uv run python run.py`, \
 then IMMEDIATELY run: \
-  ./log_exp.sh NNN "hypothesis" "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX%" Yes|No \
-using the exact numbers from the run.py output. This is MANDATORY before writing any new code. \
+  ./log_exp.sh NNN "hypothesis" "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX% final=\$XXXk cost=\$XXX trades=XXX" "sharpe=X.XX calmar=X.XX alpha=X.XX maxdd=-XX.X% ret=+XXX% final=\$XXXk cost=\$XXX trades=XXX" Yes|No \
+3rd arg = VALIDATION metrics, 4th arg = TRAIN metrics, copied exactly from run.py output. \
+Check for overfitting: if train_sharpe > val_sharpe x 1.5, revert even if val improved. \
+This is MANDATORY before writing any new code. \
 If the chosen METRIC improved vs the previous best on validation, \
 commit with message "exp#NNN: <hypothesis> | <metric>=<score>", otherwise revert agent.py. \
 Immediately start the next experiment without waiting. \
