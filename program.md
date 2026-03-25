@@ -131,3 +131,54 @@ This is mandatory. Do not skip it.
 | 001 | RSL benchmark: JT skip=4 + top3% + inv-vol + MA20 + stop20% | — | — | — | — | — | pending |
 | 001 | RSL benchmark: JT skip=4 + top3% + inv-vol + MA20 + stop20% | 1.309 | 1.397 | 0.347 | -36.17% | +126.6% | No |
 | 002 | RSL long top3% + VIX-gated short bottom3% below MA VIX>20, inv-vol both sides, stop20% | 1.151 | 1.104 | 0.279 | -37.2% | +98.96% | No |
+| 003 | RSL + VIX regime scaling VIX<20=100% VIX20-30=60% VIX>30=20% (engine normalizes so no effect) | 1.309 | 1.397 | 0.347 | -36.17% | +126.6% | No |
+| 004 | RSL + explicit cash VIX>35 with recovery rebalance trigger at VIX<30 | 1.109 | 1.012 | 0.257 | -37.86% | +91.3% | No |
+| 005 | RSL + volume confirmation: only hold stocks in top 50% universe by 20-day avg volume | 1.402 | 1.514 | 0.483 | -44.57% | +180.5% | Yes |
+| 006 | RSL + vol filter top50% + 52wkH proximity combo rank 50/50 | 1.167 | 1.632 | 0.272 | -24.9% | +97.8% | No |
+| 007 | RSL + vol filter top50% + vol acceleration composite: JT_rank × vol_accel_rank | 1.706 | 2.795 | 0.411 | -22.51% | +165.4% | Yes |
+| 000 | RSL + vol top50% + vol accel 10d/20d + RSI<70 filter (RSI kills momentum) | 0.645 | 0.785 | 0.081 | -21.55% | +36.7% | No |
+| 009 | RSL + vol filter top50% + vol accel composite: top 2% (more concentrated) | 1.770 | 3.38 | 0.502 | -22.52% | +210.2% | Yes |
+| 010 | RSL + vol top50% + vol accel composite: top 1.5% ultra-concentrated (worse than 2%) | 1.412 | 1.982 | 0.453 | -32.39% | +169.6% | No |
+| 011 | RSL + vol accel + F&G weight (no effect: scaling doesnt change rankings) | 1.770 | 3.38 | 0.502 | -22.52% | +210.2% | No |
+| 012 | RSL + vol accel top2% + above median mom filter (over-filters good stocks) | 1.168 | 1.49 | 0.386 | -34.69% | +130.1% | No |
+| 013 | RSL + vol accel composite top2%: 3d window + 2-week rebalance (txn costs hurt) | 0.635 | 0.546 | 0.095 | -31.97% | +38.0% | No |
+| 014 | RSL + dollar-vol filter top50% + dollar-vol accel composite top2% (raw vol better) | 1.577 | 3.066 | 0.534 | -25.28% | +215.0% | No |
+| 015 | RSL + vol accel as hard filter >1.0 + JT rank top2% (binary filter hurts) | 0.747 | 0.576 | 0.305 | -53.25% | +70.7% | No |
+| 016 | triple composite JT x vol_accel x 4wk_mom (too restrictive) | 1.052 | 1.98 | 0.289 | -20.39% | +97.0% | No |
+| 017 | RSL + vol accel composite top2%: 10w MA filter (20w is better) | 1.665 | 3.468 | 0.589 | -24.99% | +248.4% | No |
+| 018 | RSL + vol accel composite top2%: 15% stop-loss (tighter) | 1.790 | 3.399 | 0.508 | -22.7% | +213.9% | Yes |
+| 019 | RSL + vol accel composite: 12.5% stop-loss (too tight vs 15%) | 1.724 | 2.789 | 0.501 | -27.04% | +207.8% | No |
+| 020 | RSL + vol accel composite 15%stop: top 2.5% concentration | 1.809 | 3.466 | 0.471 | -20.83% | +196.6% | Yes |
+| 021 | RSL + vol accel top2.5% 15%stop: 52-week lookback (too long, 26w is better) | 1.324 | 1.664 | 0.255 | -24.35% | +97.5% | No |
+| 022 | RSL + vol top40% + vol accel composite (top 50% is better) | 1.702 | 2.802 | 0.482 | -25.86% | +197.4% | No |
+| 023 | RSL + vol top60% + vol accel composite (top 50% is optimal) | 1.327 | 1.806 | 0.251 | -22.25% | +96.5% | No |
+| 024 | RSL + vol accel composite 15%stop top2.5%: JT skip 3 weeks (vs 4) | 1.844 | 3.991 | 0.493 | -18.94% | +208.4% | Yes |
+| 025 | vol accel top2.5% 15%stop: skip 2 weeks (too short, skip 3 is optimal) | 1.325 | 2.06 | 0.317 | -23.0% | +117.2% | No |
+| 026 | multi-horizon JT avg(13wk+26wk) + vol accel (26wk alone is better) | 1.629 | 3.157 | 0.421 | -20.11% | +167.3% | No |
+| 027 | vol accel 15%stop skip3 top2.5%: 7d window (5d is better) | 1.657 | 3.217 | 0.457 | -21.31% | +184.1% | No |
+| 028 | RSL + vol accel skip3 top2.5%: trailing stop 15% from position HIGH | 1.853 | 4.176 | 0.516 | -18.94% | +220.8% | Yes |
+| 029 | trailing stop 12% from high (too tight vs 15%) | 1.262 | 1.815 | 0.254 | -21.98% | +95.7% | No |
+| 030 | trailing stop 15% from high + 5-week rebalance (too infrequent, 4w is better) | 1.149 | 1.566 | 0.292 | -27.24% | +103.5% | No |
+| 031 | trailing stop 15%high + 3-week rebalance (4w is optimal) | 1.328 | 2.075 | 0.315 | -22.78% | +116.9% | No |
+| 032 | trailing stop 15%high + 30d vol baseline (20d is better) | 1.842 | 3.903 | 0.514 | -20.18% | +219.6% | No |
+| 033 | size by composite score (inv-vol is better) | 1.710 | 3.616 | 0.492 | -20.44% | +202.5% | No |
+| 034 | vol accel skip3 top2.5%: 17% trailing stop from high (15% is better) | 1.826 | 3.87 | 0.506 | -19.98% | +214.3% | No |
+| 035 | intraday filter close>open at rebalance (too restrictive) | 0.721 | 0.664 | 0.127 | -31.76% | +46.6% | No |
+| 036 | require absolute positive momentum (1.805 vs 1.853, slight improvement in calmar) | 1.805 | 4.389 | 0.553 | -19.1% | +237.97% | No |
+| 037 | raw product ranking JT×vol_accel (rank×rank is better for recent period) | 1.461 | 2.175 | 0.521 | -33.78% | +200.9% | No |
+| 038 | sticky exit top5% threshold (doesn't improve vs regular exit) | 1.825 | 4.045 | 0.501 | -18.94% | +211.96% | No |
+| 039 | F&G regime: top1.5% when F&G>75, skip new entries when F&G<25 | 2.176 | 5.146 | 0.622 | -19.29% | +297.1% | Yes |
+| 040 | F&G regime: fear<30 greed>70 (25/75 is better) | 1.697 | 3.312 | 0.419 | -19.29% | +168.7% | No |
+| 041 | F&G fear<20 greed>80 (25/75 is optimal) | 2.093 | 4.82 | 0.589 | -19.29% | +272.5% | No |
+| 042 | F&G fear-only skip entries (2.044) - both components needed for 2.176 | 2.044 | 4.75 | 0.574 | -18.94% | +261.0% | No |
+| 043 | F&G exit all + skip entries fear<25 (skip-entries-only is better) | 2.030 | 3.957 | 0.358 | -14.64% | +149.5% | No |
+| 044 | F&G with recovery rebalance trigger (disrupts signal) | 1.537 | 2.375 | 0.346 | -22.33% | +134.2% | No |
+| 045 | F&G top1.0% greed (1.5% is better) | 2.020 | 4.669 | 0.577 | -19.33% | +262.0% | No |
+| 046 | F&G: 2.0% normal + 1.5% greed>75 (2.5% normal is better) | 1.746 | 3.843 | 0.497 | -19.53% | +206.4% | No |
+| 047 | RSL + vol top50% + vol accel skip3 trailing 15%high: combined fear: skip entries when F&G<25 OR VIX>30; greed top1.5% when F&G>75 | 2.176 | 5.146 | 0.622 | -19.3% | +297.1% | No |
+| 048 | F&G 3-tier: exit all F&G<15, skip entries F&G<25, top1.5% F&G>75 | 1.968 | 4.527 | 0.440 | -15.3% | +186.2% | No |
+| 049 | RSL + vol top50% + vol accel skip3 trailing 15%high + F&G: require absolute positive momentum filter | 1.864 | 4.530 | 0.578 | -19.5% | +255.2% | No |
+| 050 | triple composite JT_rank × vol_accel_rank × 52wkHigh_proximity_rank + F&G regime | 1.466 | 2.798 | 0.345 | -18.7% | +131.9% | No |
+| 051 | RSL + vol top50% + vol accel + F&G regime + VIX-gated short leg: short bottom 1.5% JT below MA when VIX>20 | 1.860 | 3.919 | 0.491 | -19.3% | +208.4% | No |
+| 052 | trailing stop uses daily HIGH for watermark (vs close); exit on close<high_wm*(1-15%) | 1.432 | 2.370 | 0.331 | -21.2% | +125.5% | No |
+| 053 | F&G regime: top1.5% when F&G>70 greed, skip entries F&G<25 fear — lower greed threshold | 2.248 | 5.622 | 0.671 | -19.3% | +334.6% | Yes |

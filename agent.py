@@ -28,7 +28,7 @@ import pandas as pd
 METRIC     = "sharpe"
 HYPOTHESIS = (
     "RSL + vol top50% + vol accel skip3 trailing 15%high: "
-    "F&G regime: top1.5% when F&G>75 (greed), skip new entries when F&G<25 (extreme fear)"
+    "F&G regime: top1.5% when F&G>70 (greed), skip entries F&G<25 (fear) — test lower greed threshold"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
             if not combo_filtered.empty:
                 # F&G regime: tighten concentration in extreme greed
-                eff_pct = 0.015 if fg_val > 75.0 else TOP_PCT
+                eff_pct = 0.015 if fg_val > 70.0 else TOP_PCT
                 n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
 
