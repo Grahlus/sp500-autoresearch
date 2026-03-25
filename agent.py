@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-056: inv-vol window 12d (check if less than 15d is better)"
+HYPOTHESIS = "R1000 champion: 26w+16w sum, dollar-vol top30%, STOP=13%, inv-vol 12d, no F&G"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
