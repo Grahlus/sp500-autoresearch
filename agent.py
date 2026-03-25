@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-023: remove greed concentration reduction — stay at 2.5% in F&G>70 too"
+HYPOTHESIS = "S3-024: remove F&G entry filter — rebalance regardless of fear level"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -97,7 +97,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     _stop_exits     += 1
 
         # ── Rebalance every rebal_days when F&G >= 22 ─────────────────────────
-        if i % rebal_days == 0 and fg_val >= 22.0:
+        if i % rebal_days == 0:
             mom      = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom      = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
