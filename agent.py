@@ -27,15 +27,15 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "RSL + vol top50% + vol accel composite skip3 top2.5%: "
-    "trailing stop 15% from position HIGH (not entry) — protects gains"
+    "RSL + vol top50% + vol accel skip3 trailing 15%high: "
+    "F&G regime: top1.5% when F&G>75 (greed), skip new entries when F&G<25 (extreme fear)"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
 LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 3   # 3-week skip (vs 4)
+SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
-TOP_PCT        = 0.025  # 2.5% (between 2% and 3%)
+TOP_PCT        = 0.025
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.15
 VOL_MA_DAYS    = 20
@@ -43,14 +43,17 @@ VOL_MA_DAYS    = 20
 
 def generate_signals(data: dict) -> pd.DataFrame:
     """
-    RSL + volume filter + volume acceleration composite:
-    - Volume filter: top 50% by 20-day avg volume
-    - Composite rank = JT_momentum_rank × volume_acceleration_rank
-      where vol_accel = recent 5-day avg vol / 20-day avg vol
+    RSL + vol filter + vol accel composite + F&G regime:
+    - Extreme Greed (F&G > 75): tighten to top 1.5%
+    - Extreme Fear (F&G < 25): skip new entries (hold existing until stop-loss)
+    - Normal: top 2.5%
     """
     close   = data["close"]
     volume  = data["volume"]
+    fg_raw  = data["fear_greed"]
     dates   = close.index
+
+    fg = fg_raw.reindex(dates).ffill().fillna(50.0).values
     tickers = close.columns
     n       = len(dates)
 
@@ -65,7 +68,8 @@ def generate_signals(data: dict) -> pd.DataFrame:
     current_pos = pd.Series(0.0,   index=tickers)
 
     for i in range(lb_days, n):
-        today = close.iloc[i]
+        today  = close.iloc[i]
+        fg_val = float(fg[i])
 
         # ── Trailing stop from position high (not entry) ──────────────────────
         for tkr in current_pos[current_pos > 0].index:
@@ -82,7 +86,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr]    = np.nan
 
         # ── Rebalance every rebal_days ────────────────────────────────────────
-        if i % rebal_days == 0:
+        if i % rebal_days == 0 and fg_val >= 25.0:   # skip new entries in extreme fear
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
@@ -104,7 +108,9 @@ def generate_signals(data: dict) -> pd.DataFrame:
             combo_filtered = combo.where(above_ma & high_volume).dropna()
 
             if not combo_filtered.empty:
-                n_top       = max(1, int(len(combo_filtered) * TOP_PCT))
+                # F&G regime: tighten concentration in extreme greed
+                eff_pct = 0.015 if fg_val > 75.0 else TOP_PCT
+                n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
 
                 vol_ret      = close.iloc[max(0, i - 60):i][top_tickers].pct_change().std()
