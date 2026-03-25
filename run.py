@@ -1,18 +1,26 @@
+#!/usr/bin/env python3
 """
-run.py — autoresearch loop runner.
-
-Usage:
-  python run.py           # runs one experiment and prints Calmar
-  python run.py --run     # same (alias used by program.md instructions)
-
-The agent (Claude Code) calls this after each edit to agent.py.
-Git commit/revert logic is handled by the agent itself per program.md.
+run.py — Thin experiment runner. Called by Claude Code each iteration.
+Prints SCORE line that the agent uses to decide commit vs revert.
 """
+from prepare import load_data, run_backtest, print_metrics
+from agent import generate_signals, METRIC, HYPOTHESIS
 
-import sys
-import prepare
+print(f"\n{'='*60}")
+print(f"  Hypothesis : {HYPOTHESIS}")
+print(f"  Metric     : {METRIC}")
+print(f"{'='*60}")
 
-if __name__ == "__main__":
-    score = prepare.run_experiment()
-    # Exit code 0 always — agent reads stdout for the Calmar score
-    sys.exit(0)
+data    = load_data()
+weights = generate_signals(data)
+
+val   = run_backtest(weights, data, split="validation")
+train = run_backtest(weights, data, split="train")
+
+print("=== VALIDATION ===")
+print_metrics(val)
+print("=== TRAIN (sanity / overfit check) ===")
+print_metrics(train)
+
+score = val.get(METRIC, val["sharpe"])
+print(f"\n>>> SCORE ({METRIC}): {score:.4f}\n")

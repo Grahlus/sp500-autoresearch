@@ -1,405 +1,176 @@
+#!/usr/bin/env python3
 """
-prepare.py — FIXED. Do not modify.
+prepare.py — FROZEN. Do not edit.
+Provides: load_data(), run_backtest(), print_metrics()
 
-Handles:
-  - Loading NQ 1-min bar data from .pkl files
-  - Skipping first 4 weeks of each contract (low-volume back-month period)
-  - Deduplication by proper futures expiry order (H < M < U < Z, year-aware)
-  - Train/validation/forward-test split
-      Train   = H5 + M5 + U5  (after 4-week skip, front-month bars only)
-      Val     = Z5             (Sep 2025 → Dec 2025, OOS)
-      Forward = H6             (Dec 2025 → Mar 2026, true future)
-  - Feature engineering utilities
-  - Backtest engine with position tracking
-  - Calmar ratio evaluation (the single metric)
-  - 15-minute wall-clock experiment timeout
+Execution model:
+  Signal generated at close[T]  →  filled at open[T+1]  →  exited at open[T+2]
+  holding_ret[T+1] = open[T+2] / open[T+1] - 1
+  No lookahead: generate_signals() never sees open[T+1] when deciding at close[T].
 
-The agent only touches agent.py. This file is the ground truth.
+Backtest: daily rebalance, long/short, equal-notional, 5bps round-trip cost.
 """
-
-import os
-import time
-import signal
-import importlib
-import traceback
+import signal, sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from datetime import datetime
 
-# ─── CONFIG ──────────────────────────────────────────────────────────────────
-
-DATA_DIR = Path(os.environ.get("NQ_DATA_DIR", "./data"))
-EXPERIMENT_TIMEOUT_SECS = 15 * 60  # 15-minute hard wall clock limit
-
-# Split boundaries
-# Train        = H5 + M5 + U5  (Nov 2024 → Aug 2025, front-month only, 4-week warmup skipped)
-# Validation   = Z5             (Sep 2025 → Dec 2025, OOS)
-# Forward test = H6             (Dec 2025 rollover → Mar 2026, true future — not used in training loop)
-VALIDATION_START   = "2025-09-01"
-FORWARD_TEST_START = "2025-12-20"
-
-# Backtest parameters
-POINT_VALUE          = 20       # NQ: $20 per point
-COMMISSION_PER_TRADE = 2.50     # per side, in USD
-SLIPPAGE_POINTS      = 0.25     # 1 tick slippage each way
-MAX_POSITION         = 1        # max 1 contract long or short
-
-# ─── CONTRACT UTILITIES ───────────────────────────────────────────────────────
-
-_MONTH_CODE = {'H': 3, 'M': 6, 'U': 9, 'Z': 12}
-
-def _contract_expiry_key(stem: str) -> tuple:
-    """
-    Parse contract expiry from filename stem for sorting.
-    e.g. 'NQH5_TRADES_...' → month_code='H', year_digit='5'
-    Returns (year_int, month_int) so contracts sort in expiry order.
-
-    Year digit is relative: 5 → 2025, 6 → 2026 etc.
-    H5 (Mar 2025) < M5 (Jun 2025) < U5 (Sep 2025) < Z5 (Dec 2025) < H6 (Mar 2026)
-    """
-    # Contract code is always at position 2-3 in stem (NQ + code)
-    code  = stem[2:4]          # e.g. 'H5', 'Z5', 'H6'
-    month = _MONTH_CODE.get(code[0], 99)
-    year  = int(code[1]) if code[1].isdigit() else 99
-    return (year, month)
+DATA_DIR = Path("data")
+EXPERIMENT_TIMEOUT_SECS = 60 * 60  # 60 minutes hard cap
 
 
-# ─── DATA LOADING ─────────────────────────────────────────────────────────────
-
-def load_data() -> pd.DataFrame:
-    """
-    Load all NQ 1-min pkl files from DATA_DIR.
-
-    Per-contract processing:
-      - Skip first 4 weeks (low-volume back-month overlap period)
-      - Tag with expiry sort key
-
-    Deduplication:
-      - At each timestamp, keep the bar from the front-month contract
-        (lowest expiry key = soonest expiry)
-
-    Returns a clean, sorted, deduplicated DataFrame covering the full
-    date range across all contracts.
-    """
-    import pickle
-
-    files = sorted(DATA_DIR.glob("*.pkl"))
-    if not files:
-        raise FileNotFoundError(f"No .pkl files found in {DATA_DIR}")
-
-    frames = []
-    for f in files:
-        with open(f, "rb") as fh:
-            df = pickle.load(fh)
-
-        df.columns    = [c.lower() for c in df.columns]
-        df.index.name = "timestamp"
-        df            = df.reset_index()
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-
-        # ── Skip first 4 weeks (low-volume back-month period) ──
-        warmup_end = df["timestamp"].min() + pd.Timedelta(weeks=4)
-        df = df[df["timestamp"] >= warmup_end].copy()
-
-        # ── Tag with expiry sort key for deduplication ──
-        ey, em = _contract_expiry_key(f.stem)
-        df["_expiry_year"]  = ey
-        df["_expiry_month"] = em
-        frames.append(df)
-
-    if not frames:
-        raise ValueError("All contract files were empty after 4-week warmup skip.")
-
-    combined = pd.concat(frames, ignore_index=True)
-
-    # Sort by timestamp first, then by expiry (front month = lowest key first)
-    combined = combined.sort_values(["timestamp", "_expiry_year", "_expiry_month"])
-
-    # Keep front-month bar at each timestamp
-    combined = combined.drop_duplicates(subset="timestamp", keep="first")
-    combined = combined.drop(columns=["_expiry_year", "_expiry_month"])
-    combined = combined.reset_index(drop=True)
-
-    required = {"timestamp", "open", "high", "low", "close", "volume"}
-    missing  = required - set(combined.columns)
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-
-    return combined
-
-
-def train_val_split(df: pd.DataFrame):
-    """
-    Split into (train_df, val_df) using VALIDATION_START boundary.
-    Forward test data (H6) is excluded from both — use load_forward_test() separately.
-    """
-    t_val     = pd.Timestamp(VALIDATION_START)
-    t_forward = pd.Timestamp(FORWARD_TEST_START)
-
-    train = df[df["timestamp"] < t_val].reset_index(drop=True)
-    val   = df[(df["timestamp"] >= t_val) & (df["timestamp"] < t_forward)].reset_index(drop=True)
-
-    print(f"[prepare] Train: {len(train):,} bars  "
-          f"({train['timestamp'].iloc[0]} → {train['timestamp'].iloc[-1]})")
-    print(f"[prepare] Val:   {len(val):,} bars  "
-          f"({val['timestamp'].iloc[0]} → {val['timestamp'].iloc[-1]})")
-    return train, val
-
-
-def load_forward_test() -> pd.DataFrame:
-    """
-    Return H6 forward test data (Dec 2025 → Mar 2026).
-    Not used in the training loop — for manual champion validation only.
-    """
-    df     = load_data()
-    t_fwd  = pd.Timestamp(FORWARD_TEST_START)
-    fwd_df = df[df["timestamp"] >= t_fwd].reset_index(drop=True)
-    print(f"[prepare] Forward: {len(fwd_df):,} bars  "
-          f"({fwd_df['timestamp'].iloc[0]} → {fwd_df['timestamp'].iloc[-1]})")
-    return fwd_df
-
-
-# ─── FEATURE UTILITIES ────────────────────────────────────────────────────────
-
-def add_basic_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add a small set of standard features. Agent may or may not use these."""
-    df = df.copy()
-    df["returns"]    = df["close"].pct_change()
-    df["log_ret"]    = np.log(df["close"] / df["close"].shift(1))
-    df["hl_range"]   = df["high"] - df["low"]
-    df["vwap_proxy"] = (df["high"] + df["low"] + df["close"]) / 3.0
-    for w in [5, 15, 60, 240]:
-        df[f"sma_{w}"]  = df["close"].rolling(w).mean()
-        df[f"roc_{w}"]  = df["close"].pct_change(w)
-        df[f"vol_{w}"]  = df["returns"].rolling(w).std()
-    df["rsi_14"]  = _rsi(df["close"], 14)
-    df["atr_14"]  = _atr(df, 14)
-    return df.dropna().reset_index(drop=True)
-
-
-def _rsi(series: pd.Series, period: int) -> pd.Series:
-    delta = series.diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    rs    = gain / (loss + 1e-9)
-    return 100 - (100 / (1 + rs))
-
-
-def _atr(df: pd.DataFrame, period: int) -> pd.Series:
-    hl = df["high"] - df["low"]
-    hc = (df["high"] - df["close"].shift(1)).abs()
-    lc = (df["low"]  - df["close"].shift(1)).abs()
-    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
-
-# ─── BACKTEST ENGINE ──────────────────────────────────────────────────────────
-
-def run_backtest(df: pd.DataFrame, signals: np.ndarray) -> dict:
-    """
-    Vectorised backtest.
-    signals: array of len(df), values in {-1, 0, 1}
-      +1 = long, -1 = short, 0 = flat
-    """
-    signals     = np.clip(np.round(signals).astype(int), -MAX_POSITION, MAX_POSITION)
-    closes      = df["close"].values
-    n           = len(closes)
-    equity      = np.zeros(n)
-    position    = 0
-    entry_price = 0.0
-    cash        = 0.0
-
-    for i in range(1, n):
-        sig = signals[i - 1]
-
-        # Close if direction changes or goes flat
-        if position != 0 and sig != position:
-            pnl   = (closes[i] - entry_price) * position * POINT_VALUE
-            cost  = COMMISSION_PER_TRADE + SLIPPAGE_POINTS * POINT_VALUE
-            cash += pnl - cost
-            position    = 0
-            entry_price = 0.0
-
-        # Open new position
-        if sig != 0 and position == 0:
-            position    = sig
-            entry_price = closes[i]
-            cash       -= COMMISSION_PER_TRADE + SLIPPAGE_POINTS * POINT_VALUE
-
-        open_pnl  = (closes[i] - entry_price) * position * POINT_VALUE if position else 0.0
-        equity[i] = cash + open_pnl
-
-    return {"equity": equity, "signals": signals, "closes": closes}
-
-
-# ─── CALMAR RATIO ─────────────────────────────────────────────────────────────
-
-def calmar_ratio(equity: np.ndarray, bars_per_year: int = 252 * 390) -> float:
-    """
-    Calmar = Annualised Return / Max Drawdown.
-    Returns 0.0 for flat strategies, -999.0 on degenerate inputs.
-    """
-    if len(equity) < 2:
-        return -999.0
-    total_return = equity[-1] - equity[0]
-    n_bars       = len(equity)
-    ann_return   = total_return * (bars_per_year / n_bars)
-
-    peak   = np.maximum.accumulate(equity)
-    dd     = peak - equity
-    max_dd = dd.max()
-
-    if max_dd < 1e-6:
-        return 0.0 if total_return < 1.0 else 999.0
-
-    return ann_return / max_dd
-
-
-# ─── EVALUATION ENTRY POINT ───────────────────────────────────────────────────
-
-def evaluate_agent(agent_module) -> tuple:
-    """Load agent, run on validation set (Z5), return (calmar, pnl)."""
-    df_all      = load_data()
-    _, val_df   = train_val_split(df_all)
-    val_df_feat = add_basic_features(val_df)
-
-    signals = agent_module.get_signals(val_df_feat)
-
-    if len(signals) != len(val_df_feat):
-        raise ValueError(
-            f"Agent returned {len(signals)} signals but val set has {len(val_df_feat)} bars"
-        )
-
-    result  = run_backtest(val_df_feat, signals)
-    calmar  = calmar_ratio(result["equity"])
-    pnl     = float(result["equity"][-1] - result["equity"][0])
-    n_trades = int(np.sum(np.diff(result["signals"].astype(float)) != 0) // 2)
-    return calmar, pnl, n_trades
-
-
-# ─── TIMEOUT ──────────────────────────────────────────────────────────────────
-
-class ExperimentTimeout(Exception):
-    pass
-
+# ── Timeout guard ─────────────────────────────────────────────────────────────
 def _timeout_handler(signum, frame):
-    raise ExperimentTimeout(f"Experiment exceeded {EXPERIMENT_TIMEOUT_SECS}s")
+    print("\n[TIMEOUT] Experiment exceeded time budget. Aborting.", flush=True)
+    sys.exit(1)
 
-class time_limited_experiment:
-    def __enter__(self):
-        signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(EXPERIMENT_TIMEOUT_SECS)
-        return self
-    def __exit__(self, *args):
-        signal.alarm(0)
+signal.signal(signal.SIGALRM, _timeout_handler)
+signal.alarm(EXPERIMENT_TIMEOUT_SECS)
 
 
-# ─── FORWARD TEST EVALUATION ─────────────────────────────────────────────────
+# ── Data loader ───────────────────────────────────────────────────────────────
+def load_data() -> dict:
+    """
+    Returns dict with keys:
+      close, open, high, low, volume  — DataFrame[dates × tickers]
+      vix                             — Series[dates]
+      fear_greed                      — Series[dates]
+      train_end                       — Timestamp (cutoff date)
+      index                           — DatetimeIndex of all trading days
+    """
+    prices = pd.read_parquet(DATA_DIR / "sp500_prices.parquet")
+    vix    = pd.read_parquet(DATA_DIR / "vix.parquet")
+    fg     = pd.read_parquet(DATA_DIR / "fear_greed.parquet")
 
-# Minimum Calmar on H6 forward test to consider a strategy generalizable.
-# A strategy that scores well on Z5 but below this on H6 is considered overfit.
-H6_MIN_CALMAR = 0.5
+    close  = prices["close"]
+    open_  = prices["open"]
+    high   = prices["high"]
+    low    = prices["low"]
+    volume = prices["volume"]
 
-def evaluate_agent_forward(agent_module) -> tuple:
-    """Run agent on H6 forward test set, return (calmar, pnl, n_trades)."""
-    fwd_df      = load_forward_test()
-    fwd_df_feat = add_basic_features(fwd_df)
+    # Align macro series to trading calendar
+    idx            = close.index
+    vix_aligned    = vix["vix"].reindex(idx).ffill()
+    fg_aligned     = fg["fg_value"].reindex(idx).ffill()
 
-    signals = agent_module.get_signals(fwd_df_feat)
+    # Train / validation split: last 2 years held out
+    cutoff = idx[-int(252 * 2)]
+    print(f"  Universe  : {close.shape[1]} stocks")
+    print(f"  Train     : {idx[0].date()} → {cutoff.date()}")
+    print(f"  Validation: {cutoff.date()} → {idx[-1].date()}")
 
-    if len(signals) != len(fwd_df_feat):
-        raise ValueError(
-            f"Agent returned {len(signals)} signals but forward set has {len(fwd_df_feat)} bars"
+    return dict(
+        close=close, open=open_, high=high, low=low, volume=volume,
+        vix=vix_aligned, fear_greed=fg_aligned,
+        train_end=cutoff, index=idx,
+    )
+
+
+# ── Backtest engine ───────────────────────────────────────────────────────────
+def run_backtest(weights: pd.DataFrame, data: dict, split: str = "validation") -> dict:
+    """
+    weights : DataFrame aligned to data index, columns=tickers, values in [-1, 1]
+              Positive = long, Negative = short. Rows need not sum to 1;
+              gross exposure is normalised to 1.0 internally.
+    split   : 'train' or 'validation'
+    Returns : dict of performance metrics
+
+    Execution timeline (no lookahead):
+      Day T  : observe close[T], generate weight[T]
+      Day T+1: enter at open[T+1]   ← execution price
+      Day T+2: exit / rebalance at open[T+2]
+      P&L[T+1] = weight[T] * (open[T+2] / open[T+1] - 1)
+    """
+    close  = data["close"]
+    open_  = data["open"]
+    cutoff = data["train_end"]
+
+    if split == "validation":
+        close   = close.loc[cutoff:]
+        open_   = open_.loc[cutoff:]
+        weights = (
+            weights.loc[cutoff:]
+            if cutoff in weights.index
+            else weights.iloc[-int(252 * 2):]
         )
+    else:
+        close   = close.loc[:cutoff]
+        open_   = open_.loc[:cutoff]
+        weights = weights.loc[:cutoff]
 
-    result   = run_backtest(fwd_df_feat, signals)
-    calmar   = calmar_ratio(result["equity"])
-    pnl      = float(result["equity"][-1] - result["equity"][0])
-    n_trades = int(np.sum(np.diff(result["signals"].astype(float)) != 0) // 2)
-    return calmar, pnl, n_trades
+    # Align weights to the slice
+    weights = (
+        weights
+        .reindex(close.index)
+        .reindex(columns=close.columns)
+        .fillna(0.0)
+    )
 
+    # ── Holding return: open[T+1] → open[T+2] ────────────────────────────────
+    # open_.shift(-1) = next-day open  (used only in P&L calc, not in signal gen)
+    holding_ret = (open_.shift(-1) / open_ - 1).fillna(0.0)
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
+    # weight[T-1] is decided at close[T-1], filled at open[T]
+    # so lag weights by 1 to avoid lookahead
+    w_lag  = weights.shift(1).fillna(0.0)
 
-def run_experiment() -> float:
-    """
-    Run one full experiment:
-      1. Train agent on train set (if agent.train() exists)
-      2. Evaluate on Z5 validation set  -> z5_calmar
-      3. Evaluate on H6 forward test    -> h6_calmar
-      4. Print a clear KEEP / REVERT verdict
+    # Normalise: gross exposure capped at 1.0
+    gross  = w_lag.abs().sum(axis=1).replace(0, 1)
+    w_norm = w_lag.div(gross, axis=0)
 
-    KEEP only if:
-      - z5_calmar improved over current champion  (agent tracks this)
-      - h6_calmar >= H6_MIN_CALMAR               (generalization gate)
+    # Strategy daily P&L
+    strat_ret = (w_norm * holding_ret).sum(axis=1)
 
-    Returns z5_calmar for the agent to compare against its best.
-    """
-    import sys
+    # Transaction costs: 5 bps per unit of turnover (round-trip)
+    turnover   = w_norm.diff().abs().sum(axis=1)
+    costs      = turnover * 0.0005
+    strat_ret -= costs
 
-    print(f"\n{'='*60}")
-    print(f"Experiment started at {datetime.now().strftime('%H:%M:%S')}")
-    print(f"Timeout: {EXPERIMENT_TIMEOUT_SECS // 60} minutes")
-    print(f"H6 minimum to keep: {H6_MIN_CALMAR}")
-    print(f"{'='*60}")
+    # Benchmark: SPY open-to-open (consistent with strategy execution)
+    if "SPY" in open_.columns:
+        bench_ret = (open_["SPY"].shift(-1) / open_["SPY"] - 1).fillna(0.0)
+    else:
+        bench_ret = holding_ret.mean(axis=1)
 
-    start    = time.time()
-    z5_calmar = -999.0
-    z5_pnl    = 0.0
-    z5_trades = 0
-    h6_calmar = -999.0
-    h6_pnl    = 0.0
-    h6_trades = 0
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    ann = 252
 
-    try:
-        with time_limited_experiment():
-            if "agent" in sys.modules:
-                del sys.modules["agent"]
-            agent = importlib.import_module("agent")
+    def sharpe(r):
+        return (r.mean() / r.std() * np.sqrt(ann)) if r.std() > 1e-9 else 0.0
 
-            # Train
-            if hasattr(agent, "train"):
-                df_all = load_data()
-                train_df, _ = train_val_split(df_all)
-                train_df_feat = add_basic_features(train_df)
-                print("[prepare] Running agent.train() on training data...")
-                agent.train(train_df_feat)
+    def calmar(r):
+        cum     = (1 + r).cumprod()
+        dd      = (cum / cum.cummax() - 1).min()
+        ann_ret = (cum.iloc[-1] ** (ann / len(r)) - 1)
+        return (ann_ret / abs(dd)) if dd < -1e-6 else 0.0
 
-            # Z5 validation
-            print("[prepare] Evaluating on validation set (Z5)...")
-            z5_calmar, z5_pnl, z5_trades = evaluate_agent(agent)
+    def max_dd(r):
+        cum = (1 + r).cumprod()
+        return (cum / cum.cummax() - 1).min()
 
-            # H6 forward test
-            print("[prepare] Evaluating on forward test (H6)...")
-            h6_calmar, h6_pnl, h6_trades = evaluate_agent_forward(agent)
+    strat_cum = (1 + strat_ret).cumprod()
+    bench_cum = (1 + bench_ret).cumprod()
+    total_ret = strat_cum.iloc[-1] - 1
+    bench_tot = bench_cum.iloc[-1] - 1
+    alpha_ann = (strat_ret - bench_ret).mean() * ann
 
-    except ExperimentTimeout:
-        print(f"[prepare] TIMEOUT after {EXPERIMENT_TIMEOUT_SECS}s")
-    except Exception:
-        print(f"[prepare] EXCEPTION:\n{traceback.format_exc()}")
-
-    elapsed   = time.time() - start
-    passes_h6 = h6_calmar >= H6_MIN_CALMAR
-    verdict   = "KEEP (if Z5 improved)" if passes_h6 else "REVERT -- H6 overfit"
-
-    print(f"\n{'='*60}")
-    print(f"Z5  Calmar: {z5_calmar:>8.4f}   PnL: ${z5_pnl:>10,.0f}   Trades: {z5_trades}")
-    print(f"H6  Calmar: {h6_calmar:>8.4f}   PnL: ${h6_pnl:>10,.0f}   Trades: {h6_trades}  [H6 min: {H6_MIN_CALMAR}]")
-    print(f"Verdict:    {verdict}")
-    print(f"Elapsed:    {elapsed:.1f}s")
-    print(f"{'='*60}\n")
-
-    return z5_calmar
+    metrics = {
+        "split"        : split,
+        "sharpe"       : round(sharpe(strat_ret), 3),
+        "calmar"       : round(calmar(strat_ret), 3),
+        "total_return" : round(total_ret, 4),
+        "bench_return" : round(bench_tot, 4),
+        "alpha_ann"    : round(alpha_ann, 4),
+        "max_drawdown" : round(max_dd(strat_ret), 4),
+        "win_rate"     : round((strat_ret > 0).mean(), 3),
+        "ann_vol"      : round(strat_ret.std() * np.sqrt(ann), 4),
+        "n_days"       : len(strat_ret),
+    }
+    return metrics
 
 
-if __name__ == "__main__":
-    print("=== Data split summary ===")
-    df = load_data()
-    train_df, val_df = train_val_split(df)
-    fwd_df = load_forward_test()
-    print(f"\nTotal bars (deduped, 4-week warmup skipped): {len(df):,}")
-    print(f"  Train (H5+M5+U5): {len(train_df):,} bars")
-    print(f"  Val   (Z5):       {len(val_df):,} bars")
-    print(f"  Forward (H6):     {len(fwd_df):,} bars")
-    print("\nReady to run experiments.")
+def print_metrics(m: dict):
+    print("\n── Backtest Results ─────────────────────────────")
+    for k, v in m.items():
+        print(f"  {k:<16}: {v}")
+    print("─────────────────────────────────────────────────\n")
