@@ -27,7 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp097: triple composite WITHOUT recovery trigger — test if trigger hurts val"
+    "exp100: inv-vol sizing window 20d→10d — more responsive position sizing"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 n_top   = max(1, int(len(combo_filtered) * eff_pct))
                 top_tickers = combo_filtered.nlargest(n_top).index
 
-                vol_ret      = close.iloc[max(0, i - 20):i][top_tickers].pct_change().std()
+                vol_ret      = close.iloc[max(0, i - 10):i][top_tickers].pct_change().std()
                 inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
                 inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
 
