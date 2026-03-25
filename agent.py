@@ -40,14 +40,14 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-006: dollar-vol top 30% (even tighter vol filter)"
+HYPOTHESIS = "S3-017: STOP_LOSS_PCT=15% (tighter stop for volatile R1000 mid-caps)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.20
+STOP_LOSS_PCT  = 0.15
 VOL_MA_DAYS    = 10
 MIN_HOLD_DAYS  = 5
 
