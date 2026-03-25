@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S3-024: remove F&G entry filter — rebalance regardless of fear level"
+HYPOTHESIS = "S3-028: sum composite 26w+13w ranks (vs product — may generalize better)"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -111,7 +111,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
             mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 65)] - 1)
             mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
-            combo       = mom.rank(pct=True) * mom_13w.rank(pct=True)
+            combo       = mom.rank(pct=True) + mom_13w.rank(pct=True)
             combo_filt  = combo.where(above_ma & high_vol).dropna()
 
             if not combo_filt.empty:
