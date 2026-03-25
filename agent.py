@@ -27,8 +27,7 @@ import pandas as pd
 # ── Experiment config (agent sets these each run) ────────────────────────────
 METRIC     = "sharpe"
 HYPOTHESIS = (
-    "exp079: adaptive breadth — top 1% when <40% SP500 above 200d MA (bear), "
-    "top 2.5% normal, top 1.5% greed>70"
+    "exp089: VOL_MA_DAYS=10 + breadth recovery trigger — force rebalance on bear→bull transition"
 )
 
 # ── Strategy parameters ──────────────────────────────────────────────────────
@@ -38,7 +37,7 @@ REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
-VOL_MA_DAYS    = 20
+VOL_MA_DAYS    = 10
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
@@ -66,10 +65,15 @@ def generate_signals(data: dict) -> pd.DataFrame:
     entry_price = pd.Series(np.nan, index=tickers)
     pos_high    = pd.Series(np.nan, index=tickers)  # rolling high since entry
     current_pos = pd.Series(0.0,   index=tickers)
+    prev_in_bear = False   # breadth was < 0.40 at last rebalance
 
     for i in range(lb_days, n):
         today  = close.iloc[i]
         fg_val = float(fg[i])
+
+        # Compute breadth for recovery trigger
+        ma_200_now  = close.iloc[max(0, i - 200):i].mean()
+        breadth_now = float((today > ma_200_now).mean())
 
         # ── Trailing stop from position high (not entry) ──────────────────────
         for tkr in current_pos[current_pos > 0].index:
@@ -85,8 +89,11 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     entry_price[tkr] = np.nan
                     pos_high[tkr]    = np.nan
 
-        # ── Rebalance every rebal_days ────────────────────────────────────────
-        if i % rebal_days == 0 and fg_val >= 25.0:   # skip new entries in extreme fear
+        # Recovery trigger: force rebalance when breadth crosses back above 40%
+        recovery_trigger = prev_in_bear and breadth_now >= 0.40
+
+        # ── Rebalance every rebal_days or on recovery trigger ─────────────────
+        if (i % rebal_days == 0 or recovery_trigger) and fg_val >= 25.0:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
@@ -108,9 +115,8 @@ def generate_signals(data: dict) -> pd.DataFrame:
             combo_filtered = combo.where(above_ma & high_volume).dropna()
 
             if not combo_filtered.empty:
-                # Market breadth: fraction of stocks above 200d MA
-                ma_200  = close.iloc[max(0, i - 200):i].mean()
-                breadth = float((today > ma_200).mean())
+                # Use pre-computed breadth
+                breadth = breadth_now
 
                 # Adaptive concentration: defensive in bear, tight in greed
                 if breadth < 0.40:
@@ -139,7 +145,8 @@ def generate_signals(data: dict) -> pd.DataFrame:
                         entry_price[tkr] = np.nan
                         pos_high[tkr]    = np.nan
 
-                current_pos = new_pos.copy()
+                current_pos  = new_pos.copy()
+                prev_in_bear = (breadth < 0.40)  # update for recovery trigger
 
         weights.iloc[i] = current_pos
 
