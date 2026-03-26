@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-038: MR drop window upper bound -32% (compromise -30% vs -35%)"
+HYPOTHESIS = "S4-040: MOM regime blend 25/75 mom/mr (was 30/70)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -196,7 +196,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
             mr_pos  = _mr_signal(close, volume, i, tickers, ma_days)
 
             if regime == "MOM":
-                new_pos = mom_pos * 0.3 + mr_pos * 0.7
+                new_pos = mom_pos * 0.25 + mr_pos * 0.75
                 # Set entry tracking for MOM-weighted positions
                 for tkr in tickers:
                     if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
