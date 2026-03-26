@@ -31,13 +31,16 @@ SLIPPAGE_BPS         = 5
 def run_oos_backtest(weights: pd.DataFrame, data: dict) -> dict:
     close  = data["close"]
     open_  = data["open"]
-    cutoff = data["train_end"]
     idx    = close.index
+    # OOS = everything after last walk-forward window (W7 ends 2024-07-01)
+    # Do NOT use train_end — it changed in session 5 walk-forward engine
+    oos_candidates = idx[idx >= pd.Timestamp("2024-07-01")]
+    if len(oos_candidates) == 0:
+        print("[ERROR] No data after 2024-07-01. Run refresh_data.py.")
+        sys.exit(1)
+    oos_start = oos_candidates[0]
+    print(f"  OOS start : {oos_start.date()} | end: {idx[-1].date()} | days: {len(oos_candidates)}")
 
-    # val window = 504 trading days after cutoff; OOS starts after that
-    cutoff_i  = idx.get_loc(cutoff)
-    oos_i     = min(cutoff_i + 504, len(idx) - 1)
-    oos_start = idx[oos_i]
 
     close_oos = close.loc[oos_start:]
     open_oos  = open_.loc[oos_start:]
