@@ -161,3 +161,4 @@ After every `uv run python run.py`, immediately run:
 |---|-----------|-----------|-----------|---------|--------|-------------|-------------|-----------|------|
 | S4-001 | Cross-sectional dispersion detector — verify regime classification | — | — | — | — | — | — | — | pending |
 | S4-002 | hybrid MOM/MR — dispersion classifier switches signals | 0.046 | -0.147 | -51.1% | -14.4% | 0.638 | 0.371 | -55.2% | No |
+| S4-003 | tune MR drop threshold to 10% min (was 8%) | 0.238 | 0.019 | -42.0% | +1.6% | 0.589 | 0.284 | -62.6% | Yes |
