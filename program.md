@@ -204,3 +204,32 @@ After every `uv run python run.py`, immediately run:
 | S4-043 | MR concentration top 4% (was 3%) | 1.783 | 3.266 | -35.3% | +360.1% | 1.133 | 1.074 | -46.1% | No (tied) |
 | S4-044 | dispersion threshold 38th percentile (was 40th) | 1.783 | 3.266 | -35.3% | +360.1% | 1.133 | 1.074 | -46.1% | No (tied) |
 | S4-045 | remove 200d MA filter from MR — allow downtrend stocks | 1.280 | 2.306 | -23.4% | +136.5% | 0.839 | 0.524 | -63.8% | No |
+| S4-046 | 100d MA filter in MR signal (was 200d) | 1.870 | 4.336 | -30.1% | +428.3% | 1.048 | 0.935 | -44.0% | No (OVERFIT) |
+| S4-047 | 150d MA filter in MR signal (was 200d) | 1.975 | 3.715 | -35.3% | +430.1% | 0.766 | 0.589 | -44.3% | No (OVERFIT) |
+| S4-048 | MR liquidity filter top 30% dollar-vol (was 50%) | 1.709 | 3.392 | -32.6% | +340.1% | 0.931 | 0.850 | -41.6% | No (OVERFIT) |
+| S4-049 | 3-week rebalance (was 4-week) | 1.270 | 1.396 | -39.1% | +138.1% | 0.891 | 0.743 | -45.3% | No |
+| S4-050 | MR liquidity top 60% dollar-vol (loosen from 50%) | 1.947 | 3.598 | -35.3% | +411.3% | 1.148 | 1.066 | -47.9% | No (OVERFIT) |
+| S4-051 | stop loss 10% (was 13%) | 1.809 | 3.366 | -35.3% | +375.3% | 0.911 | 0.745 | -47.0% | No (OVERFIT) |
+| S4-052 | add MOM anti-filter to MR — exclude top-10% momentum | 1.661 | 2.373 | -38.0% | +259.8% | 0.717 | 0.422 | -53.5% | No (OVERFIT) |
+| S4-053 | require 5-day bounce for MR candidates (ret_5d > 0) | 1.052 | 1.688 | -26.4% | +108.1% | 0.928 | 0.733 | -47.3% | No |
+| S4-054 | dispersion lookback 8w/40d (was 13w/65d) | 1.694 | 2.927 | -35.3% | +310.5% | 1.155 | 1.287 | -40.0% | No |
+| S4-055 | dispersion lookback 10w/50d (was 13w/65d) | 1.684 | 2.919 | -35.3% | +309.4% | 1.170 | 1.369 | -37.7% | No |
+| S4-056 | trailing stop tracking in MR regime (clear pos_high) | 1.733 | 3.068 | -34.9% | +325.8% | 1.075 | 0.843 | -52.4% | No (OVERFIT) |
+| S4-057 | dispersion window 300d (was 252d) | 1.792 | 3.292 | -35.3% | +364.0% | 1.113 | 0.930 | -51.3% | No (OVERFIT) |
+| S4-058 | MR regime blend 65/35 mr/mom (fine-tune 70/30) | 1.784 | 3.332 | -34.3% | +356.9% | 1.138 | 1.107 | -44.5% | Yes |
+| S4-059 | MR regime blend 60/40 mr/mom | 1.782 | 3.401 | -33.4% | +353.5% | 1.143 | 1.143 | -42.9% | No |
+| S4-060 | MOM regime blend 15/85 mom/mr (was 20/80) | 1.782 | 3.432 | -34.3% | +371.7% | 1.138 | 1.089 | -45.6% | No |
+| S4-061 | rank MR candidates by 20d vol (not drop magnitude) | 1.012 | 1.230 | -39.8% | +121.2% | 1.013 | 0.819 | -51.4% | No |
+| S4-062 | require positive 26w return for MR candidates | 1.784 | 3.332 | -34.3% | +356.9% | 1.170 | 1.152 | -44.5% | Yes (train↑) |
+| S4-063 | MR drop window -33% (retry with train=1.170) | 1.833 | 3.498 | -34.3% | +381.4% | 1.170 | 1.152 | -44.5% | Yes |
+| S4-064 | MR drop window -34% | 1.833 | 3.498 | -34.3% | +381.4% | 1.154 | 1.077 | -47.4% | No (tied) |
+| S4-065 | MR drop window -35% (retry with train=1.170) | 1.843 | 3.539 | -34.3% | +387.6% | 1.154 | 1.077 | -47.4% | Yes |
+| S4-066 | MR drop window -36% | 1.843 | 3.539 | -34.3% | +387.6% | 1.154 | 1.077 | -47.4% | No (tied/-35% cap) |
+| S4-067 | MR liquidity top 45% dollar-vol (loosen from 50%) | 1.965 | 3.809 | -34.3% | +429.1% | 1.054 | 0.947 | -47.4% | No (OVERFIT) |
+| S4-068 | require positive 52w return for MR (stronger than 26w) | 1.784 | 2.899 | -39.8% | +361.0% | 1.015 | 0.877 | -47.8% | No (OVERFIT) |
+| S4-069 | 13w uptrend requirement for MR (was 26w) | 2.256 | 6.347 | -25.4% | +575.4% | 0.985 | 0.803 | -47.8% | No (OVERFIT) |
+| S4-070 | MR MA filter today > 1.05x 200d MA (not just above) | 1.939 | 4.574 | -28.5% | +426.7% | 0.971 | 0.877 | -43.8% | No (OVERFIT) |
+| S4-071 | no regime detection — always 20/80 mom/mr blend | 1.820 | 3.338 | -35.5% | +373.9% | 1.081 | 0.858 | -53.9% | No (OVERFIT) |
+| S4-072 | dispersion window 180d (was 252d) | 1.770 | 3.288 | -34.3% | +350.5% | 1.143 | 1.064 | -47.4% | No |
+| S4-073 | composite MR score: drop × 26w uptrend strength | 1.353 | 2.107 | -37.7% | +220.3% | 1.167 | 1.199 | -43.8% | No |
+| S4-074 | dispersion window 210d (was 252d) | 1.843 | 3.539 | -34.3% | +387.6% | 1.142 | 1.060 | -47.4% | No (OVERFIT) |
