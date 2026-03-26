@@ -30,10 +30,10 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S7-014: 15w forced exit only when F&G < 60 — let bull runs continue, rotate in uncertainty"
+HYPOTHESIS = "S7-036: SKIP_WEEKS=4 — longer exclusion window (20d skip), more reversal protection"
 
 LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 3
+SKIP_WEEKS     = 4
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
