@@ -129,3 +129,9 @@ After every `uv run python run.py`:
 | S5-033 | 4w positive return filter (buy only if up in last 4w) | -0.302 | -1.474→+1.550 (4/7 neg) | 1/7 | 25.7 | No — catastrophic; chasing short-term momentum kills 2017/2018/2022 |
 | S5-034 | TOP_PCT 2.5%→2% | 0.391 | -1.076→+1.983 (hard fail) | 3/7 | 22.2 | No — 2017=-1.076, 2021=-0.520; too few stocks means one bad pick tanks portfolio |
 | S5-035 | FG_MIN 15→10 | **0.718** | +0.050→+2.170 (0 neg) | 3/7 | 32.0 | **YES** — 2022=+0.524 (+0.089), mean 0.705→0.718; allows rebal in deep fear spikes |
+| S5-036 | STOP_LOSS_PCT 20%→18% | 0.677 | +0.011→+2.352 (0 neg) | 3/7 | 32.6 | No — 2018=+0.407, 2022=+0.360, 2023=+0.128 all hurt; 20% is optimal base stop |
+| S5-037 | breadth gate 85%→82% | 0.688 | +0.114→+2.139 (0 neg) | 3/7 | 29.3 | No — 2017=+0.501 (huge!), but 2018=+0.114 (catastrophic); net worse |
+| S5-038 | breadth gate 85%→84% | 0.714 | +0.050→+2.139 (0 neg) | 3/7 | 31.6 | No — 2017/2018 same as 85%, 2020 slightly worse; 85% is optimal |
+| S5-039 | combined gate: block only if breadth>85% AND F&G>70 | 0.489 | -0.397→+1.981 (1/7 neg) | 3/7 | 37.0 | No — 2021=-0.397; gate allows rebalancing in fear dips at high breadth |
+| S5-040 | MA_WEEKS 20→25 | 0.534 | -0.682→+2.163 (hard fail) | 2/7 | 32.0 | No — 2018=-0.682; longer MA too conservative in bear/volatile environments |
+| S5-041 | breadth MA 200d→100d | **0.751** | +0.050→+2.408 (0 neg) | 3/7 | 33.1 | **YES** — 2019=+0.954, 2020=+2.408, 2023=+0.252; 2021 dip to +0.469; mean 0.718→0.751 |

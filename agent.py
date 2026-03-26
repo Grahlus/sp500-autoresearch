@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-035: FG_MIN 15→10 — mean=0.718, 2022=+0.524, 0 neg windows"
+HYPOTHESIS = "S5-041: breadth MA 200d→100d — mean=0.751, 2019=+0.954 2020=+2.408, 0 neg"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -109,7 +109,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
         # ── Rebalance every rebal_days when F&G >= threshold ─────────────────
         # Compute breadth for rebal gate + position sizing
-        ma_200  = close.iloc[max(0, i - 200):i].mean()
+        ma_200  = close.iloc[max(0, i - 100):i].mean()
         breadth = float((today > ma_200).mean())
 
         # Skip rebalance when breadth is extreme (>85% above 200d MA).
