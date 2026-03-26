@@ -174,3 +174,13 @@ After every `uv run python run.py`, immediately run:
 | S4-013 | upper bound filter for MR candidates: ret >= -0.15 (was -0.20) | 1.330 | 2.274 | -22.8% | +129.9% | 0.976 | 0.712 | -48.5% | No |
 | S4-014 | remove 200d MA filter from MR signal (all oversold stocks) | 0.999 | 1.234 | -27.3% | +78.2% | 0.926 | 0.767 | -43.5% | No |
 | S4-015 | 30th percentile dispersion threshold (was 40th) | 1.357 | 1.827 | -34.7% | +165.8% | 1.066 | 0.912 | -44.4% | No |
+| S4-016 | 50/50 blend instead of 70/30 | 1.391 | 1.922 | -35.9% | +184.3% | 1.058 | 0.933 | -42.96% | No |
+| S4-017 | 60/40 blend (MOM: 60% MOM+40% MR; MR: 40% MOM+60% MR) | 1.405 | 1.925 | -35.3% | +180.9% | 1.048 | 0.907 | -43.7% | Yes |
+| S4-018 | MR lookback 20d → 25d | 0.987 | 1.050 | -33.8% | +83.1% | 0.907 | 0.701 | -44.6% | No |
+| S4-019 | MR lookback 20d → 15d | 0.592 | 0.491 | -34.8% | +36.9% | 0.955 | 0.833 | -41.2% | No |
+| S4-020 | sector ETF regime: XLK vs XLV relative strength | 1.325 | 1.747 | -31.7% | +140.7% | 0.844 | 0.651 | -44.2% | No |
+| S4-021 | widen MR drop window upper bound -0.20 → -0.30 | 1.553 | 2.146 | -33.8% | +196.4% | 1.051 | 0.966 | -42.1% | Yes |
+| S4-022 | extend dispersion window 252 → 504 days | 1.529 | 2.097 | -33.8% | +190.8% | 0.923 | 0.721 | -46.4% | No (overfit) |
+| S4-023 | shrink dispersion window 252 → 126 days | 1.383 | 1.809 | -33.8% | +158.7% | 1.095 | 1.015 | -42.1% | No |
+| S4-024 | 35th percentile dispersion threshold (was 40th) | 1.532 | 2.101 | -33.8% | +191.3% | 1.049 | 0.961 | -42.1% | No |
+| S4-025 | inv-vol sizing in MR mode (instead of equal weight) | 1.553 | 2.146 | -33.8% | +196.4% | 1.051 | 0.966 | -42.1% | No (tied) |
