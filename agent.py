@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-022: FG_MIN 22→15 — mean=0.611, 2018=+0.723 2022=+0.455, 0 neg windows"
+HYPOTHESIS = "S5-023: greed threshold fg>70→fg>80 — mean=0.621, 2021=+0.612, 0 neg windows"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -134,7 +134,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 # Adaptive: top 1% bear, top 1.5% greed, top 2.5% normal
                 if breadth < 0.40:
                     eff_pct = 0.010
-                elif fg_val > 70:
+                elif fg_val > 80:
                     eff_pct = 0.015
                 else:
                     eff_pct = TOP_PCT
