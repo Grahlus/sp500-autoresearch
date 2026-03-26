@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-021: widen MR drop window upper bound from -0.20 to -0.30"
+HYPOTHESIS = "S4-028: blend 55/45 MOM/MR instead of 60/40"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -196,7 +196,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
             mr_pos  = _mr_signal(close, volume, i, tickers, ma_days)
 
             if regime == "MOM":
-                new_pos = mom_pos * 0.6 + mr_pos * 0.4
+                new_pos = mom_pos * 0.55 + mr_pos * 0.45
                 # Set entry tracking for MOM-weighted positions
                 for tkr in tickers:
                     if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
@@ -208,7 +208,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 _mom_rebal += 1
                 _mom_days  += rebal_days
             else:
-                new_pos = mr_pos * 0.6 + mom_pos * 0.4
+                new_pos = mr_pos * 0.55 + mom_pos * 0.45
                 # No trailing stop in MR mode — clear all tracking
                 pos_high[:]  = np.nan
                 entry_day[:] = -999

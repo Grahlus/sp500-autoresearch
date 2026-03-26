@@ -184,3 +184,5 @@ After every `uv run python run.py`, immediately run:
 | S4-023 | shrink dispersion window 252 → 126 days | 1.383 | 1.809 | -33.8% | +158.7% | 1.095 | 1.015 | -42.1% | No |
 | S4-024 | 35th percentile dispersion threshold (was 40th) | 1.532 | 2.101 | -33.8% | +191.3% | 1.049 | 0.961 | -42.1% | No |
 | S4-025 | inv-vol sizing in MR mode (instead of equal weight) | 1.553 | 2.146 | -33.8% | +196.4% | 1.051 | 0.966 | -42.1% | No (tied) |
+| S4-026 | fine-tune MR lower bound from -0.12 to -0.10 | 1.125 | 1.121 | -41.3% | +113.5% | 1.072 | 0.986 | -42.1% | No |
+| S4-027 | 45th percentile dispersion threshold (was 40th) | 1.553 | 2.146 | -33.8% | +196.4% | 1.049 | 0.964 | -42.1% | No (tied) |
