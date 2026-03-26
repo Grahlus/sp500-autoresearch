@@ -167,3 +167,10 @@ After every `uv run python run.py`, immediately run:
 | S4-006 | tune MR concentration to top 3% (was 1%) | 0.437 | 0.236 | -42.0% | +20.8% | 0.674 | 0.482 | -45.3% | Yes |
 | S4-007 | dispersion threshold to 40th percentile (was median/50th) | 0.544 | 0.345 | -42.9% | +31.6% | 0.736 | 0.560 | -45.3% | Yes |
 | S4-008 | dispersion threshold to 60th percentile (was 40th) | 0.005 | -0.163 | -51.4% | -16.1% | 0.761 | 0.585 | -45.3% | No |
+| S4-009 | autocorrelation regime detector (replace dispersion with autocorr) | 0.507 | 0.469 | -26.9% | +26.7% | 0.441 | 0.171 | -59.2% | No |
+| S4-010 | blend MOM+MR weights 70/30 instead of hard switch | 0.567 | 0.445 | -35.9% | +34.3% | 0.948 | 0.828 | -41.8% | Yes |
+| S4-011 | tune MR lookback from 15 days to 10 days | 0.754 | 0.785 | -32.1% | +56.5% | 0.943 | 0.786 | -45.1% | Yes |
+| S4-012 | tune MR lookback from 10 days to 20 days | 1.397 | 1.910 | -34.7% | +175.2% | 1.026 | 0.874 | -44.4% | Yes |
+| S4-013 | upper bound filter for MR candidates: ret >= -0.15 (was -0.20) | 1.330 | 2.274 | -22.8% | +129.9% | 0.976 | 0.712 | -48.5% | No |
+| S4-014 | remove 200d MA filter from MR signal (all oversold stocks) | 0.999 | 1.234 | -27.3% | +78.2% | 0.926 | 0.767 | -43.5% | No |
+| S4-015 | 30th percentile dispersion threshold (was 40th) | 1.357 | 1.827 | -34.7% | +165.8% | 1.066 | 0.912 | -44.4% | No |

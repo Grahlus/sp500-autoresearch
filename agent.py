@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-012: tune MR lookback from 10 days to 20 days"
+HYPOTHESIS = "S4-017: 60/40 blend (MOM regime: 60% MOM + 40% MR; MR regime: 40% MOM + 60% MR)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -196,7 +196,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
             mr_pos  = _mr_signal(close, volume, i, tickers, ma_days)
 
             if regime == "MOM":
-                new_pos = mom_pos * 0.7 + mr_pos * 0.3
+                new_pos = mom_pos * 0.6 + mr_pos * 0.4
                 # Set entry tracking for MOM-weighted positions
                 for tkr in tickers:
                     if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
@@ -208,7 +208,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 _mom_rebal += 1
                 _mom_days  += rebal_days
             else:
-                new_pos = mr_pos * 0.7 + mom_pos * 0.3
+                new_pos = mr_pos * 0.6 + mom_pos * 0.4
                 # No trailing stop in MR mode — clear all tracking
                 pos_high[:]  = np.nan
                 entry_day[:] = -999
