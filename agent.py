@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-058: MR regime blend 65/35 mr/mom (fine-tune 70/30)"
+HYPOTHESIS = "S4-062: require MR candidate has positive 26w return (structural uptrend)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -131,7 +131,11 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
     dv       = (close.iloc[max(0, i - 20):i] * volume.iloc[max(0, i - 20):i]).mean()
     liquid   = dv >= dv.median()
 
-    candidates = ret_15d.where(oversold & above_ma & liquid).dropna()
+    # Require positive 26-week return (structural uptrend, not structural breakdown)
+    ret_26w   = today / close.iloc[max(0, i - 130)] - 1
+    uptrend   = ret_26w > 0
+
+    candidates = ret_15d.where(oversold & above_ma & liquid & uptrend).dropna()
     if candidates.empty:
         return pd.Series(0.0, index=tickers)
 
