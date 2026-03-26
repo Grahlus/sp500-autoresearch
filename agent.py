@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-062: require MR candidate has positive 26w return (structural uptrend)"
+HYPOTHESIS = "S4-063: MR drop window -33% (retry — train now 1.170 vs 1.133 when failed)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -121,7 +121,7 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
     ret_15d  = today / close.iloc[max(0, i - 20)] - 1
 
     # Only stocks that dropped 8-20% (oversold but not broken)
-    oversold = (ret_15d <= -0.12) & (ret_15d >= -0.32)
+    oversold = (ret_15d <= -0.12) & (ret_15d >= -0.33)
 
     # Must be above 200d MA (not in structural downtrend)
     ma_200   = close.iloc[max(0, i - 200):i].mean()
