@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-018: adaptive stop threshold 5% — mean=0.581, 2017=+0.136, 0 neg windows"
+HYPOTHESIS = "S5-022: FG_MIN 22→15 — mean=0.611, 2018=+0.723 2022=+0.455, 0 neg windows"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -40,7 +40,7 @@ MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
 INV_VOL_DAYS   = 6
 MIN_HOLD_DAYS  = 5
-FG_MIN         = 22.0
+FG_MIN         = 15.0
 
 
 def generate_signals(data: dict) -> pd.DataFrame:

@@ -112,3 +112,7 @@ After every `uv run python run.py`:
 | S5-016 | LOOKBACK_WEEKS 26→13 | 0.069 | -0.84→+1.05 (3/7 neg) | 1/7 | 30.2 | No — 13w signal too noisy; 2018/2019 fail |
 | S5-017 | adaptive stop 30% in uptrend (>10%/4w) else 20% | **0.568** | +0.016→+1.99 (0 neg) | 3/7 | 27.3 | **YES** — 2023 +0.174 (was +0.022), mean 0.547→0.568 |
 | S5-018 | adaptive stop threshold 10%→5% | **0.581** | +0.016→+1.99 (0 neg) | 3/7 | 27.3 | **YES** — 2017 +0.136 (was +0.041), mean 0.568→0.581 |
+| S5-019 | adaptive stop threshold 5%→0% | 0.581 | identical to S5-018 | 3/7 | 27.3 | No — zero effect; 0% threshold indistinguishable from 5% in practice |
+| S5-020 | LOOKBACK_WEEKS 26→20 | 0.266 | -0.745→+2.352 (3/7 neg) | 3/7 | 28.6 | No — catastrophic; 2017=-0.454 2019=-0.745 2021=-0.335 |
+| S5-021 | SKIP_WEEKS 3→2 | 0.476 | -0.282→+1.872 (1/7 neg) | 3/7 | 27.3 | No — 2019=+0.026 (was +0.750), 2021=-0.282 (was +0.016); net worse |
+| S5-022 | FG_MIN 22→15 | **0.611** | +0.016→+2.020 (0 neg) | 3/7 | 28.8 | **YES** — 2018=+0.723 (+0.161), 2022=+0.455 (+0.174), mean 0.581→0.611 |
