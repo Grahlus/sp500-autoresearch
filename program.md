@@ -186,3 +186,21 @@ After every `uv run python run.py`, immediately run:
 | S4-025 | inv-vol sizing in MR mode (instead of equal weight) | 1.553 | 2.146 | -33.8% | +196.4% | 1.051 | 0.966 | -42.1% | No (tied) |
 | S4-026 | fine-tune MR lower bound from -0.12 to -0.10 | 1.125 | 1.121 | -41.3% | +113.5% | 1.072 | 0.986 | -42.1% | No |
 | S4-027 | 45th percentile dispersion threshold (was 40th) | 1.553 | 2.146 | -33.8% | +196.4% | 1.049 | 0.964 | -42.1% | No (tied) |
+| S4-028 | blend 55/45 MOM/MR (was 60/40) | 1.575 | 2.309 | -32.5% | +205.0% | 1.068 | 0.984 | -42.0% | Yes |
+| S4-029 | blend 50/50 MOM/MR (was 55/45) | 1.592 | 2.400 | -32.5% | +215.1% | 1.077 | 0.993 | -42.3% | Yes |
+| S4-030 | blend 45/55 MOM/MR — MR dominant both regimes | 1.603 | 2.485 | -32.5% | +224.8% | 1.084 | 1.000 | -42.6% | Yes |
+| S4-031 | blend 40/60 MOM/MR | 1.609 | 2.566 | -32.5% | +234.3% | 1.089 | 1.007 | -42.9% | Yes |
+| S4-032 | blend 30/70 MOM/MR | 1.611 | 2.715 | -32.5% | +252.2% | 1.095 | 1.016 | -43.5% | Yes |
+| S4-033 | blend 20/80 MOM/MR | 1.602 | 2.850 | -32.5% | +268.7% | 1.096 | 1.019 | -44.2% | No |
+| S4-034 | asymmetric: MOM regime 60/40, MR regime 0/100 pure MR | 1.401 | 1.759 | -40.6% | +192.6% | 1.001 | 0.663 | -61.9% | No |
+| S4-035 | MR regime blend 70/30 mr/mom (was 55/45) | 1.612 | 2.544 | -35.3% | +258.1% | 1.074 | 0.998 | -44.0% | Yes |
+| S4-036 | MR regime blend 80/20 mr/mom (was 70/30) | 1.605 | 2.443 | -37.1% | +261.3% | 1.055 | 0.922 | -47.3% | No |
+| S4-037 | MR drop window upper bound -35% (was -30%) | 1.845 | 3.271 | -35.3% | +360.9% | 1.119 | 1.034 | -46.8% | No (OVERFIT) |
+| S4-038 | MR drop window upper bound -32% | 1.779 | 3.061 | -35.3% | +329.8% | 1.131 | 1.106 | -44.0% | Yes |
+| S4-039 | MR drop window upper bound -33% | 1.833 | 3.229 | -35.3% | +354.6% | 1.131 | 1.106 | -44.0% | No (OVERFIT) |
+| S4-040 | MOM regime blend 25/75 mom/mr (was 30/70) | 1.782 | 3.165 | -35.3% | +345.0% | 1.133 | 1.090 | -45.1% | Yes |
+| S4-041 | MOM regime blend 20/80 mom/mr (was 25/75) | 1.783 | 3.266 | -35.3% | +360.1% | 1.133 | 1.074 | -46.1% | Yes |
+| S4-042 | MOM regime pure MR 0/100 — both regimes use MR only | 1.524 | 2.685 | -35.3% | +276.9% | 0.948 | 0.732 | -45.9% | No (OVERFIT) |
+| S4-043 | MR concentration top 4% (was 3%) | 1.783 | 3.266 | -35.3% | +360.1% | 1.133 | 1.074 | -46.1% | No (tied) |
+| S4-044 | dispersion threshold 38th percentile (was 40th) | 1.783 | 3.266 | -35.3% | +360.1% | 1.133 | 1.074 | -46.1% | No (tied) |
+| S4-045 | remove 200d MA filter from MR — allow downtrend stocks | 1.280 | 2.306 | -23.4% | +136.5% | 0.839 | 0.524 | -63.8% | No |

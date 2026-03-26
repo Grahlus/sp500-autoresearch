@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-041: MOM regime blend 20/80 mom/mr (was 25/75)"
+HYPOTHESIS = "S4-058: MR regime blend 65/35 mr/mom (fine-tune 70/30)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -208,7 +208,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 _mom_rebal += 1
                 _mom_days  += rebal_days
             else:
-                new_pos = mr_pos * 0.7 + mom_pos * 0.3
+                new_pos = mr_pos * 0.65 + mom_pos * 0.35
                 # No trailing stop in MR mode — clear all tracking
                 pos_high[:]  = np.nan
                 entry_day[:] = -999
