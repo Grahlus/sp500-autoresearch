@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-011: tune MR lookback from 15 days to 10 days"
+HYPOTHESIS = "S4-012: tune MR lookback from 10 days to 20 days"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -118,7 +118,7 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
     Stocks down 8-20% in past 15 days → candidates for reversal.
     """
     today    = close.iloc[i]
-    ret_15d  = today / close.iloc[max(0, i - 10)] - 1
+    ret_15d  = today / close.iloc[max(0, i - 20)] - 1
 
     # Only stocks that dropped 8-20% (oversold but not broken)
     oversold = (ret_15d <= -0.12) & (ret_15d >= -0.20)
