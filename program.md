@@ -104,3 +104,10 @@ After every `uv run python run.py`:
 | S5-008 | MA_WEEKS 20→10 (faster trend filter) | -0.055 | -1.32→+1.47 (4/7 neg) | 2/7 | 29.4 | No — catastrophic; faster MA creates false exits everywhere |
 | S5-009 | skip rebal when breadth>80% | 0.364 | -0.84→+1.46 (1/7 neg) | 3/7 | 22.3 | No — 2021=+0.40 but 2017=-0.84; 80% threshold blocks 2017's low-vol bull |
 | S5-010 | skip rebal when breadth>85% | **0.547** | +0.016→+1.998 (0 neg) | 3/7 | 27.4 | **YES** — 2021 fixed (+0.016), 0 negative windows, mean 0.357→0.547 |
+| S5-011 | dual momentum composite 26w+13w rank avg | 0.115 | -0.67→+1.08 (2/7 neg) | 1/7 | 29.2 | No — 13w signal too noisy; kills 2017/2018/2023 |
+| S5-012 | VIX floor VIX<13 AND breadth>80% reduce to 1% | 0.407 | -1.08→+2.24 (1/7 neg) | 3/7 | 25.1 | No — VIX<13 fires all of 2017, over-concentrates to 4 stocks |
+| S5-013 | STOP_LOSS_PCT 20%→25% | 0.493 | -0.009→+1.78 (0 neg) | 3/7 | 26.7 | No — 2023 improved but 2018/2020/2022 hurt; net worse (0.493<0.547) |
+| S5-014 | remove SP500 filter, full 841-stock universe | 0.204 | -0.97→+1.79 (3/7 neg) | 2/7 | 67.1 | No — R1000 mid-caps too noisy; 2017/2018 catastrophic |
+| S5-015 | REBAL_WEEKS 4→6 | 0.106 | -1.20→+1.63 (3/7 neg) | 2/7 | 22.2 | No — 6w rebal too slow; 2021/2022 negative again |
+| S5-016 | LOOKBACK_WEEKS 26→13 | 0.069 | -0.84→+1.05 (3/7 neg) | 1/7 | 30.2 | No — 13w signal too noisy; 2018/2019 fail |
+| S5-017 | adaptive stop 30% in uptrend (>10%/4w) else 20% | **0.568** | +0.016→+1.99 (0 neg) | 3/7 | 27.3 | **YES** — 2023 +0.174 (was +0.022), mean 0.547→0.568 |

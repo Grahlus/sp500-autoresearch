@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-010: skip rebal when breadth>85% — mean=0.547, 0 neg windows, 2021=+0.016"
+HYPOTHESIS = "S5-017: adaptive stop 30%/20% by uptrend — mean=0.568, 2023=+0.174, 0 neg windows"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -95,7 +95,13 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr] = today[tkr]
                     ph = today[tkr]
                 days_held = i - int(entry_day.get(tkr, i))
-                if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - STOP_LOSS_PCT):
+                # Adaptive stop: use 30% in strong uptrend (>10% in last 20d)
+                # to prevent premature exits on corrections in NVDA-style trends.
+                # Revert to 20% for flat/declining positions.
+                prev_20   = close.iloc[max(0, i - 20)][tkr]
+                short_mom = (today[tkr] / prev_20 - 1) if prev_20 > 0 else 0.0
+                eff_stop  = 0.30 if short_mom > 0.10 else STOP_LOSS_PCT
+                if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - eff_stop):
                     current_pos[tkr] = 0.0
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
