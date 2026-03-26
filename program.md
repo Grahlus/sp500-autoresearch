@@ -94,4 +94,13 @@ After every `uv run python run.py`:
 
 | # | Hypothesis | WF Mean Sharpe | WF Sharpe Range | Beat SPY | Trades/yr | Kept |
 |---|-----------|---------------|-----------------|----------|-----------|------|
-| S5-001 | SP500 champion baseline — 7-window WF | — | — | — | — | pending |
+| S5-001 | SP500 champion baseline — 7-window WF | 0.357 | -1.13→+1.97 (2017=+0.04,2018=+0.56,2019=+0.75,2020=+1.97,2021=-1.13,2022=+0.28,2023=+0.02) | — | — | Yes (baseline) |
+| S5-002 | valuation proxy filter — exclude stocks up >100% in past 26w | 0.155 | -0.82→+1.15 (4/7 neg) | 1/7 | 33.6 | No — catastrophic, 100% threshold too restrictive |
+| S5-003 | trailing stop tighten to 15% when breadth>70% | 0.307 | -1.30→+1.92 (2/7 neg) | 3/7 | 33.0 | No — extra stops in normal dips hurt 2023; 2021 worse |
+| S5-004 | max position age 12w (60d) force exit | 0.453 | -0.73→+1.97 (2/7 neg) | 3/7 | 31.7 | No — 2021=-0.73 still violates min_sharpe<-0.5; promising direction |
+| S5-005 | max position age 8w (40d) force exit | 0.446 | -0.90→+2.11 (2/7 neg) | 3/7 | 31.7 | No — re-entry churn worse than 12w; 2021=-0.90 |
+| S5-006 | 26w absolute momentum hold gate | 0.357 | -1.13→+1.97 (baseline) | 3/7 | 31.7 | No — zero effect; 26w base is COVID recovery low, never fires in 2021 |
+| S5-007 | 13w absolute momentum hold gate | 0.136 | -1.49→+1.66 (3/7 neg) | 2/7 | 33.5 | No — fires on normal dips, kills 2017/2018 |
+| S5-008 | MA_WEEKS 20→10 (faster trend filter) | -0.055 | -1.32→+1.47 (4/7 neg) | 2/7 | 29.4 | No — catastrophic; faster MA creates false exits everywhere |
+| S5-009 | skip rebal when breadth>80% | 0.364 | -0.84→+1.46 (1/7 neg) | 3/7 | 22.3 | No — 2021=+0.40 but 2017=-0.84; 80% threshold blocks 2017's low-vol bull |
+| S5-010 | skip rebal when breadth>85% | **0.547** | +0.016→+1.998 (0 neg) | 3/7 | 27.4 | **YES** — 2021 fixed (+0.016), 0 negative windows, mean 0.357→0.547 |

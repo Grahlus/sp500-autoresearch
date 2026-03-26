@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-001: SP500-filter + dollar-vol + abs15 baseline — WF mean=0.357, fix 2021 window next"
+HYPOTHESIS = "S5-010: skip rebal when breadth>85% — mean=0.547, 0 neg windows, 2021=+0.016"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -102,7 +102,14 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     _stops          += 1
 
         # ── Rebalance every rebal_days when F&G >= threshold ─────────────────
-        if i % rebal_days == 0 and fg_val >= FG_MIN:
+        # Compute breadth for rebal gate + position sizing
+        ma_200  = close.iloc[max(0, i - 200):i].mean()
+        breadth = float((today > ma_200).mean())
+
+        # Skip rebalance when breadth is extreme (>85% above 200d MA).
+        # This prevents loading up on parabolic momentum names just before rotation.
+        # Threshold 85% (vs 80% in S5-009) spares the 2017 low-vol bull.
+        if i % rebal_days == 0 and fg_val >= FG_MIN and breadth <= 0.85:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
             ma       = close.iloc[max(0, i - ma_days):i].mean()
@@ -119,8 +126,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
             if not filt.empty:
                 # Adaptive: top 1% bear, top 1.5% greed, top 2.5% normal
-                ma_200  = close.iloc[max(0, i - 200):i].mean()
-                breadth = float((today > ma_200).mean())
                 if breadth < 0.40:
                     eff_pct = 0.010
                 elif fg_val > 70:
