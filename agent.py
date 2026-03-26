@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-035: MR regime blend 70/30 mr/mom (was 55/45)"
+HYPOTHESIS = "S4-038: MR drop window upper bound -32% (compromise -30% vs -35%)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -121,7 +121,7 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
     ret_15d  = today / close.iloc[max(0, i - 20)] - 1
 
     # Only stocks that dropped 8-20% (oversold but not broken)
-    oversold = (ret_15d <= -0.12) & (ret_15d >= -0.30)
+    oversold = (ret_15d <= -0.12) & (ret_15d >= -0.32)
 
     # Must be above 200d MA (not in structural downtrend)
     ma_200   = close.iloc[max(0, i - 200):i].mean()
