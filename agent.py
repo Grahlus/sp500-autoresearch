@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-007: tune dispersion threshold to 40th percentile (was median/50th)"
+HYPOTHESIS = "S4-010: blend MOM+MR weights 70/30 instead of hard switch"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -191,10 +191,13 @@ def generate_signals(data: dict) -> pd.DataFrame:
         if i % rebal_days == 0:
             regime = _regime(close, i)
 
+            mom_pos = _momentum_signal(close, volume, i, tickers,
+                                       lb_days, skip_days, ma_days, rebal_days)
+            mr_pos  = _mr_signal(close, volume, i, tickers, ma_days)
+
             if regime == "MOM":
-                new_pos = _momentum_signal(close, volume, i, tickers,
-                                           lb_days, skip_days, ma_days, rebal_days)
-                # Set entry tracking for new MOM positions
+                new_pos = mom_pos * 0.7 + mr_pos * 0.3
+                # Set entry tracking for MOM-weighted positions
                 for tkr in tickers:
                     if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
                         pos_high[tkr]  = today[tkr]
@@ -205,7 +208,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 _mom_rebal += 1
                 _mom_days  += rebal_days
             else:
-                new_pos = _mr_signal(close, volume, i, tickers, ma_days)
+                new_pos = mr_pos * 0.7 + mom_pos * 0.3
                 # No trailing stop in MR mode — clear all tracking
                 pos_high[:]  = np.nan
                 entry_day[:] = -999

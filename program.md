@@ -165,3 +165,5 @@ After every `uv run python run.py`, immediately run:
 | S4-004 | tune MR drop threshold to 12% min (was 10%) | 0.437 | 0.236 | -42.0% | +20.8% | 0.674 | 0.482 | -45.3% | Yes |
 | S4-005 | tune MR concentration to top 1% (was 2.5%) | 0.437 | 0.236 | -42.0% | +20.8% | 0.674 | 0.482 | -45.3% | Yes |
 | S4-006 | tune MR concentration to top 3% (was 1%) | 0.437 | 0.236 | -42.0% | +20.8% | 0.674 | 0.482 | -45.3% | Yes |
+| S4-007 | dispersion threshold to 40th percentile (was median/50th) | 0.544 | 0.345 | -42.9% | +31.6% | 0.736 | 0.560 | -45.3% | Yes |
+| S4-008 | dispersion threshold to 60th percentile (was 40th) | 0.005 | -0.163 | -51.4% | -16.1% | 0.761 | 0.585 | -45.3% | No |
