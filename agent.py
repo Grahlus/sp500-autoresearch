@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-024: INV_VOL_DAYS 6→15 — mean=0.705, 2021=+0.720, 0 neg windows"
+HYPOTHESIS = "S5-035: FG_MIN 15→10 — mean=0.718, 2022=+0.524, 0 neg windows"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -40,7 +40,7 @@ MA_WEEKS       = 20
 STOP_LOSS_PCT  = 0.20
 INV_VOL_DAYS   = 15
 MIN_HOLD_DAYS  = 5
-FG_MIN         = 15.0
+FG_MIN         = 10.0
 
 
 def generate_signals(data: dict) -> pd.DataFrame:

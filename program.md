@@ -118,3 +118,14 @@ After every `uv run python run.py`:
 | S5-022 | FG_MIN 22→15 | **0.611** | +0.016→+2.020 (0 neg) | 3/7 | 28.8 | **YES** — 2018=+0.723 (+0.161), 2022=+0.455 (+0.174), mean 0.581→0.611 |
 | S5-023 | greed top_pct threshold fg>70→fg>80 | **0.621** | +0.116→+2.046 (0 neg) | 3/7 | 31.7 | **YES** — 2021=+0.612 (was +0.016), 2018=-0.492 (was +0.723), net +0.010 |
 | S5-024 | INV_VOL_DAYS 6→15 | **0.705** | +0.050→+2.170 (0 neg) | 3/7 | 31.7 | **YES** — 2018=+0.598, 2019=+0.792, 2021=+0.720; 2017 slight drop (+0.050); mean 0.621→0.705 |
+| S5-025 | adaptive stop threshold 5%→3% | 0.705 | identical to S5-024 | 3/7 | 31.7 | No — zero effect; 3% and 5% thresholds produce identical results |
+| S5-026 | REBAL_WEEKS 4→3 | -0.160 | -1.18→+0.802 (4/7 neg) | 1/7 | 89.8 | No — catastrophic; 90 trades/yr churn cost kills all windows |
+| S5-027 | dollar-vol filter 70th→50th pct | 0.469 | -0.364→+1.965 (2/7 neg) | 2/7 | 58.4 | No — 2017/2022 go negative; 58 trades/yr too high |
+| S5-028 | breadth gate 85%→90% | 0.628 | +0.050→+1.981 (0 neg) | 3/7 | 34.0 | No — 2017 unchanged, 2018 hurt (0.297 vs 0.598); net worse 0.705→0.628 |
+| S5-029 | INV_VOL_DAYS 15→20 | 0.704 | +0.048→+2.180 (0 neg) | 3/7 | 31.7 | No — essentially identical to S5-024; 15d is sweet spot |
+| S5-030 | remove greed top_pct reduction (fg>80→1.5%) | 0.225 | -0.868→+1.599 (3/7 neg) | 2/7 | 76.6 | No — catastrophic; greed reduction controls trade cost not just euphoria |
+| S5-031 | greed threshold fg>80→fg>75 | 0.675 | +0.050→+2.171 (0 neg) | 3/7 | 30.1 | No — worse than fg>80 (0.675 vs 0.705); fg>80 is optimal |
+| S5-032 | MIN_HOLD_DAYS 5→15 | 0.680 | +0.050→+2.170 (0 neg) | 3/7 | 31.7 | No — 2021 hurt (0.543 vs 0.720), 2017 unchanged; net worse |
+| S5-033 | 4w positive return filter (buy only if up in last 4w) | -0.302 | -1.474→+1.550 (4/7 neg) | 1/7 | 25.7 | No — catastrophic; chasing short-term momentum kills 2017/2018/2022 |
+| S5-034 | TOP_PCT 2.5%→2% | 0.391 | -1.076→+1.983 (hard fail) | 3/7 | 22.2 | No — 2017=-1.076, 2021=-0.520; too few stocks means one bad pick tanks portfolio |
+| S5-035 | FG_MIN 15→10 | **0.718** | +0.050→+2.170 (0 neg) | 3/7 | 32.0 | **YES** — 2022=+0.524 (+0.089), mean 0.705→0.718; allows rebal in deep fear spikes |
