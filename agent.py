@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-017: adaptive stop 30%/20% by uptrend — mean=0.568, 2023=+0.174, 0 neg windows"
+HYPOTHESIS = "S5-018: adaptive stop threshold 5% — mean=0.581, 2017=+0.136, 0 neg windows"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -100,7 +100,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 # Revert to 20% for flat/declining positions.
                 prev_20   = close.iloc[max(0, i - 20)][tkr]
                 short_mom = (today[tkr] / prev_20 - 1) if prev_20 > 0 else 0.0
-                eff_stop  = 0.30 if short_mom > 0.10 else STOP_LOSS_PCT
+                eff_stop  = 0.30 if short_mom > 0.05 else STOP_LOSS_PCT
                 if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - eff_stop):
                     current_pos[tkr] = 0.0
                     pos_high[tkr]    = np.nan

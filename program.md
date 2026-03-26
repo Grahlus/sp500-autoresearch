@@ -111,3 +111,4 @@ After every `uv run python run.py`:
 | S5-015 | REBAL_WEEKS 4→6 | 0.106 | -1.20→+1.63 (3/7 neg) | 2/7 | 22.2 | No — 6w rebal too slow; 2021/2022 negative again |
 | S5-016 | LOOKBACK_WEEKS 26→13 | 0.069 | -0.84→+1.05 (3/7 neg) | 1/7 | 30.2 | No — 13w signal too noisy; 2018/2019 fail |
 | S5-017 | adaptive stop 30% in uptrend (>10%/4w) else 20% | **0.568** | +0.016→+1.99 (0 neg) | 3/7 | 27.3 | **YES** — 2023 +0.174 (was +0.022), mean 0.547→0.568 |
+| S5-018 | adaptive stop threshold 10%→5% | **0.581** | +0.016→+1.99 (0 neg) | 3/7 | 27.3 | **YES** — 2017 +0.136 (was +0.041), mean 0.568→0.581 |
