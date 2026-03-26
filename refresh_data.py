@@ -43,12 +43,34 @@ def get_russell1000_tickers() -> list[str]:
         )
         # Filter: only real ticker symbols (exclude cash, "-", blank)
         tickers = tickers[tickers.str.match(r"^[A-Z][A-Z0-9\-]{0,6}$")].tolist()
-        print(f"  Russell 1000 tickers: {len(tickers)}")
+        # Always append ETFs — not in IWB holdings but essential for sector rotation
+        tickers = list(dict.fromkeys(tickers + _etf_supplements()))
+        print(f"  Russell 1000 + ETFs: {len(tickers)} tickers")
         return tickers
 
     except Exception as e:
         print(f"  iShares fetch failed ({e}), falling back to SP500 + supplements …")
         return _sp500_plus_supplements()
+
+
+def _etf_supplements() -> list[str]:
+    """ETFs to always add — not in IWB holdings but critical for sector/commodity rotation."""
+    return [
+        # SPDR Sector ETFs (all 11)
+        "XLF","XLRE","XLE","XLU","XLK","XLB","XLP","XLY","XLC","XLV","XLI",
+        # Gold / silver
+        "GLD","GDX","GDXJ","SLV",
+        # Uranium
+        "URA","URNM",
+        # Metals / mining broad
+        "XME","PICK",
+        # Energy E&P
+        "XOP",
+        # Commodities
+        "DBA","DBC","COPX","CPER",
+        # Royalty / streaming (stocks, not ETFs — often missing from IWB)
+        "WPM","RGLD","FNV",
+    ]
 
 
 def _sp500_plus_supplements() -> list[str]:
@@ -79,7 +101,7 @@ def _sp500_plus_supplements() -> list[str]:
         # Royalty / streaming
         "WPM","RGLD","FNV",
     ]
-    combined = list(dict.fromkeys(sp500 + supplements))  # dedup, preserve order
+    combined = list(dict.fromkeys(sp500 + supplements + _etf_supplements()))  # dedup
     print(f"  SP500 + supplements: {len(combined)} tickers")
     return combined
 

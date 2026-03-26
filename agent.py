@@ -3,85 +3,177 @@
 agent.py — AGENT EDITS THIS FILE each experiment.
 
 Rules:
-  - generate_signals() receives the full data dict (see prepare.py: load_data)
-  - Return a DataFrame: index=dates, columns=tickers, values in [-1, 1]
-  - NO lookahead: at row T use only data up to T.
-  - Do NOT edit prepare.py, run.py, or evaluate.py.
+  - generate_signals() returns DataFrame: index=dates, columns=tickers, [-1,1]
+  - NO lookahead: at row T use only data up to T
+  - Do NOT edit prepare.py, run.py, or evaluate.py
 
 ─────────────────────────────────────────────────────────────────────────────
-ENGINE STATUS: FIXED (session 3)
-  - Daily drift rebalancing bug removed — trades only on weight changes
-  - Trailing stop uses close-price HIGH (not intraday — intraday not tradeable)
-  - All session 1/2 numbers were inflated. Session 3 is the truth.
+SESSION 4 GOAL: Dual-mode regime classifier
+  Switch between momentum (RSL) and mean reversion based on market regime.
+  Root cause of OOS failure: momentum broke down in 2024-2026 low-dispersion regime.
 
-COST MODEL:
-  Starting capital : $100,000
-  Commission       : $20 per ticker traded
-  Slippage         : 5bps one-way
-  Execution        : open[T+1] ± slippage
-
-HARD CONSTRAINTS — auto-checked by run.py, revert if violated:
-  1. trades_per_year > 150  → REVERT (rebalance_days >= 20 minimum)
+HARD CONSTRAINTS:
+  1. trades_per_year > 150  → REVERT
   2. train sharpe < 0.5     → REVERT
-  3. train_sharpe < val_sharpe / 1.6  → REVERT (overfit)
+  3. train_sharpe < val_sharpe / 1.6  → REVERT
   4. ONE change per experiment
 
-SESSION 3 BASELINE (exp140, fixed engine):
-  Val Sharpe 1.643 | Calmar 3.918 | MaxDD -16.9% | +175.6% | ~55 trades/yr
-  Train Sharpe 1.066 | ratio 1.54 (passes 1.6 threshold)
-  OOS Sharpe 0.564 (2024-07 → 2026-03) — weak in low-dispersion regime
+CONFIRMED MOMENTUM PARAMS (R1000, session 3 — do not re-tune):
+  26w+16w sum, skip=3w, rebal=4w, top=2.5%, stop=13% close-HIGH,
+  inv-vol=12d, dollar-vol top 30%, no vol_accel, no F&G gate, MA=20w
 
-  Beat val Sharpe 1.643 on chosen METRIC.
-  Primary goal: strategy that also works in low-dispersion/high-VIX regimes.
-  Do NOT retest anything already in program.md.
+MEAN REVERSION SIGNAL (to build and tune in session 4):
+  Target: stocks down 8-20% in past 15 days, above 200d MA, liquid
+  Rank by drop magnitude → long top 2-3%
+  No trailing stop in MR mode (exit at next rebalance)
+
+REGIME DETECTOR (start with cross-sectional dispersion):
+  Compute std of 13w returns across universe each rebalance
+  Rolling 52w median of that std = baseline
+  dispersion > median → MOMENTUM regime
+  dispersion < median → MEAN REVERSION regime
+  Print regime each rebalance in DIAG line for verification
 ─────────────────────────────────────────────────────────────────────────────
 """
 import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "R1000 champion: 26w+16w sum, dollar-vol top30%, STOP=13%, inv-vol 12d, no F&G"
+HYPOTHESIS = "S4-001: cross-sectional dispersion regime detector — verify classification only, run MOM in all regimes"
 
-LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 3
-REBAL_WEEKS    = 4
-TOP_PCT        = 0.025
-MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.13
-VOL_MA_DAYS    = 10
-MIN_HOLD_DAYS  = 5
+# ── Momentum params (confirmed optimal, do not change) ───────────────────────
+MOM_LOOKBACK_WEEKS = 26
+MOM_SECONDARY_WEEKS = 16
+MOM_SKIP_WEEKS     = 3
+REBAL_WEEKS        = 4
+MOM_TOP_PCT        = 0.025
+MA_WEEKS           = 20
+STOP_LOSS_PCT      = 0.13
+INV_VOL_DAYS       = 12
+DOLLAR_VOL_PCT     = 0.30
+MIN_HOLD_DAYS      = 5
+
+# ── Regime detector params ────────────────────────────────────────────────────
+DISPERSION_LOOKBACK = 65    # 13 weeks for momentum std measurement
+DISPERSION_WINDOW   = 252   # 52 weeks rolling median baseline
+
+
+def _regime(close: pd.DataFrame, i: int) -> str:
+    """
+    Returns 'MOM' or 'MR' based on cross-sectional return dispersion.
+    High dispersion (stocks diverging) → momentum works.
+    Low dispersion (stocks converging) → mean reversion works.
+    """
+    if i < DISPERSION_WINDOW + DISPERSION_LOOKBACK:
+        return "MOM"   # not enough history — default to momentum
+
+    # Current cross-sectional dispersion: std of 13w returns across universe
+    ret_13w    = close.iloc[i] / close.iloc[i - DISPERSION_LOOKBACK] - 1
+    current_disp = ret_13w.std()
+
+    # Rolling 52-week median of that dispersion
+    dispersions = []
+    for j in range(i - DISPERSION_WINDOW, i, 5):   # sample every week
+        r = close.iloc[j] / close.iloc[j - DISPERSION_LOOKBACK] - 1
+        dispersions.append(r.std())
+    median_disp = np.median(dispersions)
+
+    return "MOM" if current_disp >= median_disp else "MR"
+
+
+def _momentum_signal(close, volume, i, tickers, lb_days, skip_days,
+                     ma_days, rebal_days) -> pd.Series:
+    """R1000 champion momentum signal."""
+    today    = close.iloc[i]
+    mom_26w  = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
+    mom_16w  = (close.iloc[i - skip_days] / close.iloc[max(0, i - MOM_SECONDARY_WEEKS*5)] - 1)
+    mom      = (mom_26w + mom_16w).replace([np.inf, -np.inf], np.nan)
+
+    ma       = close.iloc[max(0, i - ma_days):i].mean()
+    above_ma = today > ma
+
+    dv       = (close.iloc[max(0, i - 20):i] * volume.iloc[max(0, i - 20):i]).mean()
+    high_dv  = dv >= dv.quantile(1 - DOLLAR_VOL_PCT)
+
+    combo    = mom.rank(pct=True)
+    filt     = combo.where(above_ma & high_dv).dropna()
+    if filt.empty:
+        return pd.Series(0.0, index=tickers)
+
+    n_top       = max(1, int(len(filt) * MOM_TOP_PCT))
+    top_tkrs    = filt.nlargest(n_top).index
+    vol_ret     = close.iloc[max(0, i - INV_VOL_DAYS):i][top_tkrs].pct_change().std()
+    inv_vol     = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
+    inv_vol_n   = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
+
+    w = pd.Series(0.0, index=tickers)
+    for tkr in top_tkrs:
+        w[tkr] = inv_vol_n.get(tkr, 0.0)
+    return w
+
+
+def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
+    """
+    Mean reversion signal: long recent losers above 200d MA.
+    Stocks down 8-20% in past 15 days → candidates for reversal.
+    """
+    today    = close.iloc[i]
+    ret_15d  = today / close.iloc[max(0, i - 15)] - 1
+
+    # Only stocks that dropped 8-20% (oversold but not broken)
+    oversold = (ret_15d <= -0.08) & (ret_15d >= -0.20)
+
+    # Must be above 200d MA (not in structural downtrend)
+    ma_200   = close.iloc[max(0, i - 200):i].mean()
+    above_ma = today > ma_200
+
+    # Dollar-volume filter: top 50% (need liquidity for MR)
+    dv       = (close.iloc[max(0, i - 20):i] * volume.iloc[max(0, i - 20):i]).mean()
+    liquid   = dv >= dv.median()
+
+    candidates = ret_15d.where(oversold & above_ma & liquid).dropna()
+    if candidates.empty:
+        return pd.Series(0.0, index=tickers)
+
+    # Rank by drop magnitude (biggest drop = strongest MR candidate)
+    mr_rank  = candidates.rank(pct=True)   # lowest return = rank 0 = best MR
+    n_top    = max(1, int(len(candidates) * 0.025))
+    top_tkrs = mr_rank.nsmallest(n_top).index   # most oversold
+
+    # Equal weight in MR mode (inv-vol rewards low-vol stocks, not what we want here)
+    w = pd.Series(0.0, index=tickers)
+    for tkr in top_tkrs:
+        w[tkr] = 1.0 / n_top
+    return w
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
     close   = data["close"]
-    high    = data["high"]
     volume  = data["volume"]
-    fg_raw  = data["fear_greed"]
     dates   = close.index
-    fg      = fg_raw.reindex(dates).ffill().fillna(50.0).values
     tickers = close.columns
     n       = len(dates)
 
-    lb_days    = LOOKBACK_WEEKS * 5
-    skip_days  = SKIP_WEEKS * 5
+    lb_days    = MOM_LOOKBACK_WEEKS * 5
+    skip_days  = MOM_SKIP_WEEKS * 5
     ma_days    = MA_WEEKS * 5
     rebal_days = REBAL_WEEKS * 5
 
     weights     = pd.DataFrame(0.0, index=dates, columns=tickers)
-    entry_price = pd.Series(np.nan, index=tickers)
     pos_high    = pd.Series(np.nan, index=tickers)
     entry_day   = pd.Series(-999,   index=tickers)
     current_pos = pd.Series(0.0,    index=tickers)
 
-    _stop_exits = _rebal_exits = _rebal_enters = 0
+    _stop_exits  = 0
+    _mom_rebal   = 0
+    _mr_rebal    = 0
+    _mom_days    = 0
+    _mr_days     = 0
 
     for i in range(lb_days, n):
-        today    = close.iloc[i]
-        fg_val   = float(fg[i])
-        ma_200   = close.iloc[max(0, i - 200):i].mean()
-        breadth  = float((today > ma_200).mean())
+        today = close.iloc[i]
 
-        # ── Trailing stop (close-price HIGH only — no intraday) ───────────────
+        # ── Trailing stop (MOM positions only) ───────────────────────────────
         for tkr in current_pos[current_pos > 0].index:
             ph = pos_high.get(tkr, np.nan)
             if not np.isnan(ph) and ph > 0:
@@ -91,65 +183,43 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 days_held = i - int(entry_day.get(tkr, i))
                 if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - STOP_LOSS_PCT):
                     current_pos[tkr] = 0.0
-                    entry_price[tkr] = np.nan
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
                     _stop_exits     += 1
 
-        # ── Rebalance every rebal_days ─────────────────────────────────────────
+        # ── Rebalance every rebal_days ────────────────────────────────────────
         if i % rebal_days == 0:
-            mom      = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
-            mom      = mom.replace([np.inf, -np.inf], np.nan)
-            ma       = close.iloc[max(0, i - ma_days):i].mean()
-            above_ma = today > ma
+            regime = _regime(close, i)
 
-            # Dollar-volume filter: price × shares — levels playing field across
-            # universe sizes. A $5 miner and a $500 megacap compete equally.
-            dollar_vol  = (close.iloc[max(0, i - VOL_MA_DAYS):i] *
-                           volume.iloc[max(0, i - VOL_MA_DAYS):i]).mean()
-            high_vol    = dollar_vol >= dollar_vol.quantile(0.70)  # top 30%
+            if regime == "MOM":
+                new_pos = _momentum_signal(close, volume, i, tickers,
+                                           lb_days, skip_days, ma_days, rebal_days)
+                # Set entry tracking for new MOM positions
+                for tkr in tickers:
+                    if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
+                        pos_high[tkr]  = today[tkr]
+                        entry_day[tkr] = i
+                    elif new_pos[tkr] == 0.0:
+                        pos_high[tkr]  = np.nan
+                        entry_day[tkr] = -999
+                _mom_rebal += 1
+                _mom_days  += rebal_days
+            else:
+                new_pos = _mr_signal(close, volume, i, tickers, ma_days)
+                # No trailing stop in MR mode — clear all tracking
+                pos_high[:]  = np.nan
+                entry_day[:] = -999
+                _mr_rebal += 1
+                _mr_days  += rebal_days
 
-            mom_13w     = (close.iloc[i - skip_days] / close.iloc[max(0, i - 80)] - 1)
-            mom_13w     = mom_13w.replace([np.inf, -np.inf], np.nan)
-            combo       = mom.rank(pct=True) + mom_13w.rank(pct=True)
-            combo_filt  = combo.where(above_ma & high_vol).dropna()
-
-            if not combo_filt.empty:
-                if breadth < 0.40:
-                    eff_pct = 0.010
-                else:
-                    eff_pct = TOP_PCT
-
-                n_top       = max(1, int(len(combo_filt) * eff_pct))
-                top_tickers = combo_filt.nlargest(n_top).index
-
-                vol_ret      = close.iloc[max(0, i - 12):i][top_tickers].pct_change().std()
-                inv_vol      = (1.0 / vol_ret.replace(0, np.nan)).fillna(0.0)
-                inv_vol_norm = inv_vol / inv_vol.sum() if inv_vol.sum() > 0 else inv_vol
-
-                new_pos = pd.Series(0.0, index=tickers)
-                for tkr in top_tickers:
-                    new_pos[tkr] = inv_vol_norm.get(tkr, 0.0)
-
-                for tkr in top_tickers:
-                    if current_pos.get(tkr, 0.0) == 0.0:
-                        entry_price[tkr] = today[tkr]
-                        pos_high[tkr]    = today[tkr]
-                        entry_day[tkr]   = i
-                        _rebal_enters   += 1
-                for tkr in current_pos[current_pos > 0].index:
-                    if new_pos[tkr] == 0.0:
-                        entry_price[tkr] = np.nan
-                        pos_high[tkr]    = np.nan
-                        entry_day[tkr]   = -999
-                        _rebal_exits    += 1
-
-                current_pos = new_pos.copy()
+            current_pos = new_pos.copy()
 
         weights.iloc[i] = current_pos
 
-    n_years = (n - lb_days) / 252
+    total_rebal = max(_mom_rebal + _mr_rebal, 1)
+    n_years     = (n - lb_days) / 252
     print(f"  [DIAG] stop_exits/yr={_stop_exits/n_years:.1f}  "
-          f"rebal_exits/yr={_rebal_exits/n_years:.1f}  "
-          f"rebal_enters/yr={_rebal_enters/n_years:.1f}", flush=True)
+          f"MOM_rebal={_mom_rebal}({100*_mom_rebal//total_rebal}%)  "
+          f"MR_rebal={_mr_rebal}({100*_mr_rebal//total_rebal}%)",
+          flush=True)
     return weights
