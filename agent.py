@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-006: tune MR concentration to top 3% (was 1%)"
+HYPOTHESIS = "S4-007: tune dispersion threshold to 40th percentile (was median/50th)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -76,7 +76,7 @@ def _regime(close: pd.DataFrame, i: int) -> str:
     for j in range(i - DISPERSION_WINDOW, i, 5):   # sample every week
         r = close.iloc[j] / close.iloc[j - DISPERSION_LOOKBACK] - 1
         dispersions.append(r.std())
-    median_disp = np.median(dispersions)
+    median_disp = np.percentile(dispersions, 40)
 
     return "MOM" if current_disp >= median_disp else "MR"
 
