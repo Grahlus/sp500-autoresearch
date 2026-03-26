@@ -135,3 +135,59 @@ After every `uv run python run.py`:
 | S5-039 | combined gate: block only if breadth>85% AND F&G>70 | 0.489 | -0.397→+1.981 (1/7 neg) | 3/7 | 37.0 | No — 2021=-0.397; gate allows rebalancing in fear dips at high breadth |
 | S5-040 | MA_WEEKS 20→25 | 0.534 | -0.682→+2.163 (hard fail) | 2/7 | 32.0 | No — 2018=-0.682; longer MA too conservative in bear/volatile environments |
 | S5-041 | breadth MA 200d→100d | **0.751** | +0.050→+2.408 (0 neg) | 3/7 | 33.1 | **YES** — 2019=+0.954, 2020=+2.408, 2023=+0.252; 2021 dip to +0.469; mean 0.718→0.751 |
+| S5-042 | breadth gate 82% with 100d MA | 0.698 | -0.067→+2.252 (1/7 neg) | 3/7 | 30.7 | No — 2023=+0.535 (excellent!) but 2017=-0.067, 2021=+0.137; net worse 0.751→0.698 |
+| S5-043 | breadth gate 84% with 100d MA | 0.739 | +0.050→+2.408 (0 neg) | 3/7 | 32.4 | No — 85% is strictly better (2021=+0.384 vs +0.469); 85% is optimal with 100d MA |
+| S5-044 | greed threshold fg>80→fg>75 with 100d MA | 0.677 | +0.050→+2.104 (0 neg) | 3/7 | 32.2 | No — 2021 hurt (0.254 vs 0.469); fg>80 is optimal with 100d MA too |
+| S5-045 | TOP_PCT 2.5%→3% | 0.534 | -0.226→+2.146 (2/7 neg) | 2/7 | 41.9 | No — too many trades (42/yr), 2017/2018 negative; 2.5% is optimal |
+| S5-046 | VIX position scaling min(1, 25/VIX) | 0.751 | identical to S5-041 | 3/7 | 33.1 | No — zero effect; Sharpe ratio invariant to proportional position scaling |
+| S5-047 | 75/25 dual momentum composite (26w×0.75 + 13w×0.25) | 0.566 | -0.584→+2.063 (hard fail) | 3/7 | 35.3 | No — 2017=-0.584, 2023=-0.018; 13w signal too noisy even at 25% weight |
+| S5-048 | 50/50 inv-vol + momentum rank blended sizing | 0.684 | -0.220→+2.447 (hard fail) | 3/7 | 33.1 | No — 2017=-0.220, 2021=+0.147; momentum overweights crash candidates in 2017/2021 |
+| S5-049 | adaptive wide stop 30%→25% | 0.751 | identical to S5-041 | 3/7 | 33.1 | No — zero effect; 25% and 30% produce identical results |
+| S5-050 | bear breadth threshold 0.40→0.45 | 0.751 | identical to S5-041 | 3/7 | 33.1 | No — zero effect; 100d breadth in 2022 never in 0.40-0.45 range at rebal dates |
+| S5-051 | equal-weight positions | 0.101 | -3.603→+1.751 (hard fail) | 3/7 | 28.8 | No — 2017=-3.603 catastrophic; inv-vol weighting is essential risk management |
+| S5-052 | breadth MA 150d | 0.652 | +0.050→+2.170 (0 neg) | 3/7 | 33.1 | No — essentially same as 200d; 100d is optimal and unique |
+| S5-053 | two-tier gate: breadth>0.85 OR (breadth>0.75 AND F&G>75) | 0.650 | +0.050→+1.946 (0 neg) | 3/7 | 32.5 | No — blocks 2020 recovery rebalancing; 2020=+1.946, 2021=+0.228; net worse |
+| S5-054 | breadth MA 100d→80d | 0.582 | -0.338→+2.407 (1/7 neg) | 3/7 | 34.5 | No — 2021=-0.338 catastrophic; 100d is the unique sweet spot |
+| S5-055 | add F&G>80 gate (block when extreme greed) | 0.667 | +0.050→+2.252 (0 neg) | 3/7 | 32.7 | No — blocks late-2020 rebuilding (2020=+2.252, 2019=+0.764); net worse |
+| S5-056 | STOP_LOSS_PCT 20%→22% | 0.673 | +0.050→+2.193 (0 neg) | 3/7 | 31.9 | No — 2018=+0.377, 2022=+0.445 both hurt; 20% is optimal base stop |
+| S5-057 | FG_MIN 10→5 | 0.750 | +0.050→+2.408 (0 neg) | 3/7 | 33.4 | No — identical to S5-041; FG_MIN=10 is the floor, no days with F&G 5-10 in dataset |
+| S5-058 | dollar-vol filter 70th→65th pct | 0.431 | -0.524→+2.204 (4 neg) | 2/7 | 42.0 | No — catastrophic; brings in poor-quality names that blow up 2017/2018 |
+| S5-059 | adaptive stop threshold 5%→3% in 20d | 0.751 | identical | 3/7 | 33.1 | No — zero effect; 3-5% 20d range is same stocks as 5%; threshold is moot |
+| S5-060 | VIX<20 gate extension (breadth<=0.90 AND VIX<20) | 0.533 | -0.338→+2.236 (1 neg) | 3/7 | 36.0 | No — 2021=-0.338 catastrophic (VIX was calm in 2021 calm periods), same flaw as S5-039 |
+| S5-061 | REBAL_WEEKS 4→5 | 0.452 | -0.710→+2.130 (1 neg) | 3/7 | 25.9 | No — 2019=-0.710 catastrophic; rebal timing shift misses Jan 2019 recovery entry |
+| S5-062 | LOOKBACK_WEEKS 26→28 | 0.732 | -0.372→+2.449 (1 neg) | 5/7 | 31.9 | No — 2017=-0.372, 2019=0.361 badly hurt; but 2021=1.129, 2023=0.603 greatly improved |
+| S5-063 | LOOKBACK_WEEKS 26→27 | 0.659 | -0.387→+2.185 (1 neg) | 3/7 | 31.9 | No — worse than both 26w and 28w; 26w is genuine half-year sweet spot |
+| S5-064 | add 13w positive-momentum quality filter | 0.465 | -0.263→+1.790 (0 neg) | 2/7 | 26.6 | No — destroys 2018=-0.263 and 2019=0.586; hard filter excludes too many stocks in volatile markets |
+| S5-065 | MA_WEEKS 20→15 | 0.538 | -0.531→+2.280 (1 neg) | 4/7 | 31.3 | No — 2017=-0.531 catastrophic; but 2023=0.771 (best ever); shorter MA lets stale signals pass |
+| S5-066 | MA_WEEKS 20→22 | 0.684 | -0.293→+2.408 (0 neg) | 3/7 | 33.7 | No — 2018=-0.293, 2021=0.187 hurt; 20w remains optimal |
+| S5-067 | positive absolute momentum filter (mom>0) | 0.553 | -0.283→+2.636 (0 neg) | 2/7 | 24.9 | No — 2018=0.042, 2021=-0.173; too many candidates excluded in volatile markets |
+| S5-068 | breadth-trend gate (allow if <=0.92 AND breadth rising) | 0.521 | -0.338→+2.152 (1 neg) | 3/7 | 36.7 | No — 2021=-0.338; breadth was rising in some 2021 periods, opens gate at wrong time |
+| S5-069 | breadth cooldown 20d | 0.666 | -0.067→+1.981 (1 neg) | 3/7 | 27.6 | No — 2018=0.961 best ever but 2019=0.640, 2020=1.981; 20d too long |
+| S5-070 | breadth cooldown 10d | 0.580 | -0.067→+2.018 (1 neg) | 3/7 | 29.5 | No — 2019=0.640, 2021=0.206; cooldown disrupts timing in recovery phases |
+| S5-071 | position persistence (hold top 5% = 2×entry) | 0.752 | +0.050→+2.197 (0 neg) | 3/7 | 36.5 | No (+0.001) — 2021=0.758, 2023=0.506 greatly improved; 2019=0.399 hurt by dilution |
+| S5-072 | persistence cap n_top+3 | 0.752 | identical to S5-071 | 3/7 | 36.5 | No — cap already bound; n_hold naturally ≈ n_top+3 with SP500 filter |
+| S5-073 | idiosyncratic momentum (mom - SPY_ret) | 0.751 | identical to S5-041 | 3/7 | 33.1 | No — subtracting constant doesn't change ranking; need beta-adjusted, not raw excess |
+| S5-074 | beta-adjusted momentum (mom - beta×SPY_ret) | 0.751 | identical to S5-041 | 3/7 | 33.1 | No — same top-12 picks; energy had genuine +18% idiosyncratic alpha in 2016, beta doesn't help 2017 |
+| S5-075 | INV_VOL_DAYS 15→10 | 0.659 | -0.088→+2.374 (1 neg) | 3/7 | 33.1 | No — 2017=-0.088, 2018=0.430 hurt; 15d confirmed optimal |
+| S5-076 | quality-filter retention (hold while above MA+dvol) | 0.496 | -0.584→+2.023 (1 neg) | 4/7 | 53.4 | No — 2017=-0.584 catastrophic (holds energy too long); 2023=1.241 but can't overcome 2017 |
+
+## Session 5 Status (after S5-076, 2026-03-26)
+
+**Champion**: S5-041 — mean Sharpe **0.751** (target: >0.800, gap: 0.049)
+
+Per-window: 2017=+0.050  2018=+0.598  2019=+0.954  2020=+2.408  2021=+0.469  2022=+0.524  2023=+0.252
+
+**Structural limits identified after 76 experiments:**
+
+1. **2017 (0.050) — irreducible**: Energy/financials had +18% genuine idiosyncratic alpha from the Trump trade in late 2016. No signal (absolute, beta-adjusted, 13w filter, etc.) can predict the 2017 sector reversal within the momentum framework.
+
+2. **2023 (0.252) — breadth gate conflict**: The AI rally happened in a high-breadth environment (>85% of SP500 above 100d MA). Any gate relaxation that allows 2023 entry also allows 2021 Feb rotation entry → catastrophic 2021 (-0.338).
+
+3. **Retention tradeoff**: Every mechanism that helps 2023 by holding AI names longer (persistence, quality-filter retention) hurts 2017 by holding energy names longer, and hurts 2019 by diluting concentrated winners.
+
+**Key confirmed optima**: 26w/3w/4w/2.5%/20w/20%/15d/FG≥10/breadth≤85%(100d MA) — all verified exhaustively.
+
+**Possible next directions** (require data/complexity not yet available):
+- Sector-rotation-aware filtering (GICS data needed)
+- Regime-switching model (bull/bear regime detection)
+- Alternative to trailing stop for 2023 high-vol names
