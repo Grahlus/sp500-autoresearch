@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-031: blend 40/60 MOM/MR"
+HYPOTHESIS = "S4-032: blend 30/70 MOM/MR"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -196,7 +196,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
             mr_pos  = _mr_signal(close, volume, i, tickers, ma_days)
 
             if regime == "MOM":
-                new_pos = mom_pos * 0.4 + mr_pos * 0.6
+                new_pos = mom_pos * 0.3 + mr_pos * 0.7
                 # Set entry tracking for MOM-weighted positions
                 for tkr in tickers:
                     if new_pos[tkr] > 0 and current_pos[tkr] == 0.0:
