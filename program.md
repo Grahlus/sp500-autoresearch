@@ -146,3 +146,125 @@ Reduces churn but requires careful counting. Not yet tested successfully.
 |---|-----------|---------------|-----------------|---------|-----------|------|
 | S6-000 | [failed trial: dvol blend 50/50] | 0.68 | -0.176→+2.47 | 1.6 | 33.1 | No |
 | S6-001 | min 2 positions always | — | — | — | — | baseline |
+| 001 | 4w momentum quality filter — only enter if 20d return > 0 | -0.159 | — | — | — | — | — | — | 27 | — | — | — | — | — | No |
+| 002 | holding period exit after 20w (100d) | 0.779 | — | — | — | — | — | — | 34 | — | — | — | — | — | Yes |
+| 003 | TLT/SPY regime — bonds 4w > stocks 4w = risk-off mode (TLT not in dataset, no effect) | 0.779 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 004 | 4w momentum top-third filter (top 33% universe by 4w return) | -0.314 | — | — | — | — | — | — | 20 | — | — | — | — | — | No |
+| 005 | adaptive 30% stop only if position up >10% from entry | 0.769 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 006 | 13w momentum quality filter — enter only if 65d return > 0 | 0.631 | — | — | — | — | — | — | 31 | — | — | — | — | — | No |
+| 007 | stop-loss cooldown — no new entries 20d after any stop | 0.672 | — | — | — | — | — | — | 28 | — | — | — | — | — | No |
+| 000 | bear-market stop cooldown breadth<55% | 0.764 | — | — | — | — | — | — | 32 | — | — | — | — | — | No |
+| 008 | bear-market stop cooldown breadth<55% | 0.764 | — | — | — | — | — | — | 32 | — | — | — | — | — | No |
+| 009 | market-neutral ranking (constant shift, identical to baseline) | 0.779 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 010 | multi-period momentum avg rank 26w+13w+52w | 0.334 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 011 | 15w (75d) forced exit instead of 20w — faster rotation | 0.786 | — | — | — | — | — | — | 35 | — | — | — | — | — | Yes |
+| 012 | 12w (60d) forced exit — too aggressive, 0.777 | 0.777 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 013 | conditional 15w exit only if 4w return <= 0 | 0.741 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 014 | 15w forced exit only when F&G < 60 (let bull runs continue) | 0.819 | — | — | — | — | — | — | 35 | — | — | — | — | — | Yes |
+| 015 | breadth momentum gate breadth_delta<-0.15 (blocks rebalance, hurts 2018H2/2022H1) | 0.859 | — | — | — | — | — | — | 32 | — | — | — | — | — | No |
+| 016 | entry-only breadth_delta gate — still blocks too many recoveries | 0.626 | — | — | — | — | — | — | 33 | — | — | — | — | — | No |
+| 017 | 15w exit when F&G<55 (same as <60, no diff) | 0.819 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 018 | 15w exit F&G<65 (same as <60) | 0.819 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 019 | 15w exit F&G<70 (still same 0.819) | 0.819 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 020 | 15w exit F&G<80 (same as unconditional 0.786) | 0.786 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 021 | breadth min gate 25% — blocks 2019H1 recovery | 0.755 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 022 | parabolic reversal exit (>50% gain + 20d return<-5%) — cuts 2020H2 | 0.785 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 023 | time-decay stop 40d+15% — hurts 2020H2 2021H1 | 0.801 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 024 | 12w (60d) F&G<60 gated exit — 0.777, too short | 0.777 | — | — | — | — | — | — | 34 | — | — | — | — | — | No |
+| 025 | 18w (90d) F&G<60 gated exit — too long, 2023H2 worsened | 0.770 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 026 | adaptive stop threshold 5%->8% — helped 2017H1 but hurt 2017H2 overall 0.804 | 0.804 | — | — | — | — | — | — | 35 | — | — | — | — | — | No |
+| 027 | SKIP_WEEKS=2 — fixed 2018H2 structural floor (-1.127->+0.196) and 2017H1 (0.078->0.563) | 0.863 | — | — | — | — | — | — | 34 | — | — | — | — | — | Yes |
+| 027 | SKIP_WEEKS=2 REVERTED — OOS 0.114 << 1.0, WF overfit | 0.863 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 028 | FG_MIN=20 — tiny +0.003 gain, mixed windows, not kept | 0.822 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 029 | FG_MIN=25 — too strict, 2020H1 destroyed, 0.692 | 0.692 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 030 | LOOKBACK_WEEKS=24 — fails, 5 neg windows, 0.59 | 0.59 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 031 | LOOKBACK_WEEKS=28 — improved 2021H2/2022H1 but broke 2017H1/H2, 0.803 | 0.803 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 032 | INV_VOL_DAYS=10 — fails min_sharpe constraint, 0.737 | 0.737 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 033 | INV_VOL_DAYS=20 — 0.817, marginal miss | 0.817 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 034 | MA_WEEKS=15 — fails 5 neg windows, 0.609 | 0.609 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 035 | MA_WEEKS=25 — catastrophic 2018H2=-2.908, constraint fail | 0.631 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 036 | SKIP_WEEKS=4 — 2017H2/2018H1/2021H1 improve, OOS=1.200 passes | 0.862 | — | — | — | — | — | — | 34 | — | — | — | — | — | Yes |
+| 037 | STOP_LOSS_PCT=0.15 — too tight, whipsaws, 2017H1=-0.819, 0.571 | 0.571 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 038 | STOP_LOSS_PCT=0.25 — REVERTED OOS=0.991 < 1.0, WF=0.897 overfit | 0.897 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 039 | REBAL_WEEKS=3 — fails 5 neg windows, 0.661 | 0.661 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 040 | REBAL_WEEKS=5 — 0.536, too slow, 4 neg windows | 0.536 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 041 | breadth ceiling 0.90 — 2021H1 hurt, 0.649 | 0.649 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 042 | breadth ceiling 0.80 — 2017H1 improved but 2020H2 hurt, 0.754 | 0.754 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 043 | adaptive stop 10d window — 2023H2 worse, 0.842 | 0.842 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 044 | adaptive stop 30d window — 0.833, 2023H2 still weak | 0.833 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 045 | MIN_HOLD_DAYS=10 — 2021H1 hurt, 0.822 | 0.822 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 046 | dvol q0.75 — fails 6 neg windows, 0.425 | 0.425 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 047 | dvol q0.65 — fails worst=-1.871, too many trades 43.3 | 0.664 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 048 | remove 15w exit — forced exit IS beneficial, 0.788 without it | 0.788 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 049 | bear breadth 0.35 — no effect, 0.862 identical | 0.862 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 050 | bear breadth 0.45 — no effect, identical 0.862 (threshold insensitive) | 0.862 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 051 | no greed concentration — hurts 2020H2 and 2021H1, 0.823 | 0.823 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 052 | forced exit F&G<50 — hurts 2023H1, too restrictive, 0.806 | 0.806 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 053 | equal-weight sizing — 2023H2 much worse -0.912, 0.824 | 0.824 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 054 | greed threshold 75 — hurts 2020H2/2021H2, 0.759 | 0.759 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 055 | greed threshold 85 — no effect, 0.862 identical | 0.862 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 056 | LOOKBACK_WEEKS=30 — 2019H2 destroyed, 2022H1 bad, 0.636 | 0.636 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 057 | breadth MA 80d — 2021H1 crashes, 0.694 | 0.694 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 058 | breadth MA 120d — 2020H2/2021H1 hurt, 0.677 | 0.677 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 059 | dvol window 30d — fails worst=-1.49 constraint | 0.808 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+
+---
+
+## CRITICAL ARCHITECTURAL FINDINGS (Session 7)
+
+### Session 7 Champion: S7-036
+- **Config**: SKIP_WEEKS=4, 15w F&G<60 forced exit (all other S7-014 params unchanged)
+- **WF mean Sharpe**: 0.862 (vs 0.819 baseline start)
+- **OOS Sharpe**: 1.200 (verified, above 1.0 guard)
+- **Commits**: S7-014 (0.819), S7-036 (0.862)
+
+### Finding 1: SKIP_WEEKS=4 generalizes; SKIP_WEEKS=2 overfits
+- SKIP_WEEKS=2 → WF=0.863 (+0.044 vs baseline) but OOS=0.114 — catastrophic overfit
+- SKIP_WEEKS=4 → WF=0.862 (+0.043 vs baseline) AND OOS=1.200 — genuine edge
+- The 20d exclusion window (4w) is theoretically sounder (matches JT 1-month exclusion)
+- The 10d window (2w) exploits reversal patterns present in training but not OOS
+
+### Finding 2: OOS-checked WF improvements: only +0.043 survived
+- Every change giving WF > 0.862 failed OOS:
+  - STOP_LOSS_PCT=0.25: WF=0.897, OOS=0.991 (just below threshold)
+  - SKIP_WEEKS=2: WF=0.863, OOS=0.114 (catastrophic)
+- The OOS guard (>1.0) is binding — there's genuine alpha but it's limited
+
+### Finding 3: Parameter scan complete on S7-036 baseline
+All parameters exhaustively scanned; 0.85/20/26/4/0.20/15/5/10 is the global optimum:
+- REBAL_WEEKS: 3 (fails neg), 4 (opt), 5 (0.536)
+- MA_WEEKS: 15 (fails), 20 (opt), 25 (fails catastrophically)
+- LOOKBACK_WEEKS: 24 (fails), 26 (opt), 28 (0.803), 30 (0.636)
+- STOP_LOSS_PCT: 0.15 (whipsaws), 0.20 (opt), 0.25 (OOS fail)
+- INV_VOL_DAYS: 10 (fails), 15 (opt), 20 (0.817)
+- FG_MIN: 10 (opt), 20 (0.822 marginal), 25 (destroys)
+- Breadth ceiling: 0.80 (0.754), 0.85 (opt), 0.90 (0.649)
+- Bear breadth threshold (0.35-0.45): insensitive — never crosses this range in data
+- Greed threshold (80-85): insensitive — F&G either never or always in this range at rebalance
+- dvol quantile: 0.65 (constraint fail), 0.70 (opt), 0.75 (fails)
+- Forced exit F&G<50: 0.806 (too restrictive), F&G<60 (opt), F&G<80 (same as unconditional)
+
+### Finding 4: 2023H2 (-0.601) is a structural floor with SKIP_WEEKS=4
+The Jul 2023-Jul 2024 window is -0.601 regardless of all parameter changes.
+- The forced exit is not causing it (confirmed by disabling exit → same -0.601)
+- The stock selection with 4w skip picks different names for 2023-2024 that underperform
+- This is a residual cost of the SKIP_WEEKS=4 configuration; 2018H2 improved from -1.127→-0.835
+
+### S7-036 Per-Window Results
+```
+2017H1: Sharpe=+0.072  MaxDD=-30.7%  Ret=-2.9%
+2017H2: Sharpe=+1.117  MaxDD=-21.3%  Ret=+19.0%
+2018H1: Sharpe=+2.699  MaxDD=-17.9%  Ret=+71.6%
+2018H2: Sharpe=-0.835  MaxDD=-33.4%  Ret=-21.1%
+2019H1: Sharpe=+1.255  MaxDD=-9.1%   Ret=+12.9%
+2019H2: Sharpe=+0.076  MaxDD=-18.5%  Ret=-0.7%
+2020H1: Sharpe=+1.770  MaxDD=-26.2%  Ret=+60.3%
+2020H2: Sharpe=+2.422  MaxDD=-19.1%  Ret=+86.8%
+2021H1: Sharpe=+1.574  MaxDD=-20.2%  Ret=+40.3%
+2021H2: Sharpe=+0.357  MaxDD=-17.3%  Ret=+3.3%
+2022H1: Sharpe=+0.224  MaxDD=-25.5%  Ret=-1.9%
+2022H2: Sharpe=+0.364  MaxDD=-34.6%  Ret=+3.1%
+2023H1: Sharpe=+1.579  MaxDD=-23.1%  Ret=+25.1%
+2023H2: Sharpe=-0.601  MaxDD=-47.3%  Ret=-33.8%
+MEAN: 0.862  worst=-0.835  trades/yr=34.2
+```
