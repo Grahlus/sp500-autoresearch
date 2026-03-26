@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-041: breadth MA 200d→100d — mean=0.751, 2019=+0.954 2020=+2.408, 0 neg"
+HYPOTHESIS = "S7-002: holding period exit after 20w (100d) — prevent holding through reversals"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -106,6 +106,11 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
                     _stops          += 1
+                elif days_held >= 100:  # force exit after 20 weeks
+                    current_pos[tkr] = 0.0
+                    pos_high[tkr]    = np.nan
+                    entry_day[tkr]   = -999
+                    _exits          += 1
 
         # ── Rebalance every rebal_days when F&G >= threshold ─────────────────
         # Compute breadth for rebal gate + position sizing
