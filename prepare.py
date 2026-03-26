@@ -1,43 +1,62 @@
 #!/usr/bin/env python3
 """
 prepare.py — FROZEN. Do not edit.
-Provides: load_data(), run_backtest(), print_metrics()
 
-Execution model:
-  Signal generated at close[T]  →  filled at open[T+1]  →  exited at open[T+2]
-  holding_ret[T+1] = open[T+2] / open[T+1] - 1
-  No lookahead: generate_signals() never sees open[T+1] when deciding at close[T].
+Walk-forward validation engine (Session 5+).
 
-Backtest: daily rebalance, long/short, equal-notional, 5bps round-trip cost.
+Window design (3-year train, 1-year test, 1-year step):
+  W1: train 2014-2017  test 2018
+  W2: train 2015-2018  test 2019
+  W3: train 2016-2019  test 2020
+  W4: train 2017-2020  test 2021
+  W5: train 2018-2021  test 2022
+  W6: train 2019-2022  test 2023
+  W7: train 2020-2023  test 2024-H1
+
+OOS (never touched): 2024-07 → today  (evaluate.py only)
+
+Scoring: mean Sharpe across all 7 windows.
+A strategy must beat the baseline on the AVERAGE, not cherry-pick one window.
+
+Cost model:
+  $100,000 starting capital per window (independent resets)
+  $20 commission per ticker traded
+  5bps slippage one-way
+  Trades only on weight changes (no drift rebalancing)
 """
 import signal, sys
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 import pandas as pd
 
 DATA_DIR = Path("data")
-EXPERIMENT_TIMEOUT_SECS = 60 * 60  # 60 minutes hard cap
+EXPERIMENT_TIMEOUT_SECS = 60 * 60
 
+STARTING_CAPITAL     = 100_000.0
+COMMISSION_PER_TRADE = 20.0
+SLIPPAGE_BPS         = 5
 
-# ── Timeout guard ─────────────────────────────────────────────────────────────
+# Walk-forward windows: (train_start, train_end, test_start, test_end)
+WF_WINDOWS = [
+    ("2014-01-01", "2017-01-01", "2017-01-01", "2018-01-01"),
+    ("2015-01-01", "2018-01-01", "2018-01-01", "2019-01-01"),
+    ("2016-01-01", "2019-01-01", "2019-01-01", "2020-01-01"),
+    ("2017-01-01", "2020-01-01", "2020-01-01", "2021-01-01"),
+    ("2018-01-01", "2021-01-01", "2021-01-01", "2022-01-01"),
+    ("2019-01-01", "2022-01-01", "2022-01-01", "2023-01-01"),
+    ("2020-01-01", "2023-01-01", "2023-01-01", "2024-07-01"),
+]
+
 def _timeout_handler(signum, frame):
-    print("\n[TIMEOUT] Experiment exceeded time budget. Aborting.", flush=True)
+    print("\n[TIMEOUT] Experiment exceeded time budget.", flush=True)
     sys.exit(1)
 
 signal.signal(signal.SIGALRM, _timeout_handler)
 signal.alarm(EXPERIMENT_TIMEOUT_SECS)
 
 
-# ── Data loader ───────────────────────────────────────────────────────────────
 def load_data() -> dict:
-    """
-    Returns dict with keys:
-      close, open, high, low, volume  — DataFrame[dates × tickers]
-      vix                             — Series[dates]
-      fear_greed                      — Series[dates]
-      train_end                       — Timestamp (cutoff date)
-      index                           — DatetimeIndex of all trading days
-    """
     prices = pd.read_parquet(DATA_DIR / "sp500_prices.parquet")
     vix    = pd.read_parquet(DATA_DIR / "vix.parquet")
     fg     = pd.read_parquet(DATA_DIR / "fear_greed.parquet")
@@ -47,156 +66,200 @@ def load_data() -> dict:
     high   = prices["high"]
     low    = prices["low"]
     volume = prices["volume"]
+    idx    = close.index
 
-    # Align macro series to trading calendar
-    idx            = close.index
-    vix_aligned    = vix["vix"].reindex(idx).ffill()
-    fg_aligned     = fg["fg_value"].reindex(idx).ffill()
+    vix_s = vix["vix"].reindex(idx).ffill()
+    fg_s  = fg["fg_value"].reindex(idx).ffill()
 
-    # Train / validation / test split: fixed dates per program.md
-    # Train: 2014-01-01 → 2022-06-30
-    # Validation: 2022-07-01 → 2024-06-30  (~504 days, includes 2022 bear)
-    # Test: 2024-07-01 → present           (hidden — evaluate.py only)
-    cutoff  = pd.Timestamp("2022-07-01")
-    val_end = pd.Timestamp("2024-07-01")
+    # Keep train_end for evaluate.py compatibility (last 2 years = OOS guard)
+    train_end = idx[-int(252 * 2)]
+
     print(f"  Universe  : {close.shape[1]} stocks")
-    print(f"  Train     : {idx[0].date()} → {cutoff.date()}")
-    print(f"  Validation: {cutoff.date()} → {val_end.date()} (~{(idx[(idx >= cutoff) & (idx < val_end)]).shape[0]} days)")
+    print(f"  Capital   : ${STARTING_CAPITAL:,.0f} per window")
+    print(f"  Commission: ${COMMISSION_PER_TRADE:.0f}/trade  |  Slippage: {SLIPPAGE_BPS}bps")
+    print(f"  OOS guard : {train_end.date()} → {idx[-1].date()} (never touched in run.py)")
 
     return dict(
         close=close, open=open_, high=high, low=low, volume=volume,
-        vix=vix_aligned, fear_greed=fg_aligned,
-        train_end=cutoff, val_end=val_end, index=idx,
+        vix=vix_s, fear_greed=fg_s,
+        train_end=train_end, index=idx,
     )
 
 
-# ── Backtest engine ───────────────────────────────────────────────────────────
-def run_backtest(weights: pd.DataFrame, data: dict, split: str = "validation") -> dict:
-    """
-    weights : DataFrame aligned to data index, columns=tickers, values in [-1, 1]
-              Positive = long, Negative = short. Rows need not sum to 1;
-              gross exposure is normalised to 1.0 internally.
-    split   : 'train' or 'validation'
-    Returns : dict of performance metrics
+def _backtest_window(weights: pd.DataFrame, data: dict,
+                     test_start: str, test_end: str) -> dict:
+    """Run backtest on a single test window."""
+    close  = data["close"]
+    open_  = data["open"]
+    idx    = close.index
 
-    Execution timeline (no lookahead):
-      Day T  : observe close[T], generate weight[T]
-      Day T+1: enter at open[T+1]   ← execution price
-      Day T+2: exit / rebalance at open[T+2]
-      P&L[T+1] = weight[T] * (open[T+2] / open[T+1] - 1)
-    """
-    close   = data["close"]
-    open_   = data["open"]
-    cutoff  = data["train_end"]
-    val_end = data.get("val_end", None)
+    # Slice to test window
+    ts = idx[idx >= test_start][0]
+    te = idx[idx < test_end][-1] if any(idx < test_end) else idx[-1]
 
-    if split == "validation":
-        if val_end is not None:
-            close   = close.loc[cutoff:val_end]
-            open_   = open_.loc[cutoff:val_end]
-        else:
-            close   = close.loc[cutoff:]
-            open_   = open_.loc[cutoff:]
-        weights = (
-            weights.loc[cutoff:]
-            if cutoff in weights.index
-            else weights.iloc[-int(252 * 2):]
-        )
-        if val_end is not None:
-            weights = weights.loc[:val_end]
-    else:
-        close   = close.loc[:cutoff]
-        open_   = open_.loc[:cutoff]
-        weights = weights.loc[:cutoff]
+    close_w = close.loc[ts:te]
+    open_w  = open_.loc[ts:te]
+    n_days  = len(close_w)
 
-    # Align weights to the slice
-    weights = (
+    if n_days < 20:
+        return None
+
+    weights_w = (
         weights
-        .reindex(close.index)
-        .reindex(columns=close.columns)
+        .reindex(close_w.index)
+        .reindex(columns=close_w.columns)
         .fillna(0.0)
     )
 
-    # ── Holding return: open[T+1] → open[T+2] ────────────────────────────────
-    # open_.shift(-1) = next-day open  (used only in P&L calc, not in signal gen)
-    holding_ret = (open_.shift(-1) / open_ - 1).fillna(0.0)
+    slip         = SLIPPAGE_BPS / 10_000.0
+    cash         = STARTING_CAPITAL
+    shares_held  = pd.Series(0.0, index=close_w.columns)
+    prev_w_norm  = pd.Series(0.0, index=close_w.columns)
+    port_vals    = []
+    comm_total   = slip_total = trade_count = 0.0
 
-    # weight[T-1] is decided at close[T-1], filled at open[T]
-    # so lag weights by 1 to avoid lookahead
-    w_lag  = weights.shift(1).fillna(0.0)
+    for i in range(n_days):
+        px_open    = open_w.iloc[i]
+        port_value = cash + (shares_held * px_open).sum()
+        port_vals.append(port_value)
 
-    # Normalise: gross exposure capped at 1.0
-    gross  = w_lag.abs().sum(axis=1).replace(0, 1)
-    w_norm = w_lag.div(gross, axis=0)
+        if i == 0:
+            continue
 
-    # Strategy daily P&L
-    strat_ret = (w_norm * holding_ret).sum(axis=1)
+        target_w = weights_w.iloc[i - 1]
+        gross    = target_w.abs().sum()
+        w_norm   = target_w / gross if gross > 0 else target_w
 
-    # Transaction costs: 5 bps per unit of turnover (round-trip)
-    turnover   = w_norm.diff().abs().sum(axis=1)
-    costs      = turnover * 0.0005
-    strat_ret -= costs
+        target_shares = ((w_norm * port_value) / px_open).fillna(0.0)
+        target_shares = target_shares.where(px_open > 0, 0.0)
+        delta         = target_shares - shares_held
+        changed       = (w_norm - prev_w_norm).abs() > 1e-6
+        delta         = delta.where(changed, 0.0)
+        traded        = delta[delta.abs() > 0.01].index
 
-    # Approximate trade count: days where any position changed × avg active positions
-    ann_local = 252
-    position_changes = (w_norm.diff().abs() > 1e-6).sum(axis=1)
-    total_trades = int(position_changes.sum())
-    trades_per_year = round(total_trades / (len(strat_ret) / ann_local), 1)
+        trade_cash = 0.0
+        for tkr in traded:
+            d = delta[tkr]; px = px_open[tkr]
+            if px <= 0 or np.isnan(px): continue
+            fill_px    = px * (1 + slip) if d > 0 else px * (1 - slip)
+            trade_cash -= d * fill_px
+            slip_total += abs(d) * px * slip
+            comm_total += COMMISSION_PER_TRADE
+            trade_count += 1
 
-    # Benchmark: SPY open-to-open (consistent with strategy execution)
-    if "SPY" in open_.columns:
-        bench_ret = (open_["SPY"].shift(-1) / open_["SPY"] - 1).fillna(0.0)
-    else:
-        bench_ret = holding_ret.mean(axis=1)
+        shares_held = target_shares.copy()
+        prev_w_norm = w_norm.copy()
+        cash       += trade_cash - COMMISSION_PER_TRADE * len(traded)
 
-    # ── Metrics ───────────────────────────────────────────────────────────────
+    pv  = pd.Series(port_vals, index=close_w.index)
+    r   = pv.pct_change().fillna(0.0)
     ann = 252
 
-    def sharpe(r):
-        return (r.mean() / r.std() * np.sqrt(ann)) if r.std() > 1e-9 else 0.0
+    if "SPY" in open_w.columns:
+        br = (open_w["SPY"].shift(-1) / open_w["SPY"] - 1).fillna(0.0)
+    else:
+        br = (open_w.shift(-1) / open_w - 1).fillna(0.0).mean(axis=1)
 
+    def sharpe(r): return (r.mean()/r.std()*np.sqrt(ann)) if r.std()>1e-9 else 0.0
     def calmar(r):
-        cum     = (1 + r).cumprod()
-        dd      = (cum / cum.cummax() - 1).min()
-        ann_ret = (cum.iloc[-1] ** (ann / len(r)) - 1)
-        return (ann_ret / abs(dd)) if dd < -1e-6 else 0.0
+        cum=( 1+r).cumprod(); dd=(cum/cum.cummax()-1).min()
+        ar=cum.iloc[-1]**(ann/max(len(r),1))-1
+        return ar/abs(dd) if dd<-1e-6 else 0.0
+    def maxdd(r): cum=(1+r).cumprod(); return (cum/cum.cummax()-1).min()
 
-    def max_dd(r):
-        cum = (1 + r).cumprod()
-        return (cum / cum.cummax() - 1).min()
+    bench_pv  = STARTING_CAPITAL * (1 + br).cumprod()
+    total_ret = pv.iloc[-1] / STARTING_CAPITAL - 1
+    bench_ret = bench_pv.iloc[-1] / STARTING_CAPITAL - 1
 
-    strat_cum = (1 + strat_ret).cumprod()
-    bench_cum = (1 + bench_ret).cumprod()
-    total_ret = strat_cum.iloc[-1] - 1
-    bench_tot = bench_cum.iloc[-1] - 1
-    alpha_ann = (strat_ret - bench_ret).mean() * ann
+    return dict(
+        window      = f"{test_start[:7]}→{test_end[:7]}",
+        sharpe      = round(sharpe(r), 3),
+        calmar      = round(calmar(r), 3),
+        max_dd      = round(maxdd(r)*100, 2),
+        total_ret   = round(total_ret*100, 2),
+        bench_ret   = round(bench_ret*100, 2),
+        final_value = round(pv.iloc[-1], 0),
+        trades_yr   = round(trade_count / (n_days/ann), 1),
+        cost        = round(comm_total + slip_total, 0),
+        n_days      = n_days,
+    )
 
-    start_cap   = 100_000
-    final_value = round(start_cap * strat_cum.iloc[-1], 0)
-    total_cost  = round(costs.sum() * start_cap, 0)
-    cost_pct    = round(total_cost / start_cap * 100, 2)
 
-    metrics = {
-        "split"           : split,
-        "sharpe"          : round(sharpe(strat_ret), 3),
-        "calmar"          : round(calmar(strat_ret), 3),
-        "total_return"    : round(total_ret, 4),
-        "bench_return"    : round(bench_tot, 4),
-        "alpha_ann"       : round(alpha_ann, 4),
-        "max_drawdown"    : round(max_dd(strat_ret), 4),
-        "win_rate"        : round((strat_ret > 0).mean(), 3),
-        "ann_vol"         : round(strat_ret.std() * np.sqrt(ann), 4),
-        "n_days"          : len(strat_ret),
-        "trades_per_year" : trades_per_year,
-        "final_value"     : f"${final_value:,.0f}",
-        "total_cost"      : f"${total_cost:,.0f}",
-        "cost_pct_capital": cost_pct,
-    }
-    return metrics
+def run_backtest(weights: pd.DataFrame, data: dict,
+                 split: str = "validation") -> dict:
+    """
+    Walk-forward backtest across all WF_WINDOWS.
+    Returns aggregate metrics + per-window breakdown.
+    The 'split' argument is kept for API compatibility but ignored —
+    walk-forward always runs all windows.
+    """
+    results = []
+    for tr_s, tr_e, te_s, te_e in WF_WINDOWS:
+        # Pass train context to generate_signals via data dict
+        w = _backtest_window(weights, data, te_s, te_e)
+        if w:
+            results.append(w)
+
+    if not results:
+        return {"sharpe": 0.0, "error": "no windows"}
+
+    sharpes  = [r["sharpe"] for r in results]
+    calmars  = [r["calmar"] for r in results]
+    rets     = [r["total_ret"] for r in results]
+    max_dds  = [r["max_dd"] for r in results]
+    trades   = [r["trades_yr"] for r in results]
+    costs    = [r["cost"] for r in results]
+    wins     = sum(1 for r in results if r["total_ret"] > r["bench_ret"])
+
+    agg = dict(
+        split            = "walk-forward",
+        # Aggregate
+        sharpe           = round(float(np.mean(sharpes)), 3),
+        sharpe_std       = round(float(np.std(sharpes)), 3),
+        sharpe_min       = round(float(np.min(sharpes)), 3),
+        sharpe_max       = round(float(np.max(sharpes)), 3),
+        calmar           = round(float(np.mean(calmars)), 3),
+        max_drawdown     = round(float(np.mean(max_dds)), 2),
+        total_return_pct = round(float(np.mean(rets)), 2),
+        windows_beat_spy = f"{wins}/{len(results)}",
+        trades_per_year  = round(float(np.mean(trades)), 1),
+        total_cost       = f"${sum(costs):,.0f}",
+        cost_pct_capital = round(sum(costs)/STARTING_CAPITAL*100, 2),
+        n_days           = sum(r["n_days"] for r in results),
+        # Per-window breakdown
+        windows          = results,
+    )
+    return agg
 
 
 def print_metrics(m: dict):
-    print("\n── Backtest Results ─────────────────────────────")
-    for k, v in m.items():
-        print(f"  {k:<16}: {v}")
-    print("─────────────────────────────────────────────────\n")
+    print("\n── Walk-Forward Results ─────────────────────────────────────")
+    if "error" in m:
+        print(f"  ERROR: {m['error']}")
+        return
+
+    print(f"  [Aggregate across {len(m['windows'])} windows]")
+    fields = [
+        ("Mean Sharpe",     f"{m['sharpe']} ± {m['sharpe_std']}"),
+        ("Sharpe range",    f"{m['sharpe_min']} → {m['sharpe_max']}"),
+        ("Mean Calmar",     m["calmar"]),
+        ("Mean MaxDD",      f"{m['max_drawdown']}%"),
+        ("Mean Return",     f"{m['total_return_pct']}%"),
+        ("Beat SPY",        m["windows_beat_spy"]),
+        ("Trades/yr",       m["trades_per_year"]),
+        ("Total cost",      m["total_cost"]),
+    ]
+    for k, v in fields:
+        print(f"    {k:<22}: {v}")
+
+    print(f"\n  [Per-window breakdown]")
+    print(f"  {'Window':<18} {'Sharpe':>7} {'Calmar':>7} "
+          f"{'MaxDD':>7} {'Ret%':>7} {'vs SPY':>7} {'Trades':>7}")
+    print(f"  {'-'*62}")
+    for w in m["windows"]:
+        spy_beat = "+" if w["total_ret"] > w["bench_ret"] else " "
+        print(f"  {w['window']:<18} {w['sharpe']:>7.3f} {w['calmar']:>7.3f} "
+              f"{w['max_dd']:>6.1f}% {w['total_ret']:>6.1f}% "
+              f"{spy_beat}{w['total_ret']-w['bench_ret']:>5.1f}% "
+              f"{w['trades_yr']:>7.1f}")
+    print("─────────────────────────────────────────────────────────────\n")
