@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S7-011: 15w (75d) forced exit instead of 20w — faster position rotation"
+HYPOTHESIS = "S7-014: 15w forced exit only when F&G < 60 — let bull runs continue, rotate in uncertainty"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 3
@@ -106,7 +106,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
                     _stops          += 1
-                elif days_held >= 75:  # force exit after 15 weeks
+                elif days_held >= 75 and fg_val < 60:  # rotate in uncertain market only
                     current_pos[tkr] = 0.0
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
