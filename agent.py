@@ -30,14 +30,14 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S7-038: STOP_LOSS_PCT=0.25 — looser 25% trailing stop, ride momentum longer"
+HYPOTHESIS = "S7-036: SKIP_WEEKS=4 — longer exclusion window (20d skip), more reversal protection"
 
 LOOKBACK_WEEKS = 26
 SKIP_WEEKS     = 4
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.25
+STOP_LOSS_PCT  = 0.20
 INV_VOL_DAYS   = 15
 MIN_HOLD_DAYS  = 5
 FG_MIN         = 10.0
