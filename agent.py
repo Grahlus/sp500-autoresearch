@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-001: cross-sectional dispersion regime detector — verify classification only, run MOM in all regimes"
+HYPOTHESIS = "S4-003: tune MR drop threshold to 10% min (was 8%)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -121,7 +121,7 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
     ret_15d  = today / close.iloc[max(0, i - 15)] - 1
 
     # Only stocks that dropped 8-20% (oversold but not broken)
-    oversold = (ret_15d <= -0.08) & (ret_15d >= -0.20)
+    oversold = (ret_15d <= -0.10) & (ret_15d >= -0.20)
 
     # Must be above 200d MA (not in structural downtrend)
     ma_200   = close.iloc[max(0, i - 200):i].mean()

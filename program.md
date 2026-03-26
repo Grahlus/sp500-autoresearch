@@ -160,3 +160,4 @@ After every `uv run python run.py`, immediately run:
 | # | Hypothesis | VAL Sharpe | VAL Calmar | VAL MaxDD | VAL Ret | TRAIN Sharpe | TRAIN Calmar | TRAIN MaxDD | Kept |
 |---|-----------|-----------|-----------|---------|--------|-------------|-------------|-----------|------|
 | S4-001 | Cross-sectional dispersion detector — verify regime classification | — | — | — | — | — | — | — | pending |
+| S4-002 | hybrid MOM/MR — dispersion classifier switches signals | 0.046 | -0.147 | -51.1% | -14.4% | 0.638 | 0.371 | -55.2% | No |
