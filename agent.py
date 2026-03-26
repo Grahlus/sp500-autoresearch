@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S4-005: tune MR concentration to top 1% (was 2.5%)"
+HYPOTHESIS = "S4-006: tune MR concentration to top 3% (was 1%)"
 
 # ── Momentum params (confirmed optimal, do not change) ───────────────────────
 MOM_LOOKBACK_WEEKS = 26
@@ -137,7 +137,7 @@ def _mr_signal(close, volume, i, tickers, ma_days) -> pd.Series:
 
     # Rank by drop magnitude (biggest drop = strongest MR candidate)
     mr_rank  = candidates.rank(pct=True)   # lowest return = rank 0 = best MR
-    n_top    = max(1, int(len(candidates) * 0.01))
+    n_top    = max(1, int(len(candidates) * 0.03))
     top_tkrs = mr_rank.nsmallest(n_top).index   # most oversold
 
     # Equal weight in MR mode (inv-vol rewards low-vol stocks, not what we want here)
