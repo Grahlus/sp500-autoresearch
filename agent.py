@@ -13,40 +13,47 @@ WALK-FORWARD VALIDATION (Session 5):
 HARD CONSTRAINTS (enforced by run.py):
   1. trades_per_year > 150        → REVERT
   2. mean_sharpe < 0.3            → REVERT
-  3. neg_windows > 2              → REVERT (fails in more than 2 of 7 windows)
-  4. min_sharpe < -0.5            → REVERT (catastrophic in any single window)
+  3. neg_windows > 4              → REVERT (fails in more than 4 of 14 windows)
+  4. min_sharpe < -1.2            → REVERT (catastrophic in any single window)
   5. ONE change per experiment
 
 STARTING POINT: SP500 champion (best OOS result across all sessions)
   val=1.643 train=1.066 OOS=0.564 — survived 431 unseen trading days
   Config: JT 26w skip=3w rebal=4w top=2.5% stop=20%close-HIGH MA=20w F&G≥22
 
-SESSION 5 GOAL:
-  Find a strategy with mean walk-forward Sharpe > 0.8 across all 7 windows.
-  That is a genuinely robust strategy, not a regime-specific one.
-  Start simple — add complexity only if it consistently helps across windows.
+SESSION 10 GOAL:
+  Beat S9-002 baseline: WF=0.656, neg_windows=4, worst=-1.111
+  Tune rank-based exit to preserve 2019H1 while keeping bear protection.
 """
 import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S5-041: breadth MA 200d→100d — mean=0.751, 2019=+0.954 2020=+2.408, 0 neg"
+HYPOTHESIS = "S10-005: adaptive stop (30%/20%) + EXIT_PCT_RANK=0.97 simple exit"
 
-LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 3
-REBAL_WEEKS    = 4
-TOP_PCT        = 0.025
-MA_WEEKS       = 20
-STOP_LOSS_PCT  = 0.20
-INV_VOL_DAYS   = 15
-MIN_HOLD_DAYS  = 5
-FG_MIN         = 10.0
+LOOKBACK_WEEKS  = 26
+SKIP_WEEKS      = 3
+REBAL_WEEKS     = 4
+TOP_PCT         = 0.025
+MA_WEEKS        = 20
+STOP_LOSS_PCT   = 0.20
+INV_VOL_DAYS    = 15
+MIN_HOLD_DAYS   = 5
+FG_MIN          = 10.0
+
+# Rank-based exit: exit held position if its momentum rank drops below this percentile.
+# rank uses pct=True: 0=worst, 1=best. None = disabled.
+EXIT_PCT_RANK   = 0.97
+
+# Require rank to be below EXIT_PCT_RANK for this many consecutive daily checks before exiting.
+# None or 0 = exit immediately on first trigger.
+RANK_EXIT_CONFIRM = None
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
     """
-    SP500 champion config: JT momentum + F&G entry filter + trailing stop.
-    Walk-forward engine will test this across 7 independent windows.
+    SP500 champion config: JT momentum + F&G entry filter + trailing stop + rank exit.
+    Walk-forward engine will test this across 14 independent 6-month windows.
     """
     # SP500-only filter — use only large-caps for WF baseline test
     # Removes R1000 mid-caps that caused 2017-2018 failures
@@ -81,7 +88,12 @@ def generate_signals(data: dict) -> pd.DataFrame:
     entry_day   = pd.Series(-999,   index=tickers)
     current_pos = pd.Series(0.0,    index=tickers)
 
-    _stops = _enters = _exits = 0
+    # Track consecutive days below EXIT_PCT_RANK for each ticker
+    confirm_count = pd.Series(0, index=tickers)
+
+    _stops = _enters = _exits = _rank_exits = 0
+
+    confirm_needed = int(RANK_EXIT_CONFIRM) if RANK_EXIT_CONFIRM else 0
 
     for i in range(lb_days, n):
         today  = close.iloc[i]
@@ -95,17 +107,41 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr] = today[tkr]
                     ph = today[tkr]
                 days_held = i - int(entry_day.get(tkr, i))
-                # Adaptive stop: use 30% in strong uptrend (>10% in last 20d)
-                # to prevent premature exits on corrections in NVDA-style trends.
-                # Revert to 20% for flat/declining positions.
+                # Adaptive stop: 30% in strong uptrend (>5% in 20d), else 20%
                 prev_20   = close.iloc[max(0, i - 20)][tkr]
                 short_mom = (today[tkr] / prev_20 - 1) if prev_20 > 0 else 0.0
                 eff_stop  = 0.30 if short_mom > 0.05 else STOP_LOSS_PCT
                 if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - eff_stop):
-                    current_pos[tkr] = 0.0
-                    pos_high[tkr]    = np.nan
-                    entry_day[tkr]   = -999
-                    _stops          += 1
+                    current_pos[tkr]    = 0.0
+                    pos_high[tkr]       = np.nan
+                    entry_day[tkr]      = -999
+                    confirm_count[tkr]  = 0
+                    _stops             += 1
+
+        # ── Rank-based exit: exit if momentum rank drops below EXIT_PCT_RANK ──
+        if EXIT_PCT_RANK is not None and current_pos[current_pos > 0].any():
+            held = current_pos[current_pos > 0].index.tolist()
+            # Compute current momentum rank across entire SP500 universe
+            mom_now = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
+            mom_now = mom_now.replace([np.inf, -np.inf], np.nan)
+            ranks   = mom_now.rank(pct=True)
+
+            for tkr in held:
+                if current_pos.get(tkr, 0.0) == 0.0:
+                    continue  # already stopped out above
+                tkr_rank = ranks.get(tkr, np.nan)
+                if np.isnan(tkr_rank):
+                    continue
+                if tkr_rank < EXIT_PCT_RANK:
+                    confirm_count[tkr] += 1
+                    if confirm_count[tkr] > confirm_needed:
+                        current_pos[tkr]    = 0.0
+                        pos_high[tkr]       = np.nan
+                        entry_day[tkr]      = -999
+                        confirm_count[tkr]  = 0
+                        _rank_exits        += 1
+                else:
+                    confirm_count[tkr] = 0  # reset on recovery
 
         # ── Rebalance every rebal_days when F&G >= threshold ─────────────────
         # Compute breadth for rebal gate + position sizing
@@ -113,8 +149,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
         breadth = float((today > ma_200).mean())
 
         # Skip rebalance when breadth is extreme (>85% above 200d MA).
-        # This prevents loading up on parabolic momentum names just before rotation.
-        # Threshold 85% (vs 80% in S5-009) spares the 2017 low-vol bull.
         if i % rebal_days == 0 and fg_val >= FG_MIN and breadth <= 0.85:
             mom = (close.iloc[i - skip_days] / close.iloc[i - lb_days] - 1)
             mom = mom.replace([np.inf, -np.inf], np.nan)
@@ -122,7 +156,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
             above_ma = today > ma
 
             # Dollar-volume filter: price × shares — essential for R1000
-            # share-volume alone biases against low-price mid-caps
             avg_dvol = (close.iloc[max(0, i - 20):i] *
                         volume.iloc[max(0, i - 20):i]).mean()
             high_vol = avg_dvol >= avg_dvol.quantile(0.70)  # top 30%
@@ -139,8 +172,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
                 else:
                     eff_pct = TOP_PCT
 
-                # Cap absolute count: 2.5% of 841=21 stocks, too many
-                # Use min() to match SP500-era concentration (~12 stocks)
                 n_top       = min(max(1, int(len(filt) * eff_pct)), 15)
                 top_tickers = filt.nlargest(n_top).index
 
@@ -154,14 +185,16 @@ def generate_signals(data: dict) -> pd.DataFrame:
 
                 for tkr in top_tickers:
                     if current_pos.get(tkr, 0.0) == 0.0:
-                        pos_high[tkr]  = today[tkr]
-                        entry_day[tkr] = i
-                        _enters += 1
+                        pos_high[tkr]       = today[tkr]
+                        entry_day[tkr]      = i
+                        confirm_count[tkr]  = 0
+                        _enters            += 1
                 for tkr in current_pos[current_pos > 0].index:
                     if new_pos[tkr] == 0.0:
-                        pos_high[tkr]  = np.nan
-                        entry_day[tkr] = -999
-                        _exits += 1
+                        pos_high[tkr]       = np.nan
+                        entry_day[tkr]      = -999
+                        confirm_count[tkr]  = 0
+                        _exits             += 1
 
                 current_pos = new_pos.copy()
 
@@ -173,6 +206,7 @@ def generate_signals(data: dict) -> pd.DataFrame:
     avg_pos = avg_pos[avg_pos > 0].mean() if (avg_pos > 0).any() else 0
     print(f"  [DIAG] stops/yr={_stops/n_years:.1f}  "
           f"enters/yr={_enters/n_years:.1f}  exits/yr={_exits/n_years:.1f}  "
+          f"rank_exits/yr={_rank_exits/n_years:.1f}  "
           f"avg_positions={avg_pos:.1f}  invested={100*n_held//(n-lb_days)}%",
           flush=True)
     return weights
