@@ -351,3 +351,53 @@ The new engine's key feature (weights < 1.0 → cash) is only useful if the agen
 | S9-005 | per-position TARGET_VOL=0.10 (tighter) | 0.104 | 47% | No |
 | S9-006 | per-position TARGET_VOL=0.20 (looser) | 0.064 | 95% | No |
 
+
+---
+
+## CRITICAL ARCHITECTURAL FINDINGS (Session 9 — RSL Ideas)
+
+### Session 9 RSL Result: Best WF=0.656 (EXIT_PCT_RANK=0.97), no commit
+
+**Calibration note**: True baseline with 14-window engine = WF=0.569 (5 neg windows, fails constraint).
+The "WF=0.777" claim from vol-targeting session was erroneous — could not be reproduced.
+Wikipedia SP500 filter IS required; dollar-vol alone picks wrong R1000 mid-caps from 841-ticker universe.
+
+### Finding 1: Rank-based exit (EXIT_PCT_RANK=0.97) — best RSL idea, but incomplete
+
+- Improves WF: 0.569 → 0.656 (+0.087)
+- Reduces neg_windows: 5 → 4 (passes constraint!)
+- rank_exits/yr = 5.5 (as expected)
+- Critical fix: 2017H1 (-0.330 → +0.270), 2023H1 (+0.621 → +1.941)
+- Hurts: 2019H1 (+1.557 → +0.478) — exits winners too early in momentum rallies
+- Still fails: 2023-07→2024-07 (-0.547 → -0.829) — 12-month window, worst in data
+
+Threshold 0.97 is regime-dependent: helps bear market exits, hurts bull market continuation.
+Threshold 0.95 is worse (5 neg windows again — 2017H1 not fixed).
+
+### Finding 2: Sector cap (MAX_PER_SECTOR=2) — complete no-op
+
+With avg_positions=1.6 and n_top=1-2, the strategy almost never holds 2 stocks from the same sector simultaneously. The cap never binds. GICS sector diversification is a non-issue at this concentration level.
+
+### Finding 3: Weekly rebalance destroys the strategy
+
+REBAL_WEEKS=1: WF=0.067, 7 neg windows, cost=$27,800 (vs $11,384 baseline = 2.4×).
+The 4-week hold is structural — momentum needs time to play out. Weekly = chasing noise.
+
+### Session 9 RSL Experiment Log
+
+| Exp | Change | WF | neg_windows | Passes? | Notes |
+|-----|--------|----|-------------|---------|-------|
+| S9-001 (baseline) | flat 20% stop, no RSL | 0.569 | 5 | NO | True baseline re-confirmed |
+| S9-002 | EXIT_PCT_RANK=0.97 | 0.656 | 4 | YES (WF<0.777) | Best result; 2019H1 hurt |
+| S9-003 | MAX_PER_SECTOR=2 | 0.569 | 5 | NO | Identical to baseline, cap never binds |
+| S9-004 | 0.97 + sector=2 | 0.656 | 4 | YES (WF<0.777) | Same as S9-002 |
+| S9-005 | EXIT_PCT_RANK=0.95 | 0.551 | 5 | NO | Looser threshold hurts 2017H1 more |
+| S9-006 | REBAL_WEEKS=1 | 0.067 | 7 | NO | Catastrophic; weekly = wrong for momentum |
+
+### Session 10 Directions
+
+1. **EXIT_PCT_RANK=0.90** — much looser (exit only if drops to bottom 10%); might avoid 2019H1 hurt
+2. **EXIT_PCT_RANK=0.97 + adaptive stop (30%/20%)** — restore git adaptive stop with rank exit
+3. **REBAL_WEEKS=2** — biweekly as middle ground
+4. The 2023-07→2024-07 (12-month) window is the biggest obstacle — check what stocks were held
+5. Consider: is WF=0.656 actually a commit candidate? OOS must be checked.
