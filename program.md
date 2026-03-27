@@ -268,3 +268,44 @@ The Jul 2023-Jul 2024 window is -0.601 regardless of all parameter changes.
 2023H2: Sharpe=-0.601  MaxDD=-47.3%  Ret=-33.8%
 MEAN: 0.862  worst=-0.835  trades/yr=34.2
 ```
+| 001 | vol-scaled sizing B&SC 2015 — scale by 0.15/vol_20d SPY defensive fill | 0.858 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 002 | idiosyncratic momentum — rank by 26w_stock_return minus 26w_sector_ETF_return | 0.476 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 003 | multi-lookback signal average of 26w 13w 4w ranks | -0.219 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 004 | risk-adjusted momentum rank by 26w_return divided by realized_vol_26w | 0.295 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+| 005 | portfolio vol circuit breaker exit all when 20d vol > 50% ann | 0.460 | — | — | — | — | — | — | — | — | — | — | — | — | No |
+
+---
+
+## CRITICAL ARCHITECTURAL FINDINGS (Session 8)
+
+### Session 8 Result: No Improvement — S7-036 Champion Unchanged (WF=0.862)
+
+All 3 academic ideas from the session prompt failed.
+
+### Finding 1: Vol-scaling (B&SC 2015) requires leverage ability to work
+- Engine normalizes weights to 100% invested — cannot scale down without a proxy asset
+- SPY fill (S8-001, WF=0.858): SPY also crashes in bear markets → no defensive benefit
+- Portfolio circuit breaker (S8-005, WF=0.460): 50% threshold fires too often (9.1 stops/yr), misses good trades
+- **Verdict**: Vol-scaling fundamentally incompatible with this normalized-weight engine
+
+### Finding 2: Any signal change selects different stocks → alpha destroyed
+- Idiosyncratic momentum (S8-002, WF=0.476): stock-sector = selects sector-relative outperformers, not absolute momentum leaders; 2021H1 → -0.799
+- Risk-adjusted momentum (S8-004, WF=0.295): return/vol selects stable low-vol names; misses NVDA-type big winners; 2020H1 → -0.115
+- **Verdict**: Strategy alpha is entirely dependent on holding the TOP 1-2 absolute-momentum names. ANY relative or risk-adjusted signal selects different names → destroys alpha
+
+### Finding 3: Multi-lookback confirmed dead (second confirmation)
+- Session 6 exp010 (26w+13w+52w): 0.334
+- S8-003 (26w+13w+4w): -0.219
+- The 4w window IS the skip period (reversals). Adding shorter lookbacks corrupts the signal.
+- **Verdict**: Pure 26w with SKIP_WEEKS=4 is the only working signal for this architecture
+
+### Session 8 Experiment Log
+
+| # | Hypothesis | WF Mean Sharpe | Kept |
+|---|-----------|---------------|------|
+| S8-001 | vol-scaled sizing B&SC 2015 target=0.15 SPY defensive fill | 0.858 | No |
+| S8-002 | idiosyncratic momentum rank by 26w_stock_return minus 26w_sector_ETF_return | 0.476 | No |
+| S8-003 | multi-lookback signal average of 26w 13w 4w ranks | -0.219 | No |
+| S8-004 | risk-adjusted momentum rank by 26w_return divided by realized_vol_26w | 0.295 | No |
+| S8-005 | portfolio vol circuit breaker exit all when 20d vol > 50% ann | 0.460 | No |
+
