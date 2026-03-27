@@ -394,10 +394,43 @@ The 4-week hold is structural — momentum needs time to play out. Weekly = chas
 | S9-005 | EXIT_PCT_RANK=0.95 | 0.551 | 5 | NO | Looser threshold hurts 2017H1 more |
 | S9-006 | REBAL_WEEKS=1 | 0.067 | 7 | NO | Catastrophic; weekly = wrong for momentum |
 
-### Session 10 Directions
+---
 
-1. **EXIT_PCT_RANK=0.90** — much looser (exit only if drops to bottom 10%); might avoid 2019H1 hurt
-2. **EXIT_PCT_RANK=0.97 + adaptive stop (30%/20%)** — restore git adaptive stop with rank exit
-3. **REBAL_WEEKS=2** — biweekly as middle ground
-4. The 2023-07→2024-07 (12-month) window is the biggest obstacle — check what stocks were held
-5. Consider: is WF=0.656 actually a commit candidate? OOS must be checked.
+## Session 10: Exit Tuning (2026-03-27)
+
+**Champion: S10-005 — adaptive stop (30%/20%) + EXIT_PCT_RANK=0.97**
+- WF mean Sharpe: **0.722** (was 0.656 at S9-002)
+- OOS Sharpe: **1.548** (+208.59% OOS return vs SPY +23.33%) — Verdict: STRONG
+- neg_windows: **3** (was 4): 2018H2=-1.158, 2022H1=-0.091, 2023H2=-0.313
+- rank_exits/yr: 5.6 | stops/yr: 2.0 | avg_positions: 1.5 | invested: 87%
+
+**Committed as cb08f15.**
+
+### Session 10 Critical Finding
+
+**Adaptive stop (30%/20%) is the key driver.** The 30% stop in strong uptrends (>5% gain in 20d) prevents premature exits on corrections in parabolic momentum names. This fixed:
+- 2017H1: -0.627 → +0.339
+- 2021H1: +0.478 → +1.057
+- 2021H2: near-zero positive (+0.065 with just simple rank exit)
+
+The rank exit (0.97) adds protection from bear market drawdowns while the adaptive stop keeps big winners from stopping out too early. These two improvements are complementary.
+
+**Hybrid exit (rank<0.97 AND 4w mom<0) is incompatible with 2021H2.** In the 2021H2 rotation, growth stocks decline in rank but 4w momentum is still positive (slow grind down). Hybrid gate never fires → 2021H2 stays negative (-0.143). Simple rank exit fires in time.
+
+### Session 10 Experiment Log
+
+| Exp | Change | WF | neg_windows | Passes? | Notes |
+|-----|--------|----|-------------|---------|-------|
+| S10-001 | EXIT_PCT_RANK=0.90 (looser) | 0.568 | 5 | NO | 2021H2 went negative; worse than S9-002 |
+| S10-003 | EXIT_PCT_RANK=0.97 + confirm=3 | 0.589 | 5 | NO | Confirm delays exits; misses 2021H2 |
+| S10-004 | Hybrid rank<0.97 AND 4w mom<0 | 0.748 | 5 | NO | 2021H2=-0.143, 2022H1=-0.091 unchanged |
+| S10-005 | Adaptive stop + rank exit 0.97 | 0.722 | 3 | **YES** | **COMMITTED** |
+| S10-006 | Hybrid exit + adaptive stop | 0.802 | 5 | NO | 2021H2=-0.143 unfixable with hybrid |
+
+### Session 11 Directions
+
+1. **2023H2 window (-0.313)** remains the persistent loss — investigate what stocks were held and why
+2. **2022H1 window (-0.091)** barely negative — a small improvement could fix it
+3. Consider: adaptive stop threshold 0.10 (10% short_mom) instead of 0.05 — might help 2019H1 further
+4. Consider: FG_MIN threshold variation — 2021H2 might be influenced by F&G gate
+5. WF=0.722, OOS=1.548 may be close to practical ceiling for this architecture
