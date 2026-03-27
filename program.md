@@ -309,3 +309,45 @@ All 3 academic ideas from the session prompt failed.
 | S8-004 | risk-adjusted momentum rank by 26w_return divided by realized_vol_26w | 0.295 | No |
 | S8-005 | portfolio vol circuit breaker exit all when 20d vol > 50% ann | 0.460 | No |
 
+---
+
+## CRITICAL ARCHITECTURAL FINDINGS (Session 9)
+
+### Session 9 Result: All 5 Vol-Targeting Experiments Failed — Champion Unchanged (WF=0.777)
+
+New engine verified: weights < 1.0 → cash. Baseline (S9-001) avg_equity=97%, WF=0.777, OOS=1.34 confirmed.
+
+### Finding 1: Vol-targeting is architecturally incompatible — confirmed from both directions
+
+New engine CAN hold cash. But vol-targeting still destroys alpha, regardless of method:
+- Per-position (0.10, 0.15, 0.20): avg_equity drops to 47%, 71%, 95% → WF 0.064–0.104
+- Portfolio-level (0.15): avg_equity=48% → WF=0.145
+- Downside semi-vol (0.15): avg_equity=130%→capped, but crashes = high downside vol → WF=0.079
+
+Even S9-006 (TARGET_VOL=0.20, avg_equity=95%) failed with WF=0.064. 5% less equity → WF drops from 0.777 to 0.064.
+
+### Finding 2: The alpha is a function of FULL EXPOSURE in the RIGHT periods
+
+The strategy picks 1-2 concentrated momentum stocks. Its alpha comes entirely from being 100% invested in those stocks during big runs (COVID 2020: +265%; 2018H1: +71%). Any reduction in exposure linearly scales those wins down while NOT proportionally reducing risk in all periods.
+
+Vol-targeting reduces in HIGH vol periods = exactly when momentum pays off. The strategy needs:
+- 100% invested in COVID bottom recovery (60% vol → vol-targeting says 25% invested)
+- 100% invested in NVDA-type runs (40% vol → vol-targeting says 50% invested)
+
+### Finding 3: Cash-weight engine adds zero value for this strategy
+
+The new engine's key feature (weights < 1.0 → cash) is only useful if the agent can signal "hold cash now." This strategy's alpha requires always being fully invested in the top 1-2 names. A cash buffer only helps if cash can be deployed productively — this strategy has no mechanism for that.
+
+**Verdict**: Vol-scaling direction fully exhausted. The cash-weight engine has no benefit for a concentrated momentum strategy.
+
+### Session 9 Experiment Log
+
+| # | Hypothesis | WF Mean Sharpe | avg_equity | Kept |
+|---|-----------|---------------|------------|------|
+| S9-001 | Baseline S5-041 on new 14-window engine | 0.777 | 97% | Yes (baseline) |
+| S9-002 | per-position TARGET_VOL=0.15 | 0.084 | 71% | No |
+| S9-003 | portfolio-level TARGET_PORT_VOL=0.15 | 0.145 | 48% | No |
+| S9-004 | per-position TARGET_VOL=0.15 + USE_DOWNSIDE_VOL=True | 0.079 | 130%→100% | No |
+| S9-005 | per-position TARGET_VOL=0.10 (tighter) | 0.104 | 47% | No |
+| S9-006 | per-position TARGET_VOL=0.20 (looser) | 0.064 | 95% | No |
+
