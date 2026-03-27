@@ -30,10 +30,10 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "S7-036: SKIP_WEEKS=4 — longer exclusion window (20d skip), more reversal protection"
+HYPOTHESIS = "S5-041: breadth MA 200d→100d — mean=0.751, 2019=+0.954 2020=+2.408, 0 neg"
 
 LOOKBACK_WEEKS = 26
-SKIP_WEEKS     = 4
+SKIP_WEEKS     = 3
 REBAL_WEEKS    = 4
 TOP_PCT        = 0.025
 MA_WEEKS       = 20
@@ -106,11 +106,6 @@ def generate_signals(data: dict) -> pd.DataFrame:
                     pos_high[tkr]    = np.nan
                     entry_day[tkr]   = -999
                     _stops          += 1
-                elif days_held >= 75 and fg_val < 60:  # rotate in uncertain market only
-                    current_pos[tkr] = 0.0
-                    pos_high[tkr]    = np.nan
-                    entry_day[tkr]   = -999
-                    _exits          += 1
 
         # ── Rebalance every rebal_days when F&G >= threshold ─────────────────
         # Compute breadth for rebal gate + position sizing

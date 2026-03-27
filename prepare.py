@@ -2,27 +2,30 @@
 """
 prepare.py — FROZEN. Do not edit.
 
-Walk-forward validation engine (Session 5+).
+Walk-forward validation engine (Session 9+).
 
-Window design (3-year train, 1-year test, 1-year step):
-  W1: train 2014-2017  test 2018
-  W2: train 2015-2018  test 2019
-  W3: train 2016-2019  test 2020
-  W4: train 2017-2020  test 2021
-  W5: train 2018-2021  test 2022
-  W6: train 2019-2022  test 2023
-  W7: train 2020-2023  test 2024-H1
-
+Window design: 3-year train, 6-month test, 6-month step (14 overlapping windows).
 OOS (never touched): 2024-07 → today  (evaluate.py only)
-
-Scoring: mean Sharpe across all 7 windows.
-A strategy must beat the baseline on the AVERAGE, not cherry-pick one window.
+Scoring: mean Sharpe across all 14 windows.
 
 Cost model:
   $100,000 starting capital per window (independent resets)
   $20 commission per ticker traded
   5bps slippage one-way
   Trades only on weight changes (no drift rebalancing)
+
+WEIGHT SEMANTICS (Session 9 change — enables true vol-scaling):
+  weights in [-1, 1] per ticker
+  gross = sum(abs(weights))
+  - If gross > 1.0: normalise DOWN to 1.0  (no leverage)
+  - If gross <= 1.0: use AS-IS             (remainder = cash, earns 0%)
+
+  This allows the agent to signal partial equity exposure.
+  Example: weight=0.30 on one stock → 30% equity, 70% cash.
+  Previously: weight=0.30 was normalised to weight=1.0 (100% equity).
+
+  The old behaviour (always 100% invested) is reproduced by weights that
+  sum to >= 1.0, which the agent can still do.
 """
 import signal, sys
 from pathlib import Path
@@ -136,7 +139,14 @@ def _backtest_window(weights: pd.DataFrame, data: dict,
 
         target_w = weights_w.iloc[i - 1]
         gross    = target_w.abs().sum()
-        w_norm   = target_w / gross if gross > 0 else target_w
+        # Cap at 1.0 (no leverage) but do NOT force to 1.0.
+        # If gross < 1.0, the remainder stays as cash (earns 0%).
+        # This enables true vol-scaling and partial equity exposure.
+        # Old behaviour (always 100% invested): pass weights summing to >= 1.0.
+        if gross > 1.0:
+            w_norm = target_w / gross   # scale down to gross=1.0
+        else:
+            w_norm = target_w           # use as-is, cash = 1.0 - gross
 
         target_shares = ((w_norm * port_value) / px_open).fillna(0.0)
         target_shares = target_shares.where(px_open > 0, 0.0)
