@@ -434,3 +434,61 @@ The rank exit (0.97) adds protection from bear market drawdowns while the adapti
 3. Consider: adaptive stop threshold 0.10 (10% short_mom) instead of 0.05 — might help 2019H1 further
 4. Consider: FG_MIN threshold variation — 2021H2 might be influenced by F&G gate
 5. WF=0.722, OOS=1.548 may be close to practical ceiling for this architecture
+
+---
+
+## Session ML: ML Momentum Ranking (2026-03-28)
+
+**Objective:** Replace `combo = mom.rank(pct=True)` with XGBoost/RF/LightGBM predicted forward return rank. Strict walk-forward protocol.
+
+**Conclusion: FAILED after 38 experiments. ML cannot beat baseline WF=0.722.**
+
+### Best valid result
+**ML-027: XGB, 1yr training window, breadth_threshold=0.65**
+- WF=0.648 (vs baseline 0.722 → 10% below)
+- WORST=-1.050 (passes >-1.2)
+- NEG_WIN=3 (passes ≤4)
+- W11=+0.216 (positive)
+
+Files: ml_signal.py, ml_run.py, ml_run2.py, ml_run3.py, ml_run4.py, ml_run5.py, ml_run6.py, ml_run7.py
+
+### Key findings
+
+1. **Root cause of ML failures**: W11 (2022H1 bear market) caused all vanilla ML models to fail catastrophically (Sharpe -2.0 to -3.0). Model trained on bull-market data learns correlations that break in bears.
+
+2. **Regime-conditional gate (breadth threshold) fixed W11** (from -2.5 to -0.405). But introduced W04 (2018H2) as new worst window at -1.32 (violates -1.2 constraint).
+
+3. **1yr training window fixed W04** (from -1.32 to -0.49). The 3yr window overfit to 2014-2016 bull market. 1yr window covers ~2017, which includes early bear events.
+
+4. **Feature importance dominated by market-level features** (breadth=0.22, vix=0.17, fg=0.13), not stock-level. ML learns market timing, not stock selection. The regime gate already handles market timing — the model is redundant on its strongest signal.
+
+5. **Removing market features (stock-only) made results worse** — the market features are complementary to the breadth gate, not competing. They help calibrate stock picks within the regime.
+
+6. **Soft blends are toxic**: `alpha × ML_rank + (1-alpha) × mom_rank` causes W14 to collapse to -60% MaxDD. Not investigated why, but the blend creates unstable rankings.
+
+7. **2yr training window also fails** (W04 stays at -1.695). Only 1yr fixes W04 reliably.
+
+8. **WF trend for 1yr model vs breadth threshold** (non-monotonic peak at 0.65):
+   - 0.55: WF=0.578, W11=-0.296
+   - 0.60: WF=0.579, W11=+0.216
+   - **0.65: WF=0.648 (PEAK), W11=+0.216**
+   - 0.70: WF=0.598, W11=+0.216
+   - 0.75+: WF collapses, W11=-0.696
+
+### Why ML can't beat momentum rank
+- Momentum rank is non-parametric and regime-agnostic: it doesn't need to learn that bears are bad
+- ML adds variance (some windows better, others worse) without systematic signal
+- Training sample size is limited: 1yr × SAMPLE_EVERY=10 ≈ 25 dates × 460 stocks = ~11,500 rows
+- The best signal (cross-sectional momentum rank) is already the target feature; ML can't improve on it substantially
+
+### Session ML Experiment Log
+
+| Range | Script | Description | Best WF | Status |
+|-------|--------|-------------|---------|--------|
+| ML-001..004 | ml_run.py | RF, XGB, LGBM, Ensemble (full replacement) | 0.573 | ALL FAIL |
+| ML-005..009 | ml_run2.py | Target variants, feature subsets | -0.547..0.218 | ALL FAIL |
+| ML-010..016 | ml_run3.py | Regime gate (breadth threshold) | 0.683 | FAIL (W04) |
+| ML-017..023 | ml_run4.py | Higher breadth, soft blends, 1yr | 0.683 | ML-023 PASS |
+| ML-024..029 | ml_run5.py | 1yr/1.5yr/2yr × breadth scan | 0.648 | ML-027 PASS |
+| ML-030..034 | ml_run6.py | 1yr + breadth 0.70-0.90 | 0.598 | ML-030 PASS |
+| ML-035..038 | ml_run7.py | Stock-features-only (no breadth/VIX/FG) | 0.221 | ALL FAIL |
