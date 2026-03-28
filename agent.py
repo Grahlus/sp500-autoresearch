@@ -37,6 +37,8 @@ REBAL_WEEKS     = 4
 TOP_PCT         = 0.025
 MA_WEEKS        = 20
 STOP_LOSS_PCT   = 0.20
+STOP_PARABOLIC  = 0.30   # parabolic stop % (STOP_TYPE="adaptive" only)
+STOP_TYPE       = "adaptive"  # "adaptive" | "fixed" | "none"
 INV_VOL_DAYS    = 15
 MIN_HOLD_DAYS   = 25
 FG_MIN          = 10.0
@@ -100,23 +102,26 @@ def generate_signals(data: dict) -> pd.DataFrame:
         fg_val = float(fg[i])
 
         # ── Trailing stop from close HIGH ─────────────────────────────────────
-        for tkr in current_pos[current_pos > 0].index:
-            ph = pos_high.get(tkr, np.nan)
-            if not np.isnan(ph) and ph > 0:
-                if today[tkr] > ph:
-                    pos_high[tkr] = today[tkr]
-                    ph = today[tkr]
-                days_held = i - int(entry_day.get(tkr, i))
-                # Adaptive stop: 30% in strong uptrend (>5% in 20d), else 20%
-                prev_20   = close.iloc[max(0, i - 20)][tkr]
-                short_mom = (today[tkr] / prev_20 - 1) if prev_20 > 0 else 0.0
-                eff_stop  = 0.30 if short_mom > 0.05 else STOP_LOSS_PCT
-                if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - eff_stop):
-                    current_pos[tkr]    = 0.0
-                    pos_high[tkr]       = np.nan
-                    entry_day[tkr]      = -999
-                    confirm_count[tkr]  = 0
-                    _stops             += 1
+        if STOP_TYPE != "none":
+            for tkr in current_pos[current_pos > 0].index:
+                ph = pos_high.get(tkr, np.nan)
+                if not np.isnan(ph) and ph > 0:
+                    if today[tkr] > ph:
+                        pos_high[tkr] = today[tkr]
+                        ph = today[tkr]
+                    days_held = i - int(entry_day.get(tkr, i))
+                    if STOP_TYPE == "adaptive":
+                        prev_20   = close.iloc[max(0, i - 20)][tkr]
+                        short_mom = (today[tkr] / prev_20 - 1) if prev_20 > 0 else 0.0
+                        eff_stop  = STOP_PARABOLIC if short_mom > 0.05 else STOP_LOSS_PCT
+                    else:  # fixed
+                        eff_stop = STOP_LOSS_PCT
+                    if days_held >= MIN_HOLD_DAYS and today[tkr] < ph * (1 - eff_stop):
+                        current_pos[tkr]    = 0.0
+                        pos_high[tkr]       = np.nan
+                        entry_day[tkr]      = -999
+                        confirm_count[tkr]  = 0
+                        _stops             += 1
 
         # ── Rank-based exit: exit if momentum rank drops below EXIT_PCT_RANK ──
         if EXIT_PCT_RANK is not None and current_pos[current_pos > 0].any():
