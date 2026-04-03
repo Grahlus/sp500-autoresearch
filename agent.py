@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 METRIC     = "sharpe"
-HYPOTHESIS = "STOP-010b: MIN_HOLD_DAYS=25 — reduces premature exits on high-beta momentum"
+HYPOTHESIS = "S10-005: adaptive stop (30%/20%) + EXIT_PCT_RANK=0.97 simple exit"
 
 LOOKBACK_WEEKS  = 26
 SKIP_WEEKS      = 3
@@ -40,7 +40,7 @@ STOP_LOSS_PCT   = 0.20
 STOP_PARABOLIC  = 0.30   # parabolic stop % (STOP_TYPE="adaptive" only)
 STOP_TYPE       = "adaptive"  # "adaptive" | "fixed" | "none"
 INV_VOL_DAYS    = 15
-MIN_HOLD_DAYS   = 25
+MIN_HOLD_DAYS   = 5
 FG_MIN          = 10.0
 
 # Rank-based exit: exit held position if its momentum rank drops below this percentile.

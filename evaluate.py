@@ -18,7 +18,7 @@ signal.signal(signal.SIGALRM, signal.SIG_DFL)
 signal.alarm(0)
 
 from prepare import load_data
-from agent import generate_signals, HYPOTHESIS
+from strategies import get_strategy_family
 
 STARTING_CAPITAL     = 100_000.0
 COMMISSION_PER_TRADE = 20.0
@@ -26,6 +26,13 @@ SLIPPAGE_BPS         = 5
 
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
+
+
+def resolve_strategy_name(argv: list[str] | None = None) -> str:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) >= 2 and args[0] == "--strategy":
+        return args[1]
+    return "momentum"
 
 
 def run_oos_backtest(weights: pd.DataFrame, data: dict) -> tuple:
@@ -533,15 +540,17 @@ def print_report(m, hypothesis, trade_log):
 
 
 if __name__ == "__main__":
+    strategy = get_strategy_family(resolve_strategy_name())
+
     print("\n>>> Loading data and generating signals …")
     data    = load_data()
-    weights = generate_signals(data)
+    weights = strategy.generate_signals(data)
 
     print("\n>>> Running true out-of-sample backtest …")
     metrics, trade_log, daily_log = run_oos_backtest(weights, data)
 
     print("\n>>> Saving logs …")
     tag = datetime.today().strftime("%Y%m%d")
-    save_logs(trade_log, daily_log, tag, metrics, HYPOTHESIS)
+    save_logs(trade_log, daily_log, tag, metrics, strategy.hypothesis)
 
-    print_report(metrics, HYPOTHESIS, trade_log)
+    print_report(metrics, strategy.hypothesis, trade_log)

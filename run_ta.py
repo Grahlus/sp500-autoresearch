@@ -1,26 +1,11 @@
 #!/usr/bin/env python3
 """
-run.py — Walk-forward experiment runner.
-Scores strategy across 7 independent 1-year test windows.
-The agent commits only if MEAN Sharpe across all windows improves.
+run_ta.py — TA-filter experiment runner.
+Identical to run.py but imports from agent_ta instead of agent.
+S10-005 agent.py stays locked — this file operates only on agent_ta.py.
 """
-import sys
-
 from prepare import load_data, run_backtest, print_metrics
-from strategies import get_strategy_family
-
-
-def resolve_strategy_name(argv: list[str] | None = None) -> str:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) >= 2 and args[0] == "--strategy":
-        return args[1]
-    return "momentum"
-
-
-strategy = get_strategy_family(resolve_strategy_name())
-generate_signals = strategy.generate_signals
-METRIC = strategy.metric
-HYPOTHESIS = strategy.hypothesis
+from agent_ta import generate_signals, METRIC, HYPOTHESIS
 
 print(f"\n{'='*62}")
 print(f"  Hypothesis : {HYPOTHESIS}")
@@ -47,13 +32,11 @@ if trades_yr > 150:
     violations.append(f"TRADES/YEAR {trades_yr} > 150 limit.")
 if mean_sharpe < 0.3:
     violations.append(f"MEAN SHARPE {mean_sharpe} < 0.3 — no consistent edge.")
-# 14 windows: allow up to 4 negative (was 2/7 = 29%, now 4/14 = 29%)
 if neg_windows > 4:
     violations.append(
         f"{neg_windows}/{n_windows} windows negative Sharpe — not robust."
     )
 if min_sharpe < -1.2:
-    # Shorter 6-month windows are noisier — allow slightly worse worst window
     violations.append(
         f"WORST WINDOW Sharpe {min_sharpe} < -1.2 — catastrophic failure in one period."
     )
@@ -70,6 +53,6 @@ if violations:
     for v in violations:
         print(f"  !! {v}")
     print(f"{'!'*62}")
-    print("  ACTION: git checkout agent.py\n")
+    print("  ACTION: git checkout agent_ta.py\n")
 else:
     print(f"\n  [OK] All constraints passed.\n")
