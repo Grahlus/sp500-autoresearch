@@ -1,0 +1,77 @@
+{
+  "families": {
+    "momentum": {
+      "baseline_name": "momentum_champion_s10005",
+      "baseline_win_rate": null,
+      "dead_zones": {},
+      "deprioritized_regions": {},
+      "exploit_count": 1,
+      "explore_count": 1,
+      "history_count": 1,
+      "overfit_or_unstable": [],
+      "robust_performers": [
+        {
+          "config_hash": "67c247dfa6455d67",
+          "experiment_id": "momentum_67c247dfa6455d67_20260403152233",
+          "objective_score": 1.2819500000000001,
+          "viable": true
+        }
+      ],
+      "top_performers": [
+        {
+          "config_hash": "67c247dfa6455d67",
+          "experiment_id": "momentum_67c247dfa6455d67_20260403152233",
+          "objective_score": 1.2819500000000001,
+          "viable": true
+        }
+      ],
+      "under_tested_regions": {
+        "EXIT_PCT_RANK": [
+          "0.97"
+        ],
+        "FG_MIN": [
+          "10.0"
+        ],
+        "INV_VOL_DAYS": [
+          "15"
+        ],
+        "LOOKBACK_WEEKS": [
+          "26"
+        ],
+        "MA_WEEKS": [
+          "20"
+        ],
+        "MIN_HOLD_DAYS": [
+          "5"
+        ],
+        "RANK_EXIT_CONFIRM": [
+          "nan"
+        ],
+        "REBAL_WEEKS": [
+          "4"
+        ],
+        "SKIP_WEEKS": [
+          "3"
+        ],
+        "STOP_LOSS_PCT": [
+          "0.2"
+        ],
+        "STOP_PARABOLIC": [
+          "0.3"
+        ],
+        "STOP_TYPE": [
+          "adaptive"
+        ],
+        "TOP_PCT": [
+          "0.025"
+        ]
+      }
+    }
+  },
+  "family_budget_decision": {
+    "momentum": 2
+  },
+  "source_batch_ids": [
+    "single"
+  ]
+}

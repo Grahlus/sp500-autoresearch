@@ -52,6 +52,21 @@ INDEX_COLUMNS = [
     "error_message",
 ]
 
+PROPOSAL_INDEX_COLUMNS = [
+    "proposal_id",
+    "timestamp_utc",
+    "strategy_families",
+    "source_batch_ids",
+    "objective_name",
+    "baseline_name",
+    "seed",
+    "exploration_fraction",
+    "exploitation_fraction",
+    "max_experiments",
+    "status",
+    "proposal_dir",
+]
+
 
 def compute_config_hash(family: str, params: dict[str, Any]) -> str:
     canonical = json.dumps({"family": family, "config": params}, sort_keys=True, separators=(",", ":"))
@@ -61,14 +76,23 @@ def compute_config_hash(family: str, params: dict[str, Any]) -> str:
 def init_store(base_dir: str = "experiments") -> None:
     base = Path(base_dir)
     (base / "runs").mkdir(parents=True, exist_ok=True)
+    (base / "proposals").mkdir(parents=True, exist_ok=True)
     index_path = base / "index.csv"
     if not index_path.exists():
         pd.DataFrame(columns=INDEX_COLUMNS).to_csv(index_path, index=False)
+    proposal_index_path = base / "proposals" / "index.csv"
+    if not proposal_index_path.exists():
+        pd.DataFrame(columns=PROPOSAL_INDEX_COLUMNS).to_csv(proposal_index_path, index=False)
 
 
 def load_results_index(base_dir: str = "experiments") -> pd.DataFrame:
     init_store(base_dir)
     return pd.read_csv(Path(base_dir) / "index.csv")
+
+
+def load_proposals_index(base_dir: str = "experiments") -> pd.DataFrame:
+    init_store(base_dir)
+    return pd.read_csv(Path(base_dir) / "proposals" / "index.csv")
 
 
 def _to_jsonable(value: Any):
@@ -200,3 +224,46 @@ def load_prior_results(family: str | None = None, base_dir: str = "experiments")
     if family is None or index.empty:
         return index
     return index[index["strategy_family"] == family].reset_index(drop=True)
+
+
+def save_proposal_result(proposal: dict[str, Any], base_dir: str = "experiments") -> dict[str, str]:
+    init_store(base_dir)
+    request = proposal["request"]
+    proposal_id = request["proposal_id"]
+    proposal_dir = Path(base_dir) / "proposals" / proposal_id
+    proposal_dir.mkdir(parents=True, exist_ok=True)
+
+    proposal_path = proposal_dir / "proposal.json"
+    summary_path = proposal_dir / "summary.json"
+    candidates_path = proposal_dir / "candidate_configs.json"
+
+    proposal_path.write_text(json.dumps(proposal, indent=2, sort_keys=True, default=_to_jsonable))
+    summary_path.write_text(
+        json.dumps(proposal.get("reasoning_summary", {}), indent=2, sort_keys=True, default=_to_jsonable)
+    )
+    candidates_path.write_text(
+        json.dumps(proposal.get("candidate_configs", {}), indent=2, sort_keys=True, default=_to_jsonable)
+    )
+
+    index = load_proposals_index(base_dir)
+    row = {
+        "proposal_id": proposal_id,
+        "timestamp_utc": request.get("timestamp_utc"),
+        "strategy_families": ",".join(request.get("strategy_families", [])),
+        "source_batch_ids": ",".join(request.get("source_batch_ids", [])),
+        "objective_name": request.get("objective_name"),
+        "baseline_name": request.get("baseline_name"),
+        "seed": request.get("seed"),
+        "exploration_fraction": request.get("exploration_fraction"),
+        "exploitation_fraction": request.get("exploitation_fraction"),
+        "max_experiments": request.get("max_experiments"),
+        "status": proposal.get("status"),
+        "proposal_dir": str(proposal_dir),
+    }
+    index = pd.concat([index, pd.DataFrame([row], columns=PROPOSAL_INDEX_COLUMNS)], ignore_index=True)
+    index.to_csv(Path(base_dir) / "proposals" / "index.csv", index=False)
+    return {
+        "proposal_path": str(proposal_path),
+        "summary_path": str(summary_path),
+        "candidate_configs_path": str(candidates_path),
+    }

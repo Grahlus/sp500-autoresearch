@@ -66,6 +66,8 @@ class BatchRequest:
     objective_name: str = "wf_v1_score"
     include_filters: dict[str, Any] | None = None
     exclude_filters: dict[str, Any] | None = None
+    precomputed_configs: dict[str, list[dict[str, Any]]] | None = None
+    source_proposal_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,4 +81,30 @@ class BatchResult:
     results: list[ExperimentResult]
     leaderboard_path: str | None = None
     raw_results_path: str | None = None
+    summary_path: str | None = None
+
+
+@dataclass(frozen=True)
+class ProposalRequest:
+    proposal_id: str
+    timestamp_utc: str
+    source_batch_ids: list[str]
+    strategy_families: list[str]
+    objective_name: str = "wf_v1_score"
+    baseline_name: str | None = None
+    seed: int = 42
+    exploration_fraction: float = 0.30
+    exploitation_fraction: float = 0.70
+    max_experiments: int = 20
+    per_family_budgets: dict[str, int] | None = None
+    resume: bool = True
+
+
+@dataclass(frozen=True)
+class ProposalResult:
+    request: ProposalRequest
+    status: str
+    candidate_configs: dict[str, list[dict[str, Any]]]
+    reasoning_summary: dict[str, Any]
+    proposal_path: str | None = None
     summary_path: str | None = None

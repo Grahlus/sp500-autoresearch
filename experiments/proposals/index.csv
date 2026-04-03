@@ -1,0 +1,2 @@
+proposal_id,timestamp_utc,strategy_families,source_batch_ids,objective_name,baseline_name,seed,exploration_fraction,exploitation_fraction,max_experiments,status,proposal_dir
+proposal_20260403_155624,2026-04-03T15:56:24.810143+00:00,momentum,single,wf_v1_score,,11,0.3,0.7,2,generated,experiments/proposals/proposal_20260403_155624

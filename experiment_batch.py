@@ -12,7 +12,7 @@ from experiment_objective import rank_results
 from experiment_runner import run_single_experiment
 from experiment_spaces import enumerate_grid_candidates, list_searchable_families, sample_random_candidates
 from experiment_store import compute_config_hash, init_store, load_prior_results
-from experiment_types import BatchRequest, BatchResult, ExperimentResult
+from experiment_types import BatchRequest, BatchResult, ExperimentResult, ProposalResult
 from prepare import load_data
 
 
@@ -62,6 +62,8 @@ def build_batch_request(
         objective_name=objective_name,
         include_filters=include_filters,
         exclude_filters=exclude_filters,
+        precomputed_configs=None,
+        source_proposal_id=None,
     )
 
 
@@ -185,6 +187,7 @@ def build_batch_summary(batch_result: BatchResult) -> dict[str, Any]:
         "timestamp_utc": batch_result.request.timestamp_utc,
         "strategy_families": batch_result.request.strategy_families,
         "sampler_type": batch_result.request.sampler_type,
+        "source_proposal_id": batch_result.request.source_proposal_id,
         "total_sampled": batch_result.total_sampled,
         "total_executed": batch_result.total_executed,
         "total_skipped": batch_result.total_skipped,
@@ -236,12 +239,15 @@ def run_batch_experiments(
     already_seen_in_batch: set[tuple[str, str]] = set()
 
     for family_idx, family in enumerate(request.strategy_families):
-        configs = sample_batch_configs(
-            family=family,
-            method=request.sampler_type,
-            n=request.max_per_family,
-            seed=request.seed + family_idx,
-        )
+        if request.precomputed_configs and family in request.precomputed_configs:
+            configs = [dict(config) for config in request.precomputed_configs[family]]
+        else:
+            configs = sample_batch_configs(
+                family=family,
+                method=request.sampler_type,
+                n=request.max_per_family,
+                seed=request.seed + family_idx,
+            )
         prior = load_prior_results(family=family, base_dir=base_dir) if request.resume else pd.DataFrame()
         successful_prior_hashes = (
             set(prior.loc[prior["status"] == "success", "config_hash"].astype(str)) if not prior.empty else set()
@@ -302,4 +308,29 @@ def run_batch_experiments(
         leaderboard_path=report_paths["leaderboard_path"],
         raw_results_path=report_paths["raw_results_path"],
         summary_path=report_paths["summary_path"],
+    )
+
+
+def proposal_to_batch_request(
+    proposal: ProposalResult,
+    *,
+    persist: bool = True,
+    resume: bool = True,
+) -> BatchRequest:
+    max_per_family = max((len(configs) for configs in proposal.candidate_configs.values()), default=0)
+    return BatchRequest(
+        batch_id=f"{proposal.request.proposal_id}_batch",
+        timestamp_utc=proposal.request.timestamp_utc,
+        strategy_families=proposal.request.strategy_families,
+        sampler_type="random",
+        max_experiments=proposal.request.max_experiments,
+        max_per_family=max_per_family,
+        seed=proposal.request.seed,
+        persist=persist,
+        resume=resume and proposal.request.resume,
+        objective_name=proposal.request.objective_name,
+        include_filters=None,
+        exclude_filters=None,
+        precomputed_configs=proposal.candidate_configs,
+        source_proposal_id=proposal.request.proposal_id,
     )
