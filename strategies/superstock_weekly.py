@@ -1,8 +1,11 @@
+import logging
 from dataclasses import dataclass, fields
 
 import pandas as pd
 
 from .weekly import WeeklyBars, align_completed_weekly_to_daily, build_weekly_bars, rolling_weekly_mean, rolling_weekly_std
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,10 +28,12 @@ class SuperstockWeeklyFeatures:
     weekly_volume_ratio_26w: pd.DataFrame
     dist_from_52w_high: pd.DataFrame
     dist_from_52w_low: pd.DataFrame
-    rs_ratio_spy: pd.DataFrame
+    rs_ratio_benchmark: pd.DataFrame
     rs_rank_26w: pd.DataFrame
     rs_rank_52w: pd.DataFrame
-    spy_weekly_close: pd.Series
+    benchmark_source: str
+    benchmark_weekly_close: pd.Series
+    spy_weekly_close: pd.Series | None
     vix_weekly_close: pd.Series
     vix_ma_10w: pd.Series
 
@@ -43,14 +48,38 @@ def _build_series_weekly(values: pd.Series, name: str) -> pd.Series:
     return weekly.close[name]
 
 
-def _resolve_benchmark_close(close: pd.DataFrame, data: dict) -> pd.Series:
+def _resolve_benchmark_close(close: pd.DataFrame, data: dict) -> tuple[pd.Series, str, pd.Series | None]:
     if "SPY" in close.columns:
-        return close["SPY"]
-    for key in ("spy_close", "benchmark_close"):
+        spy_close = close["SPY"]
+        return spy_close, "spy_symbol", spy_close
+    for key, source in (("spy_close", "spy_close_column"), ("benchmark_close", "benchmark_close_column")):
         series = data.get(key)
         if isinstance(series, pd.Series):
-            return series.reindex(close.index).ffill()
-    return close.ffill().pct_change().mean(axis=1).fillna(0.0).add(1.0).cumprod()
+            benchmark = series.reindex(close.index).ffill()
+            spy_series = benchmark if source == "spy_close_column" else None
+            return benchmark, source, spy_series
+    LOGGER.warning(
+        "SPY benchmark not available; using equal-weight proxy. RS metrics are benchmark-relative, not true SPY-relative."
+    )
+    benchmark = close.ffill().pct_change().mean(axis=1).fillna(0.0).add(1.0).cumprod()
+    return benchmark, "equal_weight_proxy", None
+
+
+def _resolve_vix_series(data: dict, close_index: pd.Index) -> pd.Series | None:
+    vix = data.get("vix")
+    if vix is None:
+        return None
+    if isinstance(vix, pd.DataFrame):
+        if vix.shape[1] != 1:
+            raise ValueError("Expected a single-column DataFrame for VIX input.")
+        vix = vix.iloc[:, 0]
+    if isinstance(vix, pd.Series):
+        return vix.reindex(close_index).ffill()
+    raise ValueError("Unsupported VIX input type.")
+
+
+def _nan_weekly_series(week_index: pd.Index, name: str) -> pd.Series:
+    return pd.Series(float("nan"), index=week_index, name=name)
 
 
 def build_superstock_weekly_features(data: dict) -> SuperstockWeeklyFeatures:
@@ -59,9 +88,9 @@ def build_superstock_weekly_features(data: dict) -> SuperstockWeeklyFeatures:
     high = data["high"]
     low = data["low"]
     volume = data["volume"]
-    vix = data["vix"]
 
-    spy_close = _resolve_benchmark_close(close, data)
+    benchmark_close, benchmark_source, spy_close = _resolve_benchmark_close(close, data)
+    vix = _resolve_vix_series(data, close.index)
     weekly: WeeklyBars = build_weekly_bars(open_, high, low, close, volume)
 
     weekly_open = weekly.open
@@ -90,16 +119,25 @@ def build_superstock_weekly_features(data: dict) -> SuperstockWeeklyFeatures:
     dist_from_52w_high = (weekly_close / high_52w) - 1.0
     dist_from_52w_low = (weekly_close / low_52w) - 1.0
 
-    spy_weekly_close = _build_series_weekly(spy_close, "spy_proxy")
-    rs_ratio_spy = weekly_close.div(spy_weekly_close, axis=0)
+    benchmark_weekly_close = _build_series_weekly(benchmark_close, "benchmark")
+    rs_ratio_benchmark = weekly_close.div(benchmark_weekly_close, axis=0)
+    spy_weekly_close = (
+        _build_series_weekly(spy_close, "spy")
+        if spy_close is not None
+        else None
+    )
 
     ret_26w = weekly_close / weekly_close.shift(26) - 1.0
     ret_52w = weekly_close / weekly_close.shift(52) - 1.0
     rs_rank_26w = ret_26w.rank(axis=1, pct=True)
     rs_rank_52w = ret_52w.rank(axis=1, pct=True)
 
-    vix_weekly_close = _build_series_weekly(vix, "vix")
-    vix_ma_10w = rolling_weekly_mean(vix_weekly_close, 10)
+    if vix is None:
+        vix_weekly_close = _nan_weekly_series(weekly_close.index, "vix")
+        vix_ma_10w = _nan_weekly_series(weekly_close.index, "vix_ma_10w")
+    else:
+        vix_weekly_close = _build_series_weekly(vix, "vix")
+        vix_ma_10w = rolling_weekly_mean(vix_weekly_close, 10)
 
     return SuperstockWeeklyFeatures(
         weekly_open=weekly_open,
@@ -120,9 +158,11 @@ def build_superstock_weekly_features(data: dict) -> SuperstockWeeklyFeatures:
         weekly_volume_ratio_26w=weekly_volume_ratio_26w,
         dist_from_52w_high=dist_from_52w_high,
         dist_from_52w_low=dist_from_52w_low,
-        rs_ratio_spy=rs_ratio_spy,
+        rs_ratio_benchmark=rs_ratio_benchmark,
         rs_rank_26w=rs_rank_26w,
         rs_rank_52w=rs_rank_52w,
+        benchmark_source=benchmark_source,
+        benchmark_weekly_close=benchmark_weekly_close,
         spy_weekly_close=spy_weekly_close,
         vix_weekly_close=vix_weekly_close,
         vix_ma_10w=vix_ma_10w,
@@ -133,8 +173,10 @@ def to_daily_feature_map(features: SuperstockWeeklyFeatures, daily_index: pd.Ind
     aligned: dict[str, pd.DataFrame | pd.Series] = {}
     for field in fields(features):
         value = getattr(features, field.name)
-        if field.name in {"week_end_mask", "week_key_by_day"}:
+        if field.name in {"week_end_mask", "week_key_by_day", "benchmark_source"}:
             aligned[field.name] = value
+        elif value is None:
+            aligned[field.name] = None
         else:
             aligned[field.name] = align_completed_weekly_to_daily(
                 value, daily_index, features.weekly_close.index

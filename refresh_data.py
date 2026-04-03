@@ -18,6 +18,42 @@ START = "2014-01-01"
 END   = datetime.today().strftime("%Y-%m-%d")
 
 
+def _ensure_spy_in_tickers(tickers: list[str]) -> list[str]:
+    """Always include SPY exactly once for benchmark compatibility."""
+    return list(dict.fromkeys(list(tickers) + ["SPY"]))
+
+
+def _extract_ohlcv_field(raw: pd.DataFrame, field: str) -> pd.DataFrame:
+    """Handle yfinance batch and single-symbol shapes consistently."""
+    if isinstance(raw.columns, pd.MultiIndex):
+        if field not in raw.columns.get_level_values(0):
+            raise KeyError(f"Field '{field}' missing from download output.")
+        frame = raw[field].copy()
+    else:
+        if field not in raw.columns:
+            raise KeyError(f"Field '{field}' missing from download output.")
+        frame = raw[[field]].copy()
+
+    if isinstance(frame, pd.Series):
+        frame = frame.to_frame()
+    return frame
+
+
+def _download_symbol_ohlcv(symbol: str) -> dict[str, pd.DataFrame]:
+    raw = yf.download(symbol, start=START, end=END, auto_adjust=True, progress=False, threads=False)
+    fields = {}
+    for field in ("Close", "Open", "High", "Low", "Volume"):
+        frame = _extract_ohlcv_field(raw, field)
+        if symbol in frame.columns:
+            frame = frame[[symbol]]
+        elif len(frame.columns) == 1:
+            frame.columns = [symbol]
+        else:
+            raise KeyError(f"Could not isolate {symbol} {field} from download output.")
+        fields[field.lower()] = frame
+    return fields
+
+
 # ── 1. Russell 1000 tickers via iShares IWB holdings ─────────────────────────
 def get_russell1000_tickers() -> list[str]:
     """
@@ -44,7 +80,7 @@ def get_russell1000_tickers() -> list[str]:
         # Filter: only real ticker symbols (exclude cash, "-", blank)
         tickers = tickers[tickers.str.match(r"^[A-Z][A-Z0-9\-]{0,6}$")].tolist()
         # Always append ETFs — not in IWB holdings but essential for sector rotation
-        tickers = list(dict.fromkeys(tickers + _etf_supplements()))
+        tickers = _ensure_spy_in_tickers(tickers + _etf_supplements())
         print(f"  Russell 1000 + ETFs: {len(tickers)} tickers")
         return tickers
 
@@ -101,13 +137,14 @@ def _sp500_plus_supplements() -> list[str]:
         # Royalty / streaming
         "WPM","RGLD","FNV",
     ]
-    combined = list(dict.fromkeys(sp500 + supplements + _etf_supplements()))  # dedup
+    combined = _ensure_spy_in_tickers(sp500 + supplements + _etf_supplements())
     print(f"  SP500 + supplements: {len(combined)} tickers")
     return combined
 
 
 # ── 2. OHLCV prices ───────────────────────────────────────────────────────────
 def refresh_prices(tickers: list[str]):
+    tickers = _ensure_spy_in_tickers(tickers)
     out = DATA_DIR / "sp500_prices.parquet"   # keep filename for compatibility
     print(f"Downloading OHLCV for {len(tickers)} tickers …")
     raw = yf.download(
@@ -115,16 +152,29 @@ def refresh_prices(tickers: list[str]):
         auto_adjust=True, progress=True, threads=8
     )
 
-    close  = raw["Close"].copy()
-    opens  = raw["Open"].copy()
-    high   = raw["High"].copy()
-    low    = raw["Low"].copy()
-    volume = raw["Volume"].copy()
+    close  = _extract_ohlcv_field(raw, "Close")
+    opens  = _extract_ohlcv_field(raw, "Open")
+    high   = _extract_ohlcv_field(raw, "High")
+    low    = _extract_ohlcv_field(raw, "Low")
+    volume = _extract_ohlcv_field(raw, "Volume")
 
     # Drop tickers with >20% missing days
     thresh = int(len(close) * 0.80)
     close  = close.dropna(thresh=thresh, axis=1)
     valid  = close.columns.tolist()
+
+    if "SPY" not in valid:
+        print("  SPY missing from batch download, fetching separately …")
+        spy = _download_symbol_ohlcv("SPY")
+        spy_close = spy["close"]
+        if spy_close["SPY"].notna().sum() < thresh:
+            raise RuntimeError("SPY download did not produce enough history for benchmark use.")
+        close["SPY"] = spy_close["SPY"]
+        opens["SPY"] = spy["open"]["SPY"]
+        high["SPY"] = spy["high"]["SPY"]
+        low["SPY"] = spy["low"]["SPY"]
+        volume["SPY"] = spy["volume"]["SPY"]
+        valid = list(dict.fromkeys(valid + ["SPY"]))
 
     prices = pd.concat({
         "close":  close[valid],

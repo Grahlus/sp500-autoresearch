@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -86,11 +87,86 @@ class WeeklyFeatureLayerTests(unittest.TestCase):
 
         self.assertIn("AAA", features.weekly_close.columns)
         self.assertIn("SPY", features.weekly_close.columns)
-        self.assertIn("AAA", features.rs_ratio_spy.columns)
+        self.assertIn("AAA", features.rs_ratio_benchmark.columns)
+        self.assertEqual(features.benchmark_source, "spy_symbol")
+        self.assertEqual(features.benchmark_weekly_close.index.tolist(), features.weekly_close.index.tolist())
+        self.assertIsNotNone(features.spy_weekly_close)
         self.assertEqual(features.spy_weekly_close.index.tolist(), features.weekly_close.index.tolist())
         self.assertEqual(features.vix_weekly_close.index.tolist(), features.weekly_close.index.tolist())
         self.assertEqual(aligned["weekly_close"].loc[pd.Timestamp("2024-01-08"), "AAA"], 14.5)
+        self.assertEqual(aligned["benchmark_weekly_close"].loc[pd.Timestamp("2024-01-08")], 104.5)
         self.assertTrue(aligned["week_end_mask"].loc[pd.Timestamp("2024-01-05")])
+
+    def test_first_trading_day_after_week_close_uses_completed_week_only(self):
+        data = {
+            "open": self.open_,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+            "vix": self.vix,
+        }
+        features = build_superstock_weekly_features(data)
+        aligned = to_daily_feature_map(features, self.dates)
+
+        friday = pd.Timestamp("2024-01-05")
+        monday = pd.Timestamp("2024-01-08")
+        next_friday = pd.Timestamp("2024-01-12")
+
+        self.assertEqual(aligned["benchmark_weekly_close"].loc[monday], aligned["benchmark_weekly_close"].loc[friday])
+        self.assertNotEqual(aligned["benchmark_weekly_close"].loc[next_friday], aligned["benchmark_weekly_close"].loc[monday])
+
+    def test_fallback_benchmark_behavior_is_explicit(self):
+        close = self.close.drop(columns=["SPY"])
+        open_ = self.open_.drop(columns=["SPY"])
+        high = self.high.drop(columns=["SPY"])
+        low = self.low.drop(columns=["SPY"])
+        volume = self.volume.drop(columns=["SPY"])
+        data = {
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "vix": self.vix,
+        }
+
+        with self.assertLogs("strategies.superstock_weekly", level="WARNING") as logs:
+            features = build_superstock_weekly_features(data)
+
+        self.assertEqual(features.benchmark_source, "equal_weight_proxy")
+        self.assertIsNone(features.spy_weekly_close)
+        self.assertEqual(features.benchmark_weekly_close.index.tolist(), features.weekly_close.index.tolist())
+        self.assertIn("benchmark-relative", logs.output[0])
+
+    def test_missing_vix_produces_nan_outputs(self):
+        data = {
+            "open": self.open_,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+        }
+        features = build_superstock_weekly_features(data)
+
+        self.assertTrue(features.vix_weekly_close.isna().all())
+        self.assertTrue(features.vix_ma_10w.isna().all())
+
+    def test_insufficient_long_window_history_stays_present_with_nans(self):
+        data = {
+            "open": self.open_,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+            "vix": self.vix,
+        }
+        features = build_superstock_weekly_features(data)
+
+        self.assertIn("AAA", features.ma_30w.columns)
+        self.assertTrue(features.ma_30w["AAA"].isna().all())
+        self.assertTrue(features.dist_from_52w_high["AAA"].isna().all())
+        self.assertTrue(features.dist_from_52w_low["AAA"].isna().all())
 
 
 if __name__ == "__main__":
