@@ -455,6 +455,20 @@ def save_logs(trade_log: list, daily_log: list, tag: str, metrics: dict, hypothe
     print(f"  CSV daily : {daily_file}  ({len(daily_log)} rows)")
 
 
+def save_superstock_diagnostics_logs(diag: dict, tag: str):
+    daily_file = LOG_DIR / f"superstock_daily_diag_OOS_{tag}.csv"
+    trade_file = LOG_DIR / f"superstock_trade_diag_OOS_{tag}.csv"
+    summary_file = LOG_DIR / f"superstock_summary_OOS_{tag}.csv"
+
+    diag["daily_diagnostics"].to_csv(daily_file, index=False)
+    diag["trade_attribution"].to_csv(trade_file, index=False)
+    diag["summary"].to_csv(summary_file, index=False)
+
+    print(f"  Diag daily: {daily_file}  ({len(diag['daily_diagnostics'])} rows)")
+    print(f"  Diag trade: {trade_file}  ({len(diag['trade_attribution'])} rows)")
+    print(f"  Diag sumy : {summary_file}  ({len(diag['summary'])} rows)")
+
+
 def print_report(m, hypothesis, trade_log):
     W = 66
     print("\n" + "="*W)
@@ -543,8 +557,15 @@ if __name__ == "__main__":
     strategy = get_strategy_family(resolve_strategy_name())
 
     print("\n>>> Loading data and generating signals …")
-    data    = load_data()
-    weights = strategy.generate_signals(data)
+    data = load_data()
+    superstock_pipeline = None
+    if strategy.name == "superstock":
+        from strategies.superstock import build_superstock_pipeline
+
+        superstock_pipeline = build_superstock_pipeline(data)
+        weights = superstock_pipeline["weights"]
+    else:
+        weights = strategy.generate_signals(data)
 
     print("\n>>> Running true out-of-sample backtest …")
     metrics, trade_log, daily_log = run_oos_backtest(weights, data)
@@ -552,5 +573,35 @@ if __name__ == "__main__":
     print("\n>>> Saving logs …")
     tag = datetime.today().strftime("%Y%m%d")
     save_logs(trade_log, daily_log, tag, metrics, strategy.hypothesis)
+
+    if strategy.name == "superstock":
+        from strategies.superstock_diagnostics import build_superstock_diagnostics
+
+        comparison_metrics = {
+            "superstock": {
+                "sharpe": metrics["sharpe"],
+                "total_return_pct": metrics["total_return_pct"],
+                "trades_per_year": metrics["trades_per_year"],
+                "total_cost": metrics["total_cost"],
+            }
+        }
+
+        momentum = get_strategy_family("momentum")
+        momentum_weights = momentum.generate_signals(data)
+        momentum_metrics, _, _ = run_oos_backtest(momentum_weights, data)
+        comparison_metrics["momentum"] = {
+            "sharpe": momentum_metrics["sharpe"],
+            "total_return_pct": momentum_metrics["total_return_pct"],
+            "trades_per_year": momentum_metrics["trades_per_year"],
+            "total_cost": momentum_metrics["total_cost"],
+        }
+
+        diag = build_superstock_diagnostics(
+            data,
+            pipeline=superstock_pipeline,
+            comparison_metrics=comparison_metrics,
+            start_date=metrics["oos_start"],
+        )
+        save_superstock_diagnostics_logs(diag, tag)
 
     print_report(metrics, strategy.hypothesis, trade_log)

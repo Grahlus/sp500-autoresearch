@@ -83,6 +83,10 @@ def build_superstock_exit_signals(
         "range_pct_median_26w": range_pct_median_26w,
         "weekly_volume_ratio_26w": weekly_volume_ratio_26w,
         "close_20d_low_excl_today": low.shift(1).rolling(20, min_periods=20).min(),
+        "exit_reason_support": support_break_exit,
+        "exit_reason_parabolic": parabolic_extension_exit,
+        "exit_reason_late_stage_hv": late_stage_hv_exit,
+        "exit_reason_any": support_break_exit | parabolic_extension_exit | late_stage_hv_exit,
     }
 
     return ScreeningResult(eligible=eligible, rule_masks=rule_masks, diagnostics=diagnostics)
@@ -91,18 +95,24 @@ def build_superstock_exit_signals(
 def build_superstock_position_mask(
     entries: ScreeningResult,
     exits: ScreeningResult,
+    execution_lag_days: int = 1,
 ) -> pd.DataFrame:
+    if execution_lag_days != 1:
+        raise ValueError("Superstock v1 only supports execution_lag_days=1.")
+
     columns = entries.eligible.columns
     index = entries.eligible.index
     positions = pd.DataFrame(False, index=index, columns=columns)
     current = pd.Series(False, index=columns)
 
-    for dt in index:
-        exit_mask = exits.eligible.loc[dt].fillna(False).astype(bool)
-        current.loc[exit_mask[exit_mask].index] = False
+    for i, dt in enumerate(index):
+        if i > 0:
+            prior_dt = index[i - execution_lag_days]
+            exit_mask = exits.eligible.loc[prior_dt].fillna(False).astype(bool)
+            current.loc[exit_mask[exit_mask].index] = False
 
-        entry_mask = entries.eligible.loc[dt].fillna(False).astype(bool)
-        current.loc[entry_mask[entry_mask].index] = True
+            entry_mask = entries.eligible.loc[prior_dt].fillna(False).astype(bool)
+            current.loc[entry_mask[entry_mask].index] = True
         positions.loc[dt] = current
 
     return positions

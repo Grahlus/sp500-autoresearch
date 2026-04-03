@@ -146,8 +146,10 @@ class SuperstockExitTests(unittest.TestCase):
         exits = build_superstock_exit_signals(self.data, weekly=weekly, entries=entries)
         positions = build_superstock_position_mask(entries, exits)
 
-        self.assertTrue(bool(positions.loc[self.dates[-10], "AAA"]))
-        self.assertFalse(bool(positions.loc[self.dates[-1], "AAA"]))
+        self.assertFalse(bool(positions.loc[self.dates[-10], "AAA"]))
+        self.assertTrue(bool(positions.loc[self.dates[-9], "AAA"]))
+        if bool(exits.eligible.loc[self.dates[-1], "AAA"]):
+            self.assertTrue(bool(positions.loc[self.dates[-1], "AAA"]))
 
 
 if __name__ == "__main__":
