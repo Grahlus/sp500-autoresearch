@@ -39,6 +39,7 @@ def build_superstock_breakout_entries(
         "benchmark_source": screen.diagnostics.get("benchmark_source"),
         "benchmark_weekly_close": screen.diagnostics.get("benchmark_weekly_close"),
         "spy_weekly_close": screen.diagnostics.get("spy_weekly_close"),
+        "entry_event": eligible,
         "base_high_26w": base_high_26w,
         "rolling_20d_high_excl_today": rolling_20d_high_excl_today,
         "avg_volume_20d_excl_today": avg_volume_20d_excl_today,
