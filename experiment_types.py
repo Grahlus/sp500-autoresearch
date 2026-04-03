@@ -50,3 +50,33 @@ class ExperimentResult:
     @property
     def error(self) -> str | None:
         return self.error_message
+
+
+@dataclass(frozen=True)
+class BatchRequest:
+    batch_id: str
+    timestamp_utc: str
+    strategy_families: list[str]
+    sampler_type: str = "random"
+    max_experiments: int = 20
+    max_per_family: int = 20
+    seed: int = 42
+    persist: bool = True
+    resume: bool = True
+    objective_name: str = "wf_v1_score"
+    include_filters: dict[str, Any] | None = None
+    exclude_filters: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    request: BatchRequest
+    status: str
+    total_sampled: int
+    total_executed: int
+    total_skipped: int
+    total_failed: int
+    results: list[ExperimentResult]
+    leaderboard_path: str | None = None
+    raw_results_path: str | None = None
+    summary_path: str | None = None
