@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,15 +9,23 @@ from typing import Any
 import pandas as pd
 
 from experiment_objective import rank_results
+from experiment_parallel import run_experiments_parallel
 from experiment_runner import run_single_experiment
 from experiment_spaces import enumerate_grid_candidates, list_searchable_families, sample_random_candidates
-from experiment_store import compute_config_hash, init_store, load_prior_results
-from experiment_types import BatchRequest, BatchResult, ExperimentResult, ProposalResult
+from experiment_store import compute_config_hash, init_store, load_prior_results, save_experiment_result_atomic
+from experiment_types import BatchRequest, BatchResult, ExperimentResult, ExperimentSpec, ProposalResult
 from prepare import load_data
 
 
 DEFAULT_BASELINES = {
     "momentum": "momentum_champion_s10005",
+}
+
+DEFAULT_STRATEGY_TYPES = {
+    "momentum": "classical",
+    "superstock": "classical",
+    "ml_ranker": "ml",
+    "rl_bandit": "rl",
 }
 
 
@@ -31,6 +39,9 @@ def build_batch_request(
     persist: bool = True,
     resume: bool = True,
     objective_name: str = "wf_v1_score",
+    max_workers: int | None = None,
+    fail_fast: bool = False,
+    execution_mode: str = "auto",
     include_filters: dict[str, Any] | None = None,
     exclude_filters: dict[str, Any] | None = None,
     batch_id: str | None = None,
@@ -48,6 +59,10 @@ def build_batch_request(
     resolved_max_per_family = max_per_family if max_per_family is not None else max_experiments
     if resolved_max_per_family <= 0:
         raise ValueError("max_per_family must be > 0.")
+    if max_workers is not None and max_workers > 8:
+        raise ValueError("max_workers must be <= 8.")
+    if max_workers is not None and max_workers <= 0:
+        raise ValueError("max_workers must be > 0 when provided.")
 
     return BatchRequest(
         batch_id=batch_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S"),
@@ -60,6 +75,9 @@ def build_batch_request(
         persist=bool(persist),
         resume=bool(resume),
         objective_name=objective_name,
+        max_workers=max_workers,
+        fail_fast=bool(fail_fast),
+        execution_mode=execution_mode,
         include_filters=include_filters,
         exclude_filters=exclude_filters,
         precomputed_configs=None,
@@ -80,10 +98,27 @@ def sample_batch_configs(
 
 def _result_to_row(result: ExperimentResult) -> dict[str, Any]:
     baseline = result.baseline_comparison or {}
+    spec = result.spec
     return {
-        "experiment_id": result.spec.experiment_id,
-        "strategy_family": result.spec.family,
-        "config_hash": result.spec.config_hash,
+        "experiment_id": spec.experiment_id,
+        "strategy_family": spec.family,
+        "config_hash": spec.config_hash,
+        "strategy_type": spec.strategy_type,
+        "source_type": spec.source_type,
+        "template_id": spec.template_id,
+        "hypothesis": spec.hypothesis,
+        "reason_selected": spec.reason_selected,
+        "novelty_score": spec.novelty_score,
+        "selection_score": spec.selection_score,
+        "exploration_mode": spec.exploration_mode,
+        "proposal_role": spec.proposal_role,
+        "region_label": spec.region_label,
+        "duplicate_risk": spec.duplicate_risk,
+        "dead_zone_risk": spec.dead_zone_risk,
+        "parent_config_hash": spec.parent_config_hash,
+        "near_duplicate_of": spec.near_duplicate_of,
+        "dead_zone_flags": spec.dead_zone_flags,
+        "source_proposal_id": spec.source_proposal_id,
         "objective_score": result.objective_score,
         "sharpe": result.metrics.get("sharpe"),
         "calmar": result.metrics.get("calmar"),
@@ -113,6 +148,22 @@ def build_batch_leaderboard(results: list[ExperimentResult]) -> pd.DataFrame:
                 "experiment_id",
                 "strategy_family",
                 "config_hash",
+                "strategy_type",
+                "source_type",
+                "template_id",
+                "hypothesis",
+                "reason_selected",
+                "novelty_score",
+                "selection_score",
+                "exploration_mode",
+                "proposal_role",
+                "region_label",
+                "duplicate_risk",
+                "dead_zone_risk",
+                "parent_config_hash",
+                "near_duplicate_of",
+                "dead_zone_flags",
+                "source_proposal_id",
                 "objective_score",
                 "sharpe",
                 "calmar",
@@ -166,6 +217,9 @@ def build_batch_summary(batch_result: BatchResult) -> dict[str, Any]:
                 "failed": 0,
                 "best_objective_score": None,
                 "best_experiment_id": None,
+                "strategy_type_counts": {},
+                "source_type_counts": {},
+                "template_counts": {},
             },
         )
         family_bucket["results"] += 1
@@ -181,12 +235,21 @@ def build_batch_summary(batch_result: BatchResult) -> dict[str, Any]:
         ):
             family_bucket["best_objective_score"] = result.objective_score
             family_bucket["best_experiment_id"] = result.spec.experiment_id
+        strategy_type = result.spec.strategy_type or "unspecified"
+        family_bucket["strategy_type_counts"][strategy_type] = family_bucket["strategy_type_counts"].get(strategy_type, 0) + 1
+        source_type = result.spec.source_type or "unspecified"
+        family_bucket["source_type_counts"][source_type] = family_bucket["source_type_counts"].get(source_type, 0) + 1
+        template_id = result.spec.template_id or "unspecified"
+        family_bucket["template_counts"][template_id] = family_bucket["template_counts"].get(template_id, 0) + 1
 
     return {
         "batch_id": batch_result.request.batch_id,
         "timestamp_utc": batch_result.request.timestamp_utc,
         "strategy_families": batch_result.request.strategy_families,
         "sampler_type": batch_result.request.sampler_type,
+        "max_workers": getattr(batch_result, "max_workers", None),
+        "execution_mode": getattr(batch_result, "execution_mode", "sequential"),
+        "worker_failures": getattr(batch_result, "worker_failures", 0),
         "source_proposal_id": batch_result.request.source_proposal_id,
         "total_sampled": batch_result.total_sampled,
         "total_executed": batch_result.total_executed,
@@ -232,33 +295,55 @@ def run_batch_experiments(
     baseline_by_family = {**DEFAULT_BASELINES, **(baseline_by_family or {})}
 
     requested_total = 0
-    executed = 0
     skipped = 0
     failed = 0
-    results: list[ExperimentResult] = []
+    execution_specs: list[ExperimentSpec] = []
     already_seen_in_batch: set[tuple[str, str]] = set()
+    worker_count = request.max_workers if request.max_workers is not None else 1
+    if worker_count > 8:
+        raise ValueError("max_workers must be <= 8.")
+    execution_mode = "parallel" if worker_count > 1 else "sequential"
 
     for family_idx, family in enumerate(request.strategy_families):
-        if request.precomputed_configs and family in request.precomputed_configs:
-            configs = [dict(config) for config in request.precomputed_configs[family]]
+        if request.precomputed_specs and family in request.precomputed_specs:
+            specs = list(request.precomputed_specs[family])
         else:
-            configs = sample_batch_configs(
-                family=family,
-                method=request.sampler_type,
-                n=request.max_per_family,
-                seed=request.seed + family_idx,
-            )
+            specs = []
+            if request.precomputed_configs and family in request.precomputed_configs:
+                configs = [dict(config) for config in request.precomputed_configs[family]]
+            else:
+                configs = sample_batch_configs(
+                    family=family,
+                    method=request.sampler_type,
+                    n=request.max_per_family,
+                    seed=request.seed + family_idx,
+                )
+            for config in configs:
+                config_hash = compute_config_hash(family, config)
+                specs.append(
+                    ExperimentSpec(
+                        family=family,
+                        params=config,
+                        search_method=request.sampler_type,
+                        objective_name=request.objective_name,
+                        batch_id=request.batch_id,
+                        config_hash=config_hash,
+                        experiment_id=f"{family}_{config_hash}_{request.batch_id}",
+                        timestamp_utc=request.timestamp_utc,
+                        strategy_type=DEFAULT_STRATEGY_TYPES.get(family),
+                    )
+                )
         prior = load_prior_results(family=family, base_dir=base_dir) if request.resume else pd.DataFrame()
         successful_prior_hashes = (
             set(prior.loc[prior["status"] == "success", "config_hash"].astype(str)) if not prior.empty else set()
         )
 
-        for config in configs:
+        for spec in specs:
+            config = dict(spec.params)
             if requested_total >= request.max_experiments:
                 break
             requested_total += 1
-
-            config_hash = compute_config_hash(family, config)
+            config_hash = spec.config_hash or compute_config_hash(family, config)
             batch_key = (family, config_hash)
             if batch_key in already_seen_in_batch:
                 skipped += 1
@@ -269,23 +354,59 @@ def run_batch_experiments(
                 skipped += 1
                 continue
 
-            result = run_single_experiment(
-                family=family,
-                config=config,
-                data=shared_data,
-                persist=request.persist,
-                base_dir=base_dir,
-                compare_to_baseline=baseline_by_family.get(family),
-            )
-            results.append(result)
-            if result.status in {"duplicate"}:
-                skipped += 1
-            elif result.status in {"error", "invalid"}:
-                failed += 1
-            else:
-                executed += 1
+            execution_specs.append(spec)
         if requested_total >= request.max_experiments:
             break
+
+    if execution_specs:
+        if worker_count > 1:
+            computed_results, worker_failures = run_experiments_parallel(
+                execution_specs,
+                data=shared_data,
+                base_dir=base_dir,
+                max_workers=worker_count,
+                fail_fast=request.fail_fast,
+                baseline_by_family=baseline_by_family,
+            )
+        else:
+            computed_results = [
+                run_single_experiment(
+                    family=spec.family,
+                    config=dict(spec.params),
+                    data=shared_data,
+                    persist=False,
+                    base_dir=base_dir,
+                    compare_to_baseline=baseline_by_family.get(spec.family),
+                    experiment_id=spec.experiment_id or None,
+                    spec=spec,
+                )
+                for spec in execution_specs
+            ]
+            worker_failures = 0
+    else:
+        computed_results = []
+        worker_failures = 0
+
+    results: list[ExperimentResult] = []
+    if request.persist:
+        for result in computed_results:
+            payload = asdict(result)
+            payload["spec"] = asdict(result.spec)
+            persisted = save_experiment_result_atomic(payload, base_dir=base_dir)
+            if not persisted and result.status in {"success", "no_trades"}:
+                result = replace(result, status="duplicate")
+            results.append(result)
+    else:
+        results = list(computed_results)
+
+    executed = 0
+    for result in results:
+        if result.status == "duplicate":
+            skipped += 1
+        elif result.status in {"error", "invalid"}:
+            failed += 1
+        elif result.status in {"success", "no_trades"}:
+            executed += 1
 
     batch_result = BatchResult(
         request=request,
@@ -295,6 +416,9 @@ def run_batch_experiments(
         total_skipped=skipped,
         total_failed=failed,
         results=results,
+        max_workers=worker_count,
+        execution_mode=execution_mode,
+        worker_failures=worker_failures,
     )
     report_paths = save_batch_reports(batch_result, base_dir=base_dir)
     return BatchResult(
@@ -305,6 +429,9 @@ def run_batch_experiments(
         total_skipped=batch_result.total_skipped,
         total_failed=batch_result.total_failed,
         results=batch_result.results,
+        max_workers=batch_result.max_workers,
+        execution_mode=batch_result.execution_mode,
+        worker_failures=batch_result.worker_failures,
         leaderboard_path=report_paths["leaderboard_path"],
         raw_results_path=report_paths["raw_results_path"],
         summary_path=report_paths["summary_path"],
@@ -316,8 +443,46 @@ def proposal_to_batch_request(
     *,
     persist: bool = True,
     resume: bool = True,
+    max_workers: int | None = None,
+    fail_fast: bool = False,
 ) -> BatchRequest:
     max_per_family = max((len(configs) for configs in proposal.candidate_configs.values()), default=0)
+    precomputed_specs: dict[str, list[ExperimentSpec]] = {}
+    for family, configs in proposal.candidate_configs.items():
+        metadata_items = (proposal.candidate_metadata or {}).get(family, [])
+        specs: list[ExperimentSpec] = []
+        for idx, config in enumerate(configs):
+            metadata = metadata_items[idx] if idx < len(metadata_items) else {}
+            config_hash = compute_config_hash(family, config)
+            specs.append(
+                ExperimentSpec(
+                    family=family,
+                    params=config,
+                    search_method="proposal",
+                    objective_name=proposal.request.objective_name,
+                    batch_id=f"{proposal.request.proposal_id}_batch",
+                    config_hash=config_hash,
+                    experiment_id=f"{family}_{config_hash}_{proposal.request.proposal_id}",
+                    timestamp_utc=proposal.request.timestamp_utc,
+                    strategy_type=metadata.get("strategy_type") or DEFAULT_STRATEGY_TYPES.get(family),
+                    source_type=metadata.get("source_type"),
+                    template_id=metadata.get("template_id"),
+                    hypothesis=metadata.get("hypothesis"),
+                    reason_selected=metadata.get("reason_selected"),
+                    novelty_score=metadata.get("novelty_score"),
+                    exploration_mode=metadata.get("exploration_mode"),
+                    proposal_role=metadata.get("proposal_role"),
+                    region_label=metadata.get("region_label"),
+                    duplicate_risk=metadata.get("duplicate_risk"),
+                    dead_zone_risk=metadata.get("dead_zone_risk"),
+                    parent_config_hash=metadata.get("parent_config_hash"),
+                    near_duplicate_of=metadata.get("near_duplicate_of"),
+                    dead_zone_flags=metadata.get("dead_zone_flags"),
+                    selection_score=metadata.get("selection_score"),
+                    source_proposal_id=proposal.request.proposal_id,
+                )
+            )
+        precomputed_specs[family] = specs
     return BatchRequest(
         batch_id=f"{proposal.request.proposal_id}_batch",
         timestamp_utc=proposal.request.timestamp_utc,
@@ -329,8 +494,11 @@ def proposal_to_batch_request(
         persist=persist,
         resume=resume and proposal.request.resume,
         objective_name=proposal.request.objective_name,
+        max_workers=max_workers,
+        fail_fast=fail_fast,
         include_filters=None,
         exclude_filters=None,
         precomputed_configs=proposal.candidate_configs,
+        precomputed_specs=precomputed_specs,
         source_proposal_id=proposal.request.proposal_id,
     )

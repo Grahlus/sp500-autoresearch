@@ -1,0 +1,248 @@
+{
+  "families": {
+    "momentum": {
+      "baseline_name": "momentum_champion_s10005",
+      "baseline_win_rate": 0.26666666666666666,
+      "dead_zones": {},
+      "deprioritized_regions": {},
+      "exploit_count": 4,
+      "explore_count": 2,
+      "history_count": 16,
+      "overfit_or_unstable": [
+        {
+          "config_hash": "e9a662ed0b05eb06",
+          "experiment_id": "momentum_e9a662ed0b05eb06_20260403165634",
+          "objective_score": 1.36935,
+          "viable": false
+        }
+      ],
+      "robust_performers": [
+        {
+          "config_hash": "e59f68426635b89e",
+          "experiment_id": "momentum_e59f68426635b89e_20260403165628",
+          "objective_score": 1.5763,
+          "viable": true
+        },
+        {
+          "config_hash": "71fbba97aea9e754",
+          "experiment_id": "momentum_71fbba97aea9e754_20260403165535",
+          "objective_score": 1.3228,
+          "viable": true
+        },
+        {
+          "config_hash": "098537d17c134af6",
+          "experiment_id": "momentum_098537d17c134af6_20260403165541",
+          "objective_score": 1.3228,
+          "viable": true
+        }
+      ],
+      "top_performers": [
+        {
+          "config_hash": "e59f68426635b89e",
+          "experiment_id": "momentum_e59f68426635b89e_20260403165628",
+          "objective_score": 1.5763,
+          "viable": true
+        },
+        {
+          "config_hash": "71fbba97aea9e754",
+          "experiment_id": "momentum_71fbba97aea9e754_20260403165535",
+          "objective_score": 1.3228,
+          "viable": true
+        },
+        {
+          "config_hash": "098537d17c134af6",
+          "experiment_id": "momentum_098537d17c134af6_20260403165541",
+          "objective_score": 1.3228,
+          "viable": true
+        }
+      ],
+      "under_tested_regions": {
+        "EXIT_PCT_RANK": [
+          "0.94",
+          "nan"
+        ],
+        "FG_MIN": [
+          "22.0"
+        ],
+        "MA_WEEKS": [
+          "16",
+          "24"
+        ],
+        "MIN_HOLD_DAYS": [
+          "10"
+        ],
+        "RANK_EXIT_CONFIRM": [
+          "1.0",
+          "2.0"
+        ],
+        "STOP_LOSS_PCT": [
+          "nan"
+        ],
+        "STOP_PARABOLIC": [
+          "0.25",
+          "0.4"
+        ],
+        "STOP_TYPE": [
+          "none"
+        ]
+      }
+    },
+    "superstock": {
+      "baseline_name": null,
+      "baseline_win_rate": null,
+      "dead_zones": {
+        "breakout_extension_max": [
+          "0.15"
+        ],
+        "daily_dollar_volume_expansion_mult": [
+          "1.5"
+        ],
+        "daily_volume_expansion_mult": [
+          "1.5"
+        ],
+        "late_stage_volume_mult": [
+          "2.0"
+        ],
+        "max_positions": [
+          "3"
+        ],
+        "min_dollar_volume": [
+          "500000.0"
+        ],
+        "parabolic_above_10w_min": [
+          "0.2"
+        ],
+        "parabolic_from_pivot_min": [
+          "0.2"
+        ],
+        "rs_rank_52w_min": [
+          "0.8"
+        ],
+        "vix_hard_cap": [
+          "30.0"
+        ],
+        "vix_ma_multiplier": [
+          "1.1"
+        ],
+        "weekly_range_median_max": [
+          "0.18"
+        ]
+      },
+      "deprioritized_regions": {
+        "breakout_extension_max": [
+          "0.15"
+        ],
+        "daily_dollar_volume_expansion_mult": [
+          "1.5"
+        ],
+        "daily_volume_expansion_mult": [
+          "1.5"
+        ],
+        "late_stage_volume_mult": [
+          "2.0"
+        ],
+        "max_positions": [
+          "3"
+        ],
+        "min_dollar_volume": [
+          "500000.0"
+        ],
+        "parabolic_above_10w_min": [
+          "0.2"
+        ],
+        "parabolic_from_pivot_min": [
+          "0.2"
+        ],
+        "rs_rank_52w_min": [
+          "0.8"
+        ],
+        "vix_hard_cap": [
+          "30.0"
+        ],
+        "vix_ma_multiplier": [
+          "1.1"
+        ],
+        "weekly_range_median_max": [
+          "0.18"
+        ]
+      },
+      "exploit_count": 3,
+      "explore_count": 0,
+      "history_count": 5,
+      "overfit_or_unstable": [
+        {
+          "config_hash": "d0ac807b2742147f",
+          "experiment_id": "superstock_d0ac807b2742147f_20260403165723",
+          "objective_score": 1.1061,
+          "viable": false
+        }
+      ],
+      "robust_performers": [],
+      "top_performers": [
+        {
+          "config_hash": "d0ac807b2742147f",
+          "experiment_id": "superstock_d0ac807b2742147f_20260403165723",
+          "objective_score": 1.1061,
+          "viable": false
+        },
+        {
+          "config_hash": "ca9ccfd14ef9fe3c",
+          "experiment_id": "superstock_ca9ccfd14ef9fe3c_20260403165602",
+          "objective_score": 0.0897,
+          "viable": false
+        },
+        {
+          "config_hash": "9659b5bb56a95b1b",
+          "experiment_id": "superstock_9659b5bb56a95b1b_20260403165655",
+          "objective_score": 0.0897,
+          "viable": false
+        }
+      ],
+      "under_tested_regions": {
+        "breakout_extension_max": [
+          "0.08"
+        ],
+        "daily_dollar_volume_expansion_mult": [
+          "2.0"
+        ],
+        "daily_volume_expansion_mult": [
+          "2.0"
+        ],
+        "late_stage_volume_mult": [
+          "1.5"
+        ],
+        "max_positions": [
+          "5"
+        ],
+        "min_dollar_volume": [
+          "1000000.0"
+        ],
+        "parabolic_above_10w_min": [
+          "0.15"
+        ],
+        "parabolic_from_pivot_min": [
+          "0.25"
+        ],
+        "rs_rank_52w_min": [
+          "0.7"
+        ],
+        "vix_hard_cap": [
+          "35.0"
+        ],
+        "vix_ma_multiplier": [
+          "1.5"
+        ],
+        "weekly_range_median_max": [
+          "0.15"
+        ]
+      }
+    }
+  },
+  "family_budget_decision": {
+    "momentum": 6,
+    "superstock": 4
+  },
+  "source_batch_ids": [
+    "single"
+  ]
+}

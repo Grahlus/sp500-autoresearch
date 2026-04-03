@@ -198,6 +198,53 @@ class ExperimentRefinementTests(unittest.TestCase):
         self.assertIn("momentum", analysis["families"])
         self.assertIn("LOOKBACK_WEEKS", analysis["families"]["momentum"]["dead_zones"])
 
+    def test_proposal_includes_metadata_and_broader_templates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                        "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                        "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None},
+                experiment_id="m1",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            _save_fake_result(
+                tmp,
+                family="superstock",
+                config={"max_positions": 5, "price_min": 5.0, "price_max": 15.0, "min_dollar_volume": 1_000_000.0,
+                        "above_52w_low_mult": 1.25, "near_52w_high_mult": 0.75, "rs_rank_26w_min": 0.7, "rs_rank_52w_min": 0.7,
+                        "base_depth_max": 0.6, "weekly_range_median_max": 0.18, "weekly_volatility_max": 0.12,
+                        "volume_dryup_max": 0.8, "vix_hard_cap": 35.0, "vix_ma_multiplier": 1.25,
+                        "breakout_extension_max": 0.1, "daily_volume_expansion_mult": 1.5,
+                        "daily_dollar_volume_expansion_mult": 1.5, "parabolic_from_pivot_min": 0.25,
+                        "parabolic_above_10w_min": 0.2, "late_stage_range_mult": 1.75, "late_stage_volume_mult": 2.0},
+                experiment_id="s1",
+                objective_score=0.4,
+            )
+            request = build_proposal_request(strategy_families=["momentum", "superstock"], seed=11, max_experiments=6)
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        self.assertIn("momentum", proposal.candidate_metadata)
+        self.assertIn("superstock", proposal.candidate_metadata)
+        momentum_sources = {meta["source_type"] for meta in proposal.candidate_metadata["momentum"]}
+        superstock_sources = {meta["source_type"] for meta in proposal.candidate_metadata["superstock"]}
+        self.assertTrue({"template_expansion", "cross_family_hybrid"} & momentum_sources)
+        self.assertTrue({"template_expansion", "cross_family_hybrid"} & superstock_sources)
+        self.assertGreater(len(proposal.candidate_configs["momentum"]), len(proposal.candidate_configs["superstock"]))
+        for family_metadata in proposal.candidate_metadata.values():
+            for metadata in family_metadata:
+                self.assertIn("strategy_type", metadata)
+                self.assertIn("proposal_role", metadata)
+                self.assertIn("region_label", metadata)
+                self.assertIn("duplicate_risk", metadata)
+                self.assertIn("dead_zone_risk", metadata)
+        for family in proposal.candidate_configs:
+            hashes = {compute_config_hash(family, config) for config in proposal.candidate_configs[family]}
+            self.assertEqual(len(hashes), len(proposal.candidate_configs[family]))
+
 
 if __name__ == "__main__":
     unittest.main()

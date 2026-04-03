@@ -1,0 +1,94 @@
+{
+  "families": {
+    "momentum": {
+      "baseline_name": "momentum_champion_s10005",
+      "baseline_win_rate": 0.0,
+      "dead_zones": {},
+      "deprioritized_regions": {},
+      "exploit_count": 4,
+      "explore_count": 2,
+      "history_count": 4,
+      "overfit_or_unstable": [],
+      "robust_performers": [
+        {
+          "config_hash": "67c247dfa6455d67",
+          "experiment_id": "momentum_67c247dfa6455d67_20260403152233",
+          "objective_score": 1.2819500000000001,
+          "viable": true
+        },
+        {
+          "config_hash": "f107feccefd0a38a",
+          "experiment_id": "momentum_f107feccefd0a38a_20260403155730",
+          "objective_score": 1.15765,
+          "viable": true
+        },
+        {
+          "config_hash": "3e428709df006c40",
+          "experiment_id": "momentum_3e428709df006c40_20260403155736",
+          "objective_score": 1.0626,
+          "viable": true
+        }
+      ],
+      "top_performers": [
+        {
+          "config_hash": "67c247dfa6455d67",
+          "experiment_id": "momentum_67c247dfa6455d67_20260403152233",
+          "objective_score": 1.2819500000000001,
+          "viable": true
+        },
+        {
+          "config_hash": "f107feccefd0a38a",
+          "experiment_id": "momentum_f107feccefd0a38a_20260403155730",
+          "objective_score": 1.15765,
+          "viable": true
+        },
+        {
+          "config_hash": "3e428709df006c40",
+          "experiment_id": "momentum_3e428709df006c40_20260403155736",
+          "objective_score": 1.0626,
+          "viable": true
+        }
+      ],
+      "under_tested_regions": {
+        "EXIT_PCT_RANK": [
+          "0.94"
+        ],
+        "LOOKBACK_WEEKS": [
+          "20"
+        ],
+        "MIN_HOLD_DAYS": [
+          "15"
+        ],
+        "RANK_EXIT_CONFIRM": [
+          "2.0"
+        ],
+        "REBAL_WEEKS": [
+          "2"
+        ],
+        "TOP_PCT": [
+          "0.015"
+        ]
+      }
+    },
+    "superstock": {
+      "baseline_name": null,
+      "baseline_win_rate": null,
+      "dead_zones": {},
+      "deprioritized_regions": {},
+      "exploit_count": 0,
+      "explore_count": 1,
+      "history_count": 0,
+      "overfit_or_unstable": [],
+      "robust_performers": [],
+      "top_performers": [],
+      "under_tested_regions": {}
+    }
+  },
+  "family_budget_decision": {
+    "momentum": 6,
+    "superstock": 4
+  },
+  "source_batch_ids": [
+    "single"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "momentum": [
+    {
+      "EXIT_PCT_RANK": 0.97,
+      "FG_MIN": 10.0,
+      "INV_VOL_DAYS": 15,
+      "LOOKBACK_WEEKS": 26,
+      "MA_WEEKS": 20,
+      "MIN_HOLD_DAYS": 5,
+      "RANK_EXIT_CONFIRM": null,
+      "REBAL_WEEKS": 4,
+      "SKIP_WEEKS": 3,
+      "STOP_LOSS_PCT": 0.2,
+      "STOP_PARABOLIC": null,
+      "STOP_TYPE": "fixed",
+      "TOP_PCT": 0.025
+    },
+    {
+      "EXIT_PCT_RANK": 0.94,
+      "FG_MIN": 10.0,
+      "INV_VOL_DAYS": 15,
+      "LOOKBACK_WEEKS": 20,
+      "MA_WEEKS": 20,
+      "MIN_HOLD_DAYS": 15,
+      "RANK_EXIT_CONFIRM": 2,
+      "REBAL_WEEKS": 4,
+      "SKIP_WEEKS": 3,
+      "STOP_LOSS_PCT": 0.2,
+      "STOP_PARABOLIC": null,
+      "STOP_TYPE": "fixed",
+      "TOP_PCT": 0.015
+    }
+  ]
+}

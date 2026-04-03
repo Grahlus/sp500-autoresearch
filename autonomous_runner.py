@@ -17,16 +17,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch experiment runner")
     parser.add_argument("--family", default="all", help="momentum, superstock, or all")
     parser.add_argument("--method", default="random", choices=["random", "grid"], help="Sampling method")
-    parser.add_argument("--n", type=int, default=20, help="Maximum experiments to run")
+    parser.add_argument("--n", type=int, default=24, help="Maximum experiments to run")
     parser.add_argument("--max-per-family", type=int, default=None, help="Maximum sampled configs per family")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--max-workers", type=int, default=6, help="Parallel worker count (max 8)")
     parser.add_argument("--base-dir", default="experiments", help="Experiment store root")
     parser.add_argument("--no-persist", action="store_true", help="Do not persist single-experiment results")
     parser.add_argument("--no-resume", action="store_true", help="Do not skip prior successful configs")
     parser.add_argument("--proposal-next", action="store_true", help="Generate the next-round proposal from history")
     parser.add_argument("--run-proposal", action="store_true", help="Run the generated proposal through the batch runner")
-    parser.add_argument("--exploration-fraction", type=float, default=0.30, help="Proposal exploration fraction")
-    parser.add_argument("--exploitation-fraction", type=float, default=0.70, help="Proposal exploitation fraction")
+    parser.add_argument("--exploration-fraction", type=float, default=0.65, help="Proposal exploration fraction")
+    parser.add_argument("--exploitation-fraction", type=float, default=0.35, help="Proposal exploitation fraction")
+    parser.add_argument("--novelty-floor", type=float, default=0.15, help="Minimum novelty score for proposed ideas")
+    parser.add_argument("--template-fraction", type=float, default=0.50, help="Share of exploration budget for templates")
+    parser.add_argument("--cross-family-fraction", type=float, default=0.20, help="Share of exploration budget for cross-family ideas")
+    parser.add_argument(
+        "--max-near-duplicate-distance",
+        type=int,
+        default=1,
+        help="Maximum signature distance allowed for near-duplicate suppression",
+    )
+    parser.add_argument(
+        "--stagnation-escape-batches",
+        type=int,
+        default=3,
+        help="Widen exploration if no improvement occurs for this many batches",
+    )
+    parser.add_argument("--allow-external-seeds", action="store_true", help="Allow external idea seeds if wired")
     return parser.parse_args(argv)
 
 
@@ -48,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
             exploitation_fraction=args.exploitation_fraction,
             max_experiments=args.n,
             resume=not args.no_resume,
+            novelty_floor=args.novelty_floor,
+            template_fraction=args.template_fraction,
+            cross_family_fraction=args.cross_family_fraction,
+            max_near_duplicate_distance=args.max_near_duplicate_distance,
+            stagnation_escape_batches=args.stagnation_escape_batches,
+            allow_external_seeds=args.allow_external_seeds,
         )
         proposal = generate_next_round_proposal(proposal_request, base_dir=args.base_dir)
         print(f"proposal_id={proposal.request.proposal_id}")
@@ -65,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             proposal,
             persist=not args.no_persist,
             resume=not args.no_resume,
+            max_workers=args.max_workers,
         )
     else:
         request = build_batch_request(
@@ -75,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             persist=not args.no_persist,
             resume=not args.no_resume,
+            max_workers=args.max_workers,
         )
 
     batch_result = run_batch_experiments(request, base_dir=args.base_dir)

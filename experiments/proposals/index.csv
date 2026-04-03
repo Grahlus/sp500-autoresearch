@@ -1,2 +1,8 @@
 proposal_id,timestamp_utc,strategy_families,source_batch_ids,objective_name,baseline_name,seed,exploration_fraction,exploitation_fraction,max_experiments,status,proposal_dir
 proposal_20260403_155624,2026-04-03T15:56:24.810143+00:00,momentum,single,wf_v1_score,,11,0.3,0.7,2,generated,experiments/proposals/proposal_20260403_155624
+proposal_20260403_155730,2026-04-03T15:57:30.649779+00:00,momentum,single,wf_v1_score,,11,0.3,0.7,2,generated,experiments/proposals/proposal_20260403_155730
+proposal_20260403_165529,2026-04-03T16:55:29.953344+00:00,"momentum,superstock",single,wf_v1_score,,42,0.3,0.7,10,generated,/home/mrlearn/sp500-autoresearch/experiments/proposals/proposal_20260403_165529
+proposal_20260403_165622,2026-04-03T16:56:22.984078+00:00,"momentum,superstock",single,wf_v1_score,,42,0.3,0.7,10,generated,/home/mrlearn/sp500-autoresearch/experiments/proposals/proposal_20260403_165622
+proposal_20260403_172041,2026-04-03T17:20:41.891934+00:00,"momentum,superstock",single,wf_v1_score,,42,0.3,0.7,10,generated,/home/mrlearn/sp500-autoresearch/experiments/proposals/proposal_20260403_172041
+proposal_20260403_175150,2026-04-03T17:51:50.013334+00:00,"momentum,superstock",single,wf_v1_score,,42,0.3,0.7,10,generated,/home/mrlearn/sp500-autoresearch/experiments/proposals/proposal_20260403_175150
+proposal_20260403_182148,2026-04-03T18:21:48.756255+00:00,"ml_ranker,momentum,rl_bandit,superstock","proposal_20260403_175150_batch,single",wf_v1_score,,42,0.3,0.7,10,generated,/home/mrlearn/sp500-autoresearch/experiments/proposals/proposal_20260403_182148

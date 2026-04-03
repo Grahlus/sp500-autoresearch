@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from autonomous_runner import main
+from autonomous_runner import main, parse_args
 from experiment_types import BatchRequest, BatchResult, ExperimentResult, ExperimentSpec, ProposalRequest, ProposalResult
 
 
@@ -45,6 +45,43 @@ class AutonomousRunnerTests(unittest.TestCase):
                 rc = main(["--family", "momentum", "--n", "2", "--seed", "7", "--base-dir", tmp])
             self.assertEqual(rc, 0)
             self.assertTrue(batch_result.leaderboard_path.endswith("leaderboard.csv"))
+
+    def test_autonomous_defaults_are_widened_for_search(self):
+        args = parse_args([])
+        self.assertEqual(args.n, 24)
+        self.assertEqual(args.max_workers, 6)
+        self.assertAlmostEqual(args.exploration_fraction, 0.65)
+        self.assertAlmostEqual(args.exploitation_fraction, 0.35)
+
+    def test_main_passes_max_workers_to_batch_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            batch_request = BatchRequest(
+                batch_id="batch1",
+                timestamp_utc="2026-04-03T00:00:00+00:00",
+                strategy_families=["momentum"],
+                sampler_type="random",
+                max_experiments=2,
+                max_per_family=2,
+                seed=7,
+                persist=True,
+                resume=True,
+                max_workers=6,
+            )
+            batch_result = BatchResult(
+                request=batch_request,
+                status="completed",
+                total_sampled=0,
+                total_executed=0,
+                total_skipped=0,
+                total_failed=0,
+                results=[],
+            )
+            with patch("autonomous_runner.run_batch_experiments", return_value=batch_result), patch(
+                "autonomous_runner.build_batch_request", return_value=batch_request
+            ) as mock_builder:
+                rc = main(["--family", "momentum", "--n", "2", "--seed", "7", "--base-dir", tmp, "--max-workers", "6"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(mock_builder.call_args.kwargs["max_workers"], 6)
 
     def test_main_can_generate_and_run_proposal(self):
         with tempfile.TemporaryDirectory() as tmp:

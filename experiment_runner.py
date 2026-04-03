@@ -20,6 +20,15 @@ from experiment_store import compute_config_hash, has_experiment_result, load_ex
 from experiment_types import ExperimentResult, ExperimentSpec
 
 
+def _default_strategy_type(family: str) -> str:
+    normalized = family.strip().lower()
+    if normalized == "ml_ranker":
+        return "ml"
+    if normalized == "rl_bandit":
+        return "rl"
+    return "classical"
+
+
 def _resolve_benchmark_source(data: dict[str, Any]) -> str:
     close = data.get("close")
     if isinstance(close, pd.DataFrame) and "SPY" in close.columns:
@@ -75,7 +84,12 @@ def _derive_extended_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     if avg_window_days and metrics.get("total_return_pct") is not None:
         avg_days = float(sum(avg_window_days) / len(avg_window_days))
         total_return = float(metrics["total_return_pct"]) / 100.0
-        enriched["annual_return"] = round((((1.0 + total_return) ** (252.0 / max(avg_days, 1.0))) - 1.0) * 100.0, 4)
+        growth = 1.0 + total_return
+        if avg_days > 0 and growth > 0:
+            annualized = (growth ** (252.0 / avg_days)) - 1.0
+            enriched["annual_return"] = round(float(annualized) * 100.0, 4)
+        else:
+            enriched["annual_return"] = None
     else:
         enriched["annual_return"] = None
 
@@ -177,6 +191,8 @@ def _make_experiment_spec(
     normalized_config: dict[str, Any],
     data: dict[str, Any],
     experiment_id: str | None = None,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> ExperimentSpec:
     strategy = get_strategy_family(family)
     dataset_id, data_start, data_end = _derive_dataset_identity(data)
@@ -184,6 +200,7 @@ def _make_experiment_spec(
     config_hash = compute_config_hash(family, normalized_config)
     experiment_id = experiment_id or f"{family}_{config_hash}_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
 
+    metadata = metadata or {}
     return ExperimentSpec(
         family=family,
         params=normalized_config,
@@ -200,6 +217,23 @@ def _make_experiment_spec(
         split="walk-forward",
         git_commit=_resolve_git_commit(),
         family_version=strategy.hypothesis,
+        strategy_type=metadata.get("strategy_type") or _default_strategy_type(family),
+        source_type=metadata.get("source_type"),
+        template_id=metadata.get("template_id"),
+        hypothesis=metadata.get("hypothesis"),
+        reason_selected=metadata.get("reason_selected"),
+        novelty_score=metadata.get("novelty_score"),
+        exploration_mode=metadata.get("exploration_mode"),
+        proposal_role=metadata.get("proposal_role"),
+        region_label=metadata.get("region_label"),
+        duplicate_risk=metadata.get("duplicate_risk"),
+        dead_zone_risk=metadata.get("dead_zone_risk"),
+        parent_config_hash=metadata.get("parent_config_hash"),
+        near_duplicate_of=metadata.get("near_duplicate_of"),
+        dead_zone_flags=metadata.get("dead_zone_flags"),
+        selection_score=metadata.get("selection_score"),
+        source_proposal_id=metadata.get("source_proposal_id"),
+        source_batch_id=metadata.get("source_batch_id"),
     )
 
 
@@ -208,10 +242,13 @@ def _make_invalid_spec(
     config: dict[str, Any],
     data: dict[str, Any],
     experiment_id: str | None = None,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> ExperimentSpec:
     dataset_id, data_start, data_end = _derive_dataset_identity(data)
     timestamp_utc = datetime.now(UTC).isoformat()
     normalized_family = family.strip().lower()
+    metadata = metadata or {}
     return ExperimentSpec(
         family=normalized_family,
         params=dict(config or {}),
@@ -228,6 +265,23 @@ def _make_invalid_spec(
         split="walk-forward",
         git_commit=_resolve_git_commit(),
         family_version=None,
+        strategy_type=metadata.get("strategy_type") or _default_strategy_type(normalized_family),
+        source_type=metadata.get("source_type"),
+        template_id=metadata.get("template_id"),
+        hypothesis=metadata.get("hypothesis"),
+        reason_selected=metadata.get("reason_selected"),
+        novelty_score=metadata.get("novelty_score"),
+        exploration_mode=metadata.get("exploration_mode"),
+        proposal_role=metadata.get("proposal_role"),
+        region_label=metadata.get("region_label"),
+        duplicate_risk=metadata.get("duplicate_risk"),
+        dead_zone_risk=metadata.get("dead_zone_risk"),
+        parent_config_hash=metadata.get("parent_config_hash"),
+        near_duplicate_of=metadata.get("near_duplicate_of"),
+        dead_zone_flags=metadata.get("dead_zone_flags"),
+        selection_score=metadata.get("selection_score"),
+        source_proposal_id=metadata.get("source_proposal_id"),
+        source_batch_id=metadata.get("source_batch_id"),
     )
 
 
@@ -260,6 +314,23 @@ def _result_from_loaded(payload: dict[str, Any], status: str) -> ExperimentResul
         split=spec_dict.get("split", "walk-forward"),
         git_commit=spec_dict.get("git_commit"),
         family_version=spec_dict.get("family_version"),
+        strategy_type=spec_dict.get("strategy_type"),
+        source_type=spec_dict.get("source_type"),
+        template_id=spec_dict.get("template_id"),
+        hypothesis=spec_dict.get("hypothesis"),
+        reason_selected=spec_dict.get("reason_selected"),
+        novelty_score=spec_dict.get("novelty_score"),
+        exploration_mode=spec_dict.get("exploration_mode"),
+        proposal_role=spec_dict.get("proposal_role"),
+        region_label=spec_dict.get("region_label"),
+        duplicate_risk=spec_dict.get("duplicate_risk"),
+        dead_zone_risk=spec_dict.get("dead_zone_risk"),
+        parent_config_hash=spec_dict.get("parent_config_hash"),
+        near_duplicate_of=spec_dict.get("near_duplicate_of"),
+        dead_zone_flags=spec_dict.get("dead_zone_flags"),
+        selection_score=spec_dict.get("selection_score"),
+        source_proposal_id=spec_dict.get("source_proposal_id"),
+        source_batch_id=spec_dict.get("source_batch_id"),
     )
     return ExperimentResult(
         spec=result_spec,
@@ -283,6 +354,8 @@ def run_single_experiment(
     base_dir: str = "experiments",
     experiment_id: str | None = None,
     compare_to_baseline: str | None = None,
+    idea_metadata: dict[str, Any] | None = None,
+    spec: ExperimentSpec | None = None,
 ) -> ExperimentResult:
     started = time.time()
     data = data or load_data()
@@ -290,7 +363,13 @@ def run_single_experiment(
     try:
         normalized_config = normalize_experiment_config(family, config)
     except ValueError as exc:
-        spec = _make_invalid_spec(family, dict(config or {}), data, experiment_id=experiment_id)
+        spec = _make_invalid_spec(
+            family,
+            dict(config or {}),
+            data,
+            experiment_id=experiment_id,
+            metadata=idea_metadata,
+        )
         return ExperimentResult(
             spec=spec,
             status="invalid",
@@ -305,7 +384,13 @@ def run_single_experiment(
 
     valid, error_message = validate_experiment_config(family, config)
     if not valid:
-        spec = _make_invalid_spec(family, normalized_config, data, experiment_id=experiment_id)
+        spec = _make_invalid_spec(
+            family,
+            normalized_config,
+            data,
+            experiment_id=experiment_id,
+            metadata=idea_metadata,
+        )
         return ExperimentResult(
             spec=spec,
             status="invalid",
@@ -318,7 +403,13 @@ def run_single_experiment(
             runtime_seconds=round(time.time() - started, 6),
         )
 
-    spec = _make_experiment_spec(family.strip().lower(), normalized_config, data, experiment_id=experiment_id)
+    spec = spec or _make_experiment_spec(
+        family.strip().lower(),
+        normalized_config,
+        data,
+        experiment_id=experiment_id,
+        metadata=idea_metadata,
+    )
 
     if persist and has_experiment_result(spec.config_hash, family=spec.family, base_dir=base_dir):
         loaded = load_experiment_result(spec.config_hash, family=spec.family, base_dir=base_dir)
@@ -412,6 +503,7 @@ def run_experiment_batch(
             persist=True,
             base_dir=base_dir,
             experiment_id=spec.experiment_id or None,
+            spec=spec,
         )
         results.append(result)
     return results

@@ -21,6 +21,23 @@ class ExperimentSpec:
     split: str = "walk-forward"
     git_commit: str | None = None
     family_version: str | None = None
+    strategy_type: str | None = None
+    source_type: str | None = None
+    template_id: str | None = None
+    hypothesis: str | None = None
+    reason_selected: str | None = None
+    novelty_score: float | None = None
+    exploration_mode: str | None = None
+    proposal_role: str | None = None
+    region_label: str | None = None
+    duplicate_risk: str | None = None
+    dead_zone_risk: float | None = None
+    parent_config_hash: str | None = None
+    near_duplicate_of: str | None = None
+    dead_zone_flags: list[str] | None = None
+    selection_score: float | None = None
+    source_proposal_id: str | None = None
+    source_batch_id: str | None = None
 
     @property
     def strategy_family(self) -> str:
@@ -64,9 +81,13 @@ class BatchRequest:
     persist: bool = True
     resume: bool = True
     objective_name: str = "wf_v1_score"
+    max_workers: int | None = None
+    fail_fast: bool = False
+    execution_mode: str = "auto"
     include_filters: dict[str, Any] | None = None
     exclude_filters: dict[str, Any] | None = None
     precomputed_configs: dict[str, list[dict[str, Any]]] | None = None
+    precomputed_specs: dict[str, list[ExperimentSpec]] | None = None
     source_proposal_id: str | None = None
 
 
@@ -79,6 +100,9 @@ class BatchResult:
     total_skipped: int
     total_failed: int
     results: list[ExperimentResult]
+    max_workers: int | None = None
+    execution_mode: str = "sequential"
+    worker_failures: int = 0
     leaderboard_path: str | None = None
     raw_results_path: str | None = None
     summary_path: str | None = None
@@ -93,11 +117,17 @@ class ProposalRequest:
     objective_name: str = "wf_v1_score"
     baseline_name: str | None = None
     seed: int = 42
-    exploration_fraction: float = 0.30
-    exploitation_fraction: float = 0.70
+    exploration_fraction: float = 0.65
+    exploitation_fraction: float = 0.35
     max_experiments: int = 20
     per_family_budgets: dict[str, int] | None = None
     resume: bool = True
+    novelty_floor: float = 0.15
+    template_fraction: float = 0.50
+    cross_family_fraction: float = 0.20
+    max_near_duplicate_distance: int = 1
+    stagnation_escape_batches: int = 3
+    allow_external_seeds: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,5 +136,6 @@ class ProposalResult:
     status: str
     candidate_configs: dict[str, list[dict[str, Any]]]
     reasoning_summary: dict[str, Any]
+    candidate_metadata: dict[str, list[dict[str, Any]]] | None = None
     proposal_path: str | None = None
     summary_path: str | None = None

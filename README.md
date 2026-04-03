@@ -186,6 +186,10 @@ cat program.md
 tmux attach -t sp500
 ```
 
+## Autonomous Runner Ops
+
+For the unattended proposal + batch loop using `tmux`, `cron`, and `flock`, see [docs/autonomous_ops.md](/home/mrlearn/sp500-autoresearch/docs/autonomous_ops.md).
+
 ---
 
 ## Research Frontier

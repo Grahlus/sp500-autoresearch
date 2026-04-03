@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+import fcntl
 import pandas as pd
 
 
@@ -36,6 +40,25 @@ INDEX_COLUMNS = [
     "data_end",
     "git_commit",
     "family_version",
+    "strategy_type",
+    "source_type",
+    "template_id",
+    "hypothesis",
+    "reason_selected",
+    "novelty_score",
+    "selection_score",
+    "exploration_mode",
+    "proposal_role",
+    "region_label",
+    "duplicate_risk",
+    "dead_zone_risk",
+    "parent_config_hash",
+    "near_duplicate_of",
+    "dead_zone_flags",
+    "source_proposal_id",
+    "max_workers",
+    "fail_fast",
+    "execution_mode",
     "baseline_name",
     "comparison_status",
     "baseline_verified",
@@ -77,6 +100,7 @@ def init_store(base_dir: str = "experiments") -> None:
     base = Path(base_dir)
     (base / "runs").mkdir(parents=True, exist_ok=True)
     (base / "proposals").mkdir(parents=True, exist_ok=True)
+    (base / "run").mkdir(parents=True, exist_ok=True)
     index_path = base / "index.csv"
     if not index_path.exists():
         pd.DataFrame(columns=INDEX_COLUMNS).to_csv(index_path, index=False)
@@ -87,12 +111,20 @@ def init_store(base_dir: str = "experiments") -> None:
 
 def load_results_index(base_dir: str = "experiments") -> pd.DataFrame:
     init_store(base_dir)
-    return pd.read_csv(Path(base_dir) / "index.csv")
+    index = pd.read_csv(Path(base_dir) / "index.csv")
+    for column in INDEX_COLUMNS:
+        if column not in index.columns:
+            index[column] = None
+    return index[INDEX_COLUMNS + [column for column in index.columns if column not in INDEX_COLUMNS]]
 
 
 def load_proposals_index(base_dir: str = "experiments") -> pd.DataFrame:
     init_store(base_dir)
-    return pd.read_csv(Path(base_dir) / "proposals" / "index.csv")
+    index = pd.read_csv(Path(base_dir) / "proposals" / "index.csv")
+    for column in PROPOSAL_INDEX_COLUMNS:
+        if column not in index.columns:
+            index[column] = None
+    return index[PROPOSAL_INDEX_COLUMNS + [column for column in index.columns if column not in PROPOSAL_INDEX_COLUMNS]]
 
 
 def _to_jsonable(value: Any):
@@ -103,6 +135,32 @@ def _to_jsonable(value: Any):
 
 def _result_dir(base_dir: str, experiment_id: str) -> Path:
     return Path(base_dir) / "runs" / experiment_id
+
+
+def _store_lock_path(base_dir: str) -> Path:
+    return Path(base_dir) / "run" / "store.lock"
+
+
+@contextmanager
+def _locked_store(base_dir: str):
+    init_store(base_dir)
+    lock_path = _store_lock_path(base_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.touch(exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, prefix=path.name + ".", suffix=".tmp", encoding="utf-8") as handle:
+        handle.write(content)
+        tmp_path = Path(handle.name)
+    os.replace(tmp_path, path)
 
 
 def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
@@ -137,6 +195,25 @@ def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
         "data_end": spec.get("data_end"),
         "git_commit": spec.get("git_commit"),
         "family_version": spec.get("family_version"),
+        "strategy_type": spec.get("strategy_type"),
+        "source_type": spec.get("source_type"),
+        "template_id": spec.get("template_id"),
+        "hypothesis": spec.get("hypothesis"),
+        "reason_selected": spec.get("reason_selected"),
+        "novelty_score": spec.get("novelty_score"),
+        "selection_score": spec.get("selection_score"),
+        "exploration_mode": spec.get("exploration_mode"),
+        "proposal_role": spec.get("proposal_role"),
+        "region_label": spec.get("region_label"),
+        "duplicate_risk": spec.get("duplicate_risk"),
+        "dead_zone_risk": spec.get("dead_zone_risk"),
+        "parent_config_hash": spec.get("parent_config_hash"),
+        "near_duplicate_of": spec.get("near_duplicate_of"),
+        "dead_zone_flags": json.dumps(spec.get("dead_zone_flags")) if spec.get("dead_zone_flags") is not None else None,
+        "source_proposal_id": spec.get("source_proposal_id"),
+        "max_workers": spec.get("max_workers"),
+        "fail_fast": spec.get("fail_fast"),
+        "execution_mode": spec.get("execution_mode"),
         "baseline_name": baseline.get("baseline_name"),
         "comparison_status": baseline.get("comparison_status"),
         "baseline_verified": baseline.get("baseline_verified"),
@@ -202,21 +279,41 @@ def load_experiment_result(config_hash: str, family: str | None = None, base_dir
 
 
 def save_experiment_result(result: dict[str, Any], base_dir: str = "experiments") -> None:
+    save_experiment_result_atomic(result, base_dir=base_dir)
+
+
+def save_experiment_result_atomic(result: dict[str, Any], base_dir: str = "experiments") -> bool:
     init_store(base_dir)
     result = _serialize_result(result)
     spec = result["spec"]
     experiment_id = spec["experiment_id"]
     result_dir = _result_dir(base_dir, experiment_id)
-    result_dir.mkdir(parents=True, exist_ok=True)
-
-    (result_dir / "spec.json").write_text(json.dumps(spec, indent=2, sort_keys=True, default=_to_jsonable))
-    (result_dir / "metrics.json").write_text(json.dumps(result.get("metrics", {}), indent=2, sort_keys=True, default=_to_jsonable))
-    (result_dir / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True, default=_to_jsonable))
-
-    index = load_results_index(base_dir)
     row = _flatten_result(result, result_dir)
-    index = pd.concat([index, pd.DataFrame([row], columns=INDEX_COLUMNS)], ignore_index=True)
-    index.to_csv(Path(base_dir) / "index.csv", index=False)
+
+    with _locked_store(base_dir):
+        index_path = Path(base_dir) / "index.csv"
+        index = pd.read_csv(index_path)
+        family = row.get("strategy_family")
+        config_hash = row.get("config_hash")
+        if config_hash is not None:
+            matches = index[index["config_hash"] == config_hash]
+            if family is not None and not matches.empty:
+                matches = matches[matches["strategy_family"] == family]
+            if not matches.empty and (matches["status"] == "success").any():
+                return False
+
+        result_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(result_dir / "spec.json", json.dumps(spec, indent=2, sort_keys=True, default=_to_jsonable))
+        _atomic_write_text(
+            result_dir / "metrics.json",
+            json.dumps(result.get("metrics", {}), indent=2, sort_keys=True, default=_to_jsonable),
+        )
+        _atomic_write_text(result_dir / "result.json", json.dumps(result, indent=2, sort_keys=True, default=_to_jsonable))
+
+        index = pd.concat([index, pd.DataFrame([row], columns=INDEX_COLUMNS)], ignore_index=True)
+        _atomic_write_text(index_path, index.to_csv(index=False))
+
+    return True
 
 
 def load_prior_results(family: str | None = None, base_dir: str = "experiments") -> pd.DataFrame:
@@ -227,6 +324,10 @@ def load_prior_results(family: str | None = None, base_dir: str = "experiments")
 
 
 def save_proposal_result(proposal: dict[str, Any], base_dir: str = "experiments") -> dict[str, str]:
+    return save_proposal_result_atomic(proposal, base_dir=base_dir)
+
+
+def save_proposal_result_atomic(proposal: dict[str, Any], base_dir: str = "experiments") -> dict[str, str]:
     init_store(base_dir)
     request = proposal["request"]
     proposal_id = request["proposal_id"]
@@ -237,31 +338,35 @@ def save_proposal_result(proposal: dict[str, Any], base_dir: str = "experiments"
     summary_path = proposal_dir / "summary.json"
     candidates_path = proposal_dir / "candidate_configs.json"
 
-    proposal_path.write_text(json.dumps(proposal, indent=2, sort_keys=True, default=_to_jsonable))
-    summary_path.write_text(
-        json.dumps(proposal.get("reasoning_summary", {}), indent=2, sort_keys=True, default=_to_jsonable)
-    )
-    candidates_path.write_text(
-        json.dumps(proposal.get("candidate_configs", {}), indent=2, sort_keys=True, default=_to_jsonable)
-    )
+    with _locked_store(base_dir):
+        _atomic_write_text(proposal_path, json.dumps(proposal, indent=2, sort_keys=True, default=_to_jsonable))
+        _atomic_write_text(
+            summary_path,
+            json.dumps(proposal.get("reasoning_summary", {}), indent=2, sort_keys=True, default=_to_jsonable),
+        )
+        _atomic_write_text(
+            candidates_path,
+            json.dumps(proposal.get("candidate_configs", {}), indent=2, sort_keys=True, default=_to_jsonable),
+        )
 
-    index = load_proposals_index(base_dir)
-    row = {
-        "proposal_id": proposal_id,
-        "timestamp_utc": request.get("timestamp_utc"),
-        "strategy_families": ",".join(request.get("strategy_families", [])),
-        "source_batch_ids": ",".join(request.get("source_batch_ids", [])),
-        "objective_name": request.get("objective_name"),
-        "baseline_name": request.get("baseline_name"),
-        "seed": request.get("seed"),
-        "exploration_fraction": request.get("exploration_fraction"),
-        "exploitation_fraction": request.get("exploitation_fraction"),
-        "max_experiments": request.get("max_experiments"),
-        "status": proposal.get("status"),
-        "proposal_dir": str(proposal_dir),
-    }
-    index = pd.concat([index, pd.DataFrame([row], columns=PROPOSAL_INDEX_COLUMNS)], ignore_index=True)
-    index.to_csv(Path(base_dir) / "proposals" / "index.csv", index=False)
+        index = load_proposals_index(base_dir)
+        row = {
+            "proposal_id": proposal_id,
+            "timestamp_utc": request.get("timestamp_utc"),
+            "strategy_families": ",".join(request.get("strategy_families", [])),
+            "source_batch_ids": ",".join(request.get("source_batch_ids", [])),
+            "objective_name": request.get("objective_name"),
+            "baseline_name": request.get("baseline_name"),
+            "seed": request.get("seed"),
+            "exploration_fraction": request.get("exploration_fraction"),
+            "exploitation_fraction": request.get("exploitation_fraction"),
+            "max_experiments": request.get("max_experiments"),
+            "status": proposal.get("status"),
+            "proposal_dir": str(proposal_dir),
+        }
+        index = pd.concat([index, pd.DataFrame([row], columns=PROPOSAL_INDEX_COLUMNS)], ignore_index=True)
+        _atomic_write_text(Path(base_dir) / "proposals" / "index.csv", index.to_csv(index=False))
+
     return {
         "proposal_path": str(proposal_path),
         "summary_path": str(summary_path),

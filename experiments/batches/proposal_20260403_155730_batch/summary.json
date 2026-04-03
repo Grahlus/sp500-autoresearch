@@ -1,0 +1,26 @@
+{
+  "batch_id": "proposal_20260403_155730_batch",
+  "family_summary": {
+    "momentum": {
+      "best_experiment_id": "momentum_f107feccefd0a38a_20260403155730",
+      "best_objective_score": 1.15765,
+      "executed": 2,
+      "failed": 0,
+      "results": 2,
+      "skipped": 0
+    }
+  },
+  "sampler_type": "random",
+  "source_proposal_id": "proposal_20260403_155730",
+  "status_counts": {
+    "success": 2
+  },
+  "strategy_families": [
+    "momentum"
+  ],
+  "timestamp_utc": "2026-04-03T15:57:30.649779+00:00",
+  "total_executed": 2,
+  "total_failed": 0,
+  "total_sampled": 2,
+  "total_skipped": 0
+}

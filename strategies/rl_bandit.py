@@ -1,0 +1,9 @@
+from __future__ import annotations
+
+from .research_models import generate_rl_bandit_signals_with_config, load_rl_bandit
+
+generate_signals = generate_rl_bandit_signals_with_config
+generate_signals_with_config = generate_rl_bandit_signals_with_config
+
+load = load_rl_bandit
+

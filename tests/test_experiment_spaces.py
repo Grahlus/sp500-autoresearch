@@ -13,6 +13,8 @@ class ExperimentSpacesTests(unittest.TestCase):
     def test_list_searchable_families(self):
         self.assertIn("momentum", list_searchable_families())
         self.assertIn("superstock", list_searchable_families())
+        self.assertIn("ml_ranker", list_searchable_families())
+        self.assertIn("rl_bandit", list_searchable_families())
 
     def test_default_config_matches_current_momentum_defaults(self):
         defaults = get_family_default_config("momentum")
@@ -29,6 +31,14 @@ class ExperimentSpacesTests(unittest.TestCase):
         self.assertEqual(defaults["price_max"], 15.0)
         self.assertEqual(defaults["rs_rank_26w_min"], 0.70)
 
+    def test_default_config_matches_ml_and_rl_defaults(self):
+        ml_defaults = get_family_default_config("ml_ranker")
+        rl_defaults = get_family_default_config("rl_bandit")
+        self.assertEqual(ml_defaults["model_type"], "ridge")
+        self.assertEqual(ml_defaults["lookback_days"], 252)
+        self.assertEqual(rl_defaults["policy_type"], "ucb")
+        self.assertEqual(rl_defaults["max_positions"], 5)
+
     def test_momentum_conditionals_are_normalized(self):
         config = normalize_experiment_config(
             "momentum",
@@ -43,6 +53,17 @@ class ExperimentSpacesTests(unittest.TestCase):
         self.assertIsNone(config["STOP_LOSS_PCT"])
         self.assertIsNone(config["STOP_PARABOLIC"])
         self.assertIsNone(config["RANK_EXIT_CONFIRM"])
+
+    def test_momentum_fixed_stop_accepts_nullable_parabolic_input(self):
+        valid, message = validate_experiment_config(
+            "momentum",
+            {
+                "STOP_TYPE": "fixed",
+                "STOP_PARABOLIC": None,
+            },
+        )
+        self.assertTrue(valid)
+        self.assertIsNone(message)
 
     def test_superstock_price_band_is_normalized(self):
         config = normalize_experiment_config(
@@ -66,6 +87,8 @@ class ExperimentSpacesTests(unittest.TestCase):
         self.assertEqual(spec["type"], "int")
         self.assertIn("default", spec)
         self.assertIn("choices", spec)
+        ml_spec = get_family_search_space("ml_ranker")["model_type"]
+        self.assertEqual(ml_spec["type"], "categorical")
 
 
 if __name__ == "__main__":

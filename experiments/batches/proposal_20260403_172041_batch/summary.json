@@ -1,0 +1,35 @@
+{
+  "batch_id": "proposal_20260403_172041_batch",
+  "family_summary": {
+    "momentum": {
+      "best_experiment_id": "momentum_c99ba99ff8ea3c22_20260403172047",
+      "best_objective_score": 1.5763,
+      "executed": 6,
+      "failed": 0,
+      "results": 6,
+      "skipped": 0
+    },
+    "superstock": {
+      "best_experiment_id": "superstock_6b3a48e4e20bcfc9_20260403172122",
+      "best_objective_score": 1.4212,
+      "executed": 4,
+      "failed": 0,
+      "results": 4,
+      "skipped": 0
+    }
+  },
+  "sampler_type": "random",
+  "source_proposal_id": "proposal_20260403_172041",
+  "status_counts": {
+    "success": 10
+  },
+  "strategy_families": [
+    "momentum",
+    "superstock"
+  ],
+  "timestamp_utc": "2026-04-03T17:20:41.891934+00:00",
+  "total_executed": 10,
+  "total_failed": 0,
+  "total_sampled": 10,
+  "total_skipped": 0
+}

@@ -1,0 +1,11 @@
+experiment_id,strategy_family,config_hash,objective_score,sharpe,calmar,total_return,max_drawdown,trades_per_year,exposure,status,viable,baseline_name,comparison_status,delta_sharpe,delta_calmar,delta_return,beats_baseline_objective,beats_baseline_guardrails,runtime_seconds,error_message
+momentum_e59f68426635b89e_20260403165628,momentum,e59f68426635b89e,1.5763,0.808,3.002,15.9,-21.21,31.9,,success,True,momentum_champion_s10005,exact_verified_current_engine,0.102,0.861,3.16,True,True,5.768836,
+momentum_e9a662ed0b05eb06_20260403165634,momentum,e9a662ed0b05eb06,1.36935,0.682,2.889,12.7,-23.37,31.8,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.024,0.748,-0.04,True,False,5.470471,
+superstock_d0ac807b2742147f_20260403165723,superstock,d0ac807b2742147f,1.1061,-0.112,8.246,-0.94,-5.83,5.7,,success,False,,,,,,,,8.928699,
+momentum_08a5b42c5a6387e7_20260403165645,momentum,08a5b42c5a6387e7,0.74325,0.465,1.719,5.53,-29.51,41.7,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.241,-0.422,-7.21,False,False,5.186274,
+momentum_09254fcc5cfedd3e_20260403165623,momentum,09254fcc5cfedd3e,0.51495,0.235,1.369,3.73,-23.0,33.2,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.471,-0.772,-9.01,False,False,5.472141,
+momentum_64f2c9e0c3ecda85_20260403165651,momentum,64f2c9e0c3ecda85,0.32139999999999996,0.186,0.552,2.63,-22.97,31.5,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.52,-1.589,-10.11,False,False,3.891396,
+momentum_499578439945cd11_20260403165640,momentum,499578439945cd11,0.21149999999999997,0.128,1.126,0.22,-29.49,54.2,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.578,-1.015,-12.52,False,False,5.873515,
+superstock_9659b5bb56a95b1b_20260403165655,superstock,9659b5bb56a95b1b,0.0897,0.002,0.614,-0.22,-6.74,6.0,,success,False,,,,,,,,9.486676,
+superstock_6a5fe57252cc0b97_20260403165704,superstock,6a5fe57252cc0b97,0.0897,0.002,0.614,-0.22,-6.74,6.0,,success,False,,,,,,,,9.451541,
+superstock_765f74af83c75143_20260403165713,superstock,765f74af83c75143,-0.39394999999999997,-0.352,0.131,-3.08,-12.15,10.9,,success,False,,,,,,,,9.215937,

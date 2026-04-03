@@ -6,6 +6,18 @@ from typing import Any
 
 
 SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
+    "ml_ranker": {
+        "model_type": {"name": "model_type", "type": "categorical", "default": "ridge", "choices": ["ridge", "hgb"], "log_scale": False, "nullable": False},
+        "lookback_days": {"name": "lookback_days", "type": "int", "default": 252, "choices": [126, 252, 504], "log_scale": False, "nullable": False},
+        "horizon_days": {"name": "horizon_days", "type": "int", "default": 10, "choices": [5, 10, 20], "log_scale": False, "nullable": False},
+        "rebalance_days": {"name": "rebalance_days", "type": "int", "default": 5, "choices": [5, 10], "log_scale": False, "nullable": False},
+        "top_pct": {"name": "top_pct", "type": "float", "default": 0.03, "choices": [0.025, 0.03, 0.05], "log_scale": False, "nullable": False},
+        "max_positions": {"name": "max_positions", "type": "int", "default": 10, "choices": [5, 10, 20], "log_scale": False, "nullable": False},
+        "feature_set": {"name": "feature_set", "type": "categorical", "default": "trend_volume", "choices": ["trend", "trend_volume", "full"], "log_scale": False, "nullable": False},
+        "allow_short": {"name": "allow_short", "type": "bool", "default": False, "choices": [False, True], "log_scale": False, "nullable": False},
+        "use_vix_gate": {"name": "use_vix_gate", "type": "bool", "default": True, "choices": [False, True], "log_scale": False, "nullable": False},
+        "use_fear_greed_gate": {"name": "use_fear_greed_gate", "type": "bool", "default": False, "choices": [False, True], "log_scale": False, "nullable": False},
+    },
     "momentum": {
         "LOOKBACK_WEEKS": {"name": "LOOKBACK_WEEKS", "type": "int", "default": 26, "choices": [20, 26, 39], "log_scale": False, "nullable": False},
         "SKIP_WEEKS": {"name": "SKIP_WEEKS", "type": "int", "default": 3, "choices": [2, 3, 4], "log_scale": False, "nullable": False},
@@ -43,6 +55,18 @@ SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "parabolic_above_10w_min": {"name": "parabolic_above_10w_min", "type": "float", "default": 0.20, "choices": [0.15, 0.20, 0.25], "log_scale": False, "nullable": False},
         "late_stage_range_mult": {"name": "late_stage_range_mult", "type": "float", "default": 1.75, "choices": [1.50, 1.75, 2.00], "log_scale": False, "nullable": False},
         "late_stage_volume_mult": {"name": "late_stage_volume_mult", "type": "float", "default": 2.00, "choices": [1.50, 2.00, 2.50], "log_scale": False, "nullable": False},
+    },
+    "rl_bandit": {
+        "policy_type": {"name": "policy_type", "type": "categorical", "default": "ucb", "choices": ["ucb", "epsilon_greedy"], "log_scale": False, "nullable": False},
+        "lookback_days": {"name": "lookback_days", "type": "int", "default": 252, "choices": [126, 252], "log_scale": False, "nullable": False},
+        "rebalance_days": {"name": "rebalance_days", "type": "int", "default": 5, "choices": [5, 10], "log_scale": False, "nullable": False},
+        "epsilon": {"name": "epsilon", "type": "float", "default": 0.10, "choices": [0.05, 0.10, 0.20], "log_scale": False, "nullable": False},
+        "ucb_bonus": {"name": "ucb_bonus", "type": "float", "default": 1.0, "choices": [0.5, 1.0, 2.0], "log_scale": False, "nullable": False},
+        "max_positions": {"name": "max_positions", "type": "int", "default": 5, "choices": [3, 5, 8], "log_scale": False, "nullable": False},
+        "momentum_top_pct": {"name": "momentum_top_pct", "type": "float", "default": 0.03, "choices": [0.025, 0.03, 0.05], "log_scale": False, "nullable": False},
+        "superstock_top_pct": {"name": "superstock_top_pct", "type": "float", "default": 0.03, "choices": [0.025, 0.03, 0.05], "log_scale": False, "nullable": False},
+        "use_vix_gate": {"name": "use_vix_gate", "type": "bool", "default": True, "choices": [False, True], "log_scale": False, "nullable": False},
+        "use_fear_greed_gate": {"name": "use_fear_greed_gate", "type": "bool", "default": True, "choices": [False, True], "log_scale": False, "nullable": False},
     },
 }
 
@@ -117,6 +141,10 @@ def normalize_experiment_config(family: str, config: dict[str, Any]) -> dict[str
     for name, spec in space.items():
         raw_value = config[name] if name in config else spec["default"]
         value = _coerce_value(spec, raw_value)
+
+        if value is None:
+            normalized[name] = value
+            continue
 
         choices = spec.get("choices")
         skip_choice_check = family == "superstock" and name in {"price_min", "price_max"}

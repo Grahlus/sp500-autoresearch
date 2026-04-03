@@ -1,0 +1,11 @@
+experiment_id,strategy_family,config_hash,objective_score,sharpe,calmar,total_return,max_drawdown,trades_per_year,exposure,status,viable,baseline_name,comparison_status,delta_sharpe,delta_calmar,delta_return,beats_baseline_objective,beats_baseline_guardrails,runtime_seconds,error_message
+momentum_c99ba99ff8ea3c22_20260403172047,momentum,c99ba99ff8ea3c22,1.5763,0.808,3.002,15.9,-21.21,31.9,,success,True,momentum_champion_s10005,exact_verified_current_engine,0.102,0.861,3.16,True,True,5.312834,
+momentum_d2b14fdee1e31bc9_20260403172042,momentum,d2b14fdee1e31bc9,1.37355,0.767,2.245,13.49,-21.4,32.1,,success,True,momentum_champion_s10005,exact_verified_current_engine,0.061,0.104,0.75,True,True,5.526092,
+momentum_62e4722041146c3b_20260403172053,momentum,62e4722041146c3b,1.27555,0.727,2.077,11.85,-22.27,32.1,,success,True,momentum_champion_s10005,exact_verified_current_engine,0.021,-0.064,-0.89,False,True,5.268892,
+superstock_6b3a48e4e20bcfc9_20260403172122,superstock,6b3a48e4e20bcfc9,1.4212,0.132,8.532,0.47,-2.63,2.3,,success,False,,,,,,,,8.939289,
+superstock_9e096791f8ae88d2_20260403172113,superstock,9e096791f8ae88d2,1.1061,-0.112,8.246,-0.94,-5.83,5.7,,success,False,,,,,,,,9.2316,
+superstock_34fda3a20bf580b4_20260403172131,superstock,34fda3a20bf580b4,1.1061,-0.112,8.246,-0.94,-5.83,5.7,,success,False,,,,,,,,9.028635,
+momentum_1af22868f13dccc5_20260403172108,momentum,1af22868f13dccc5,0.7721,0.441,1.462,6.6,-26.01,13.2,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.265,-0.679,-6.14,False,False,5.114229,
+momentum_8bc123d828faae49_20260403172058,momentum,8bc123d828faae49,0.5138000000000001,0.231,1.992,3.6,-29.4,53.4,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.475,-0.149,-9.14,False,False,5.90166,
+superstock_98f9605c32e88df6_20260403172140,superstock,98f9605c32e88df6,-0.16785,-0.185,0.205,-0.68,-7.47,6.3,,success,False,,,,,,,,9.081463,
+momentum_89d8716fefaf9608_20260403172104,momentum,89d8716fefaf9608,-0.21504999999999996,-0.181,0.373,-2.35,-27.15,32.2,,success,False,momentum_champion_s10005,exact_verified_current_engine,-0.887,-1.768,-15.09,False,False,3.985377,

@@ -1,0 +1,3 @@
+experiment_id,strategy_family,config_hash,objective_score,sharpe,calmar,total_return,max_drawdown,trades_per_year,exposure,status,viable,baseline_name,comparison_status,delta_sharpe,delta_calmar,delta_return,beats_baseline_objective,beats_baseline_guardrails,runtime_seconds,error_message
+momentum_f107feccefd0a38a_20260403155730,momentum,f107feccefd0a38a,1.15765,0.649,1.995,10.47,-22.8,32.6,,success,True,momentum_champion_s10005,exact_verified_current_engine,-0.057,-0.146,-2.27,False,True,5.281441,
+momentum_3e428709df006c40_20260403155736,momentum,3e428709df006c40,1.0626,0.569,1.476,14.48,-25.87,18.4,,success,True,momentum_champion_s10005,exact_verified_current_engine,-0.137,-0.665,1.74,False,True,5.354493,
