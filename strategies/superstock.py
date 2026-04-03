@@ -48,15 +48,18 @@ def _build_weight_matrix(
 def build_superstock_pipeline(
     data: dict,
     max_positions: int = MAX_POSITIONS,
+    config: dict | None = None,
 ) -> dict[str, object]:
+    config = dict(config or {})
     close = data["close"]
+    resolved_max_positions = int(config.get("max_positions", max_positions))
 
     weekly = build_superstock_weekly_features(data)
-    screen = build_superstock_screen(data, weekly=weekly)
-    entries = build_superstock_breakout_entries(data, weekly=weekly, screen=screen)
-    exits = build_superstock_exit_signals(data, weekly=weekly, entries=entries)
+    screen = build_superstock_screen(data, weekly=weekly, config=config)
+    entries = build_superstock_breakout_entries(data, weekly=weekly, screen=screen, config=config)
+    exits = build_superstock_exit_signals(data, weekly=weekly, entries=entries, config=config)
     positions = build_superstock_position_mask(entries, exits, execution_lag_days=1)
-    weights = _build_weight_matrix(close, positions, entries, max_positions)
+    weights = _build_weight_matrix(close, positions, entries, resolved_max_positions)
 
     return {
         "weekly": weekly,
@@ -65,18 +68,24 @@ def build_superstock_pipeline(
         "exits": exits,
         "positions": positions,
         "weights": weights,
+        "config": config,
     }
 
 
 def build_superstock_weights(
     data: dict,
     max_positions: int = MAX_POSITIONS,
+    config: dict | None = None,
 ) -> pd.DataFrame:
-    return build_superstock_pipeline(data, max_positions=max_positions)["weights"]
+    return build_superstock_pipeline(data, max_positions=max_positions, config=config)["weights"]
 
 
 def generate_signals(data: dict) -> pd.DataFrame:
     return build_superstock_weights(data)
+
+
+def generate_signals_with_config(data: dict, config: dict) -> pd.DataFrame:
+    return build_superstock_weights(data, config=config)
 
 
 def load() -> StrategyFamily:
@@ -85,4 +94,5 @@ def load() -> StrategyFamily:
         metric=METRIC,
         hypothesis=HYPOTHESIS,
         generate_signals=generate_signals,
+        generate_signals_with_config=generate_signals_with_config,
     )

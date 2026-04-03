@@ -7,7 +7,9 @@ from .superstock_weekly import build_superstock_weekly_features, to_daily_featur
 def build_superstock_trend_template(
     data: dict,
     weekly: SuperstockWeeklyFeatures | None = None,
+    config: dict | None = None,
 ) -> ScreeningResult:
+    config = config or {}
     close = data["close"]
     weekly = weekly or build_superstock_weekly_features(data)
     weekly_daily = to_daily_feature_map(weekly, close.index)
@@ -25,10 +27,10 @@ def build_superstock_trend_template(
         "ma_150d_above_200d": sma_150d > sma_200d,
         "ma_200d_uptrend": sma_200d > sma_200d.shift(20),
         "ma_stack_bullish": (sma_50d > sma_150d) & (sma_150d > sma_200d),
-        "above_52w_low_enough": close >= (low_52w * 1.25),
-        "near_52w_high_enough": close >= (high_52w * 0.75),
-        "rs_rank_26w_min": weekly_daily["rs_rank_26w"] >= 0.70,
-        "rs_rank_52w_min": weekly_daily["rs_rank_52w"] >= 0.70,
+        "above_52w_low_enough": close >= (low_52w * float(config.get("above_52w_low_mult", 1.25))),
+        "near_52w_high_enough": close >= (high_52w * float(config.get("near_52w_high_mult", 0.75))),
+        "rs_rank_26w_min": weekly_daily["rs_rank_26w"] >= float(config.get("rs_rank_26w_min", 0.70)),
+        "rs_rank_52w_min": weekly_daily["rs_rank_52w"] >= float(config.get("rs_rank_52w_min", 0.70)),
         "weekly_above_30w": weekly_daily["weekly_close"] > weekly_daily["ma_30w"],
         "weekly_above_10w": weekly_daily["weekly_close"] > weekly_daily["ma_10w"],
     }

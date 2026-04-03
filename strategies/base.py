@@ -10,3 +10,4 @@ class StrategyFamily:
     metric: str
     hypothesis: str
     generate_signals: Callable[[dict], pd.DataFrame]
+    generate_signals_with_config: Callable[[dict, dict], pd.DataFrame] | None = None

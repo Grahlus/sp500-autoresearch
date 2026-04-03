@@ -1,0 +1,57 @@
+[
+  {
+    "name": "momentum_champion_s10005",
+    "family": "momentum",
+    "config_hash": "67c247dfa6455d67",
+    "config_source": "executable_code",
+    "config": {
+      "EXIT_PCT_RANK": 0.97,
+      "FG_MIN": 10.0,
+      "INV_VOL_DAYS": 15,
+      "LOOKBACK_WEEKS": 26,
+      "MA_WEEKS": 20,
+      "MIN_HOLD_DAYS": 5,
+      "RANK_EXIT_CONFIRM": null,
+      "REBAL_WEEKS": 4,
+      "SKIP_WEEKS": 3,
+      "STOP_LOSS_PCT": 0.2,
+      "STOP_PARABOLIC": 0.3,
+      "STOP_TYPE": "adaptive",
+      "TOP_PCT": 0.025
+    },
+    "historical_metrics": {
+      "val": 1.643,
+      "train": 1.066,
+      "oos": 0.564,
+      "survived_unseen_trading_days": 431
+    },
+    "historical_metrics_note": "These metrics come from the file comment for an earlier starting-point champion and are provenance only. They are not the verified current-engine metrics of executable S10-005 unless separately reproduced.",
+    "metrics_verified_by_current_engine": null,
+    "metric": "sharpe",
+    "hypothesis": "S10-005: adaptive stop (30%/20%) + EXIT_PCT_RANK=0.97 simple exit",
+    "baseline_config_source": "executable_code",
+    "source_of_truth": "uploaded reference file executable code",
+    "reference_file": "references/stock_signal_s10005.py",
+    "reference_id": "s10005",
+    "benchmark_source_expected": "spy_symbol_or_runtime_fallback",
+    "status": "unverified_in_current_engine",
+    "verified_metrics": null,
+    "historical_provenance": {
+      "historical_note_source": "file_comment",
+      "starting_point_champion_note": {
+        "reported_val": 1.643,
+        "reported_train": 1.066,
+        "reported_oos": 0.564,
+        "reported_survived_unseen_days": 431,
+        "reported_config_note": "JT 26w skip=3w rebal=4w top=2.5% stop=20%close-HIGH MA=20w F&G≥22",
+        "note_scope": "earlier starting-point champion",
+        "verification_status": "not_verified_as_s10005_runnable_config"
+      }
+    },
+    "comparison_policy": {
+      "metrics_verification_status": "historical_note_only",
+      "comparison_eligible": false,
+      "comparison_rule": "Use runnable config for execution. Do not use historical note metrics for ranking or champion replacement until reproduced by the current engine."
+    }
+  }
+]

@@ -9,12 +9,14 @@ def build_superstock_exit_signals(
     data: dict,
     weekly: SuperstockWeeklyFeatures | None = None,
     entries: ScreeningResult | None = None,
+    config: dict | None = None,
 ) -> ScreeningResult:
+    config = config or {}
     close = data["close"]
     low = data["low"]
 
     weekly = weekly or build_superstock_weekly_features(data)
-    entries = entries or build_superstock_breakout_entries(data, weekly=weekly)
+    entries = entries or build_superstock_breakout_entries(data, weekly=weekly, config=config)
     weekly_daily = to_daily_feature_map(weekly, close.index)
 
     weekly_close = weekly_daily["weekly_close"]
@@ -33,12 +35,12 @@ def build_superstock_exit_signals(
     prior_weekly_close_not_below_10w = weekly_close.shift(1) >= ma_10w.shift(1)
     support_break_exit = weekly_close_below_10w & prior_weekly_close_not_below_10w
 
-    parabolic_extension_from_pivot = breakout_pct_above_pivot >= 0.25
-    parabolic_extension_above_10w = extension_above_10w >= 0.20
+    parabolic_extension_from_pivot = breakout_pct_above_pivot >= float(config.get("parabolic_from_pivot_min", 0.25))
+    parabolic_extension_above_10w = extension_above_10w >= float(config.get("parabolic_above_10w_min", 0.20))
     parabolic_extension_exit = parabolic_extension_from_pivot | parabolic_extension_above_10w
 
-    weekly_range_expansion_vs_base = range_pct_1w >= (range_pct_median_26w * 1.75)
-    weekly_volume_surge_vs_base = weekly_volume_ratio_26w >= 2.0
+    weekly_range_expansion_vs_base = range_pct_1w >= (range_pct_median_26w * float(config.get("late_stage_range_mult", 1.75)))
+    weekly_volume_surge_vs_base = weekly_volume_ratio_26w >= float(config.get("late_stage_volume_mult", 2.0))
     late_stage_hv_exit = (
         weekly_range_expansion_vs_base
         & weekly_volume_surge_vs_base

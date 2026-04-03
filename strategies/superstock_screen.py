@@ -10,6 +10,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 def build_liquidity_and_price_mask(data: dict) -> ScreeningResult:
+    return build_liquidity_and_price_mask_with_config(data, config=None)
+
+
+def build_liquidity_and_price_mask_with_config(data: dict, config: dict | None = None) -> ScreeningResult:
+    config = config or {}
     close = data["close"]
     volume = data["volume"]
 
@@ -17,8 +22,8 @@ def build_liquidity_and_price_mask(data: dict) -> ScreeningResult:
     history_260d = close.rolling(260, min_periods=260).count() >= 260
 
     rule_masks = {
-        "price_in_superstock_band": (close >= 5.0) & (close <= 15.0),
-        "min_dollar_volume": avg_dollar_volume_20d >= 1_000_000.0,
+        "price_in_superstock_band": (close >= float(config.get("price_min", 5.0))) & (close <= float(config.get("price_max", 15.0))),
+        "min_dollar_volume": avg_dollar_volume_20d >= float(config.get("min_dollar_volume", 1_000_000.0)),
         "has_min_daily_history": history_260d,
     }
 
@@ -32,7 +37,9 @@ def build_liquidity_and_price_mask(data: dict) -> ScreeningResult:
 def build_base_building_mask(
     data: dict,
     weekly: SuperstockWeeklyFeatures,
+    config: dict | None = None,
 ) -> ScreeningResult:
+    config = config or {}
     aligned = to_daily_feature_map(weekly, data["close"].index)
 
     base_depth = aligned["base_high_26w"] / aligned["base_low_26w"] - 1.0
@@ -42,10 +49,10 @@ def build_base_building_mask(
     rule_masks = {
         "has_min_weekly_history": has_min_weekly_history,
         "has_26w_base_window": aligned["base_high_26w"].notna() & aligned["base_low_26w"].notna(),
-        "base_depth_not_too_wide": base_depth <= 0.60,
-        "weekly_range_not_exploding": aligned["range_pct_median_26w"] <= 0.18,
-        "weekly_volatility_not_exploding": aligned["weekly_volatility_26w"] <= 0.12,
-        "volume_dryup_present": volume_ratio <= 0.80,
+        "base_depth_not_too_wide": base_depth <= float(config.get("base_depth_max", 0.60)),
+        "weekly_range_not_exploding": aligned["range_pct_median_26w"] <= float(config.get("weekly_range_median_max", 0.18)),
+        "weekly_volatility_not_exploding": aligned["weekly_volatility_26w"] <= float(config.get("weekly_volatility_max", 0.12)),
+        "volume_dryup_present": volume_ratio <= float(config.get("volume_dryup_max", 0.80)),
     }
 
     return ScreeningResult(
@@ -64,16 +71,18 @@ def build_superstock_screen(
     data: dict,
     weekly: SuperstockWeeklyFeatures | None = None,
     fundamentals: dict | None = None,
+    config: dict | None = None,
 ) -> ScreeningResult:
+    config = config or {}
     if fundamentals:
         LOGGER.info("Optional fundamentals were provided but are ignored in Superstock v1 screening.")
 
     weekly = weekly or build_superstock_weekly_features(data)
     aligned = to_daily_feature_map(weekly, data["close"].index)
 
-    trend = build_superstock_trend_template(data, weekly)
-    liquidity_price = build_liquidity_and_price_mask(data)
-    base = build_base_building_mask(data, weekly)
+    trend = build_superstock_trend_template(data, weekly, config=config)
+    liquidity_price = build_liquidity_and_price_mask_with_config(data, config=config)
+    base = build_base_building_mask(data, weekly, config=config)
 
     benchmark_ma_10w = aligned["benchmark_weekly_close"].rolling(10, min_periods=10).mean()
     benchmark_not_broken = aligned["benchmark_weekly_close"] > benchmark_ma_10w
@@ -85,10 +94,11 @@ def build_superstock_screen(
             index=data["close"].index,
         )
     else:
+        vix_ma_scaled = aligned["vix_ma_10w"] * float(config.get("vix_ma_multiplier", 1.25))
         vix_threshold = pd.concat(
             [
-                aligned["vix_ma_10w"] * 1.25,
-                pd.Series(35.0, index=data["close"].index, name="hard_vix_cap"),
+                vix_ma_scaled,
+                pd.Series(float(config.get("vix_hard_cap", 35.0)), index=data["close"].index, name="hard_vix_cap"),
             ],
             axis=1,
         ).max(axis=1)
