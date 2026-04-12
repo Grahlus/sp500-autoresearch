@@ -5,6 +5,7 @@ import random
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
@@ -48,6 +49,12 @@ def build_proposal_request(
     source_idea_ids: list[str] | None = None,
     use_idea_queue: bool = True,
     use_analysis_guidance: bool = True,
+    confirmation_state: str | None = None,
+    confirmation_required: bool = False,
+    confirmation_reason: str | None = None,
+    confirmation_batch_id: str | None = None,
+    confirmation_focus_family: str | None = None,
+    confirmation_batch_experiments: int | None = None,
     min_viable_fill_rate: float = 0.50,
     min_viable_candidates: int | None = None,
     large_search_threshold: int = 50,
@@ -97,6 +104,12 @@ def build_proposal_request(
         source_idea_ids=list(source_idea_ids or []),
         use_idea_queue=bool(use_idea_queue),
         use_analysis_guidance=bool(use_analysis_guidance),
+        confirmation_state=confirmation_state,
+        confirmation_required=bool(confirmation_required),
+        confirmation_reason=confirmation_reason,
+        confirmation_batch_id=confirmation_batch_id,
+        confirmation_focus_family=confirmation_focus_family,
+        confirmation_batch_experiments=None if confirmation_batch_experiments is None else int(confirmation_batch_experiments),
         min_viable_fill_rate=float(min_viable_fill_rate),
         min_viable_candidates=None if min_viable_candidates is None else int(min_viable_candidates),
         large_search_threshold=int(large_search_threshold),
@@ -673,6 +686,10 @@ def _allocate_family_budgets(
 
 
 def minimum_viable_candidate_count(request: ProposalRequest) -> int:
+    if request.confirmation_required:
+        if request.max_experiments <= 0:
+            return 0
+        return 1
     if request.min_viable_candidates is not None:
         return min(int(request.max_experiments), int(request.min_viable_candidates))
     fill_min = int(round(request.max_experiments * request.min_viable_fill_rate))
@@ -796,11 +813,22 @@ def score_proposal_quality(
     )
 
     exhausted = bool(shortfall_reasons) and shortfall_reasons.issubset({"exhausted_search_space", "family_budget_overconstraint"})
-    pass_minimum = candidate_count >= min_viable or exhausted
-    large_search_underfilled = request.max_experiments >= request.large_search_threshold and candidate_count < min_viable and not exhausted
+    confirmation_batch_small_valid = bool(request.confirmation_required and candidate_count > 0)
+    pass_minimum = confirmation_batch_small_valid or candidate_count >= min_viable or exhausted
+    large_search_underfilled = (
+        request.max_experiments >= request.large_search_threshold
+        and candidate_count < min_viable
+        and not exhausted
+        and not confirmation_batch_small_valid
+    )
+    confirmation_underfilled = bool(request.confirmation_required) and candidate_count <= 0
     quality_flags: list[str] = []
-    if candidate_count < min_viable:
+    if candidate_count < min_viable and not confirmation_batch_small_valid:
         quality_flags.append("too_small")
+    if confirmation_batch_small_valid:
+        quality_flags.append("confirmation_batch_small_valid")
+    if confirmation_underfilled:
+        quality_flags.append("confirmation_batch_underfilled")
     if large_search_underfilled:
         quality_flags.append("large_search_underfilled")
     if candidate_count > 0 and len(source_types) <= 1 and len(strategy_types) <= 1 and len(request.strategy_families) > 1:
@@ -828,7 +856,9 @@ def score_proposal_quality(
         "min_viable_candidates": min_viable,
         "fill_rate": round(fill_rate, 6),
         "pass_minimum_viable_batch": pass_minimum,
+        "confirmation_batch_small_valid": confirmation_batch_small_valid,
         "large_search_underfilled": large_search_underfilled,
+        "confirmation_batch_underfilled": confirmation_underfilled,
         "quality_flags": sorted(set(quality_flags)),
         "families_present": families_present,
         "family_reports": family_reports,
@@ -861,6 +891,11 @@ def _candidate_metadata(
     source_proposal_id: str | None,
     source_idea_ids: list[str] | None = None,
     template_tags: list[str] | None = None,
+    confirmation_state: str | None = None,
+    confirmation_required: bool = False,
+    confirmation_reason: str | None = None,
+    confirmation_batch_id: str | None = None,
+    confirmation_trial_kind: str | None = None,
 ) -> dict[str, Any]:
     from experiment_store import compute_config_hash
 
@@ -889,6 +924,11 @@ def _candidate_metadata(
         "source_batch_id": ",".join(source_batch_ids) if source_batch_ids else None,
         "source_idea_ids": list(source_idea_ids or []),
         "template_tags": template_tags or [],
+        "confirmation_state": confirmation_state,
+        "confirmation_required": confirmation_required,
+        "confirmation_reason": confirmation_reason,
+        "confirmation_batch_id": confirmation_batch_id,
+        "confirmation_trial_kind": confirmation_trial_kind,
     }
 
 
@@ -942,6 +982,10 @@ def generate_next_round_proposal(
     }
     candidate_configs: dict[str, list[dict[str, Any]]] = {}
     candidate_metadata: dict[str, list[dict[str, Any]]] = {}
+    confirmation_mode = bool(request.confirmation_required)
+    confirmation_focus_family = request.confirmation_focus_family
+    if not confirmation_focus_family and len(request.strategy_families) == 1:
+        confirmation_focus_family = request.strategy_families[0]
     reasoning: dict[str, Any] = {
         "source_batch_ids": request.source_batch_ids or all_source_batch_ids,
         "source_idea_ids": request.source_idea_ids or [],
@@ -958,6 +1002,14 @@ def generate_next_round_proposal(
             "max_near_duplicate_distance": request.max_near_duplicate_distance,
             "stagnation_escape_batches": request.stagnation_escape_batches,
             "allow_external_seeds": request.allow_external_seeds,
+        },
+        "confirmation": {
+            "state": request.confirmation_state,
+            "required": bool(request.confirmation_required),
+            "reason": request.confirmation_reason,
+            "batch_id": request.confirmation_batch_id,
+            "focus_family": request.confirmation_focus_family,
+            "batch_experiments": request.confirmation_batch_experiments,
         },
         "families": {},
     }
@@ -980,6 +1032,11 @@ def generate_next_round_proposal(
         dead_zone_signatures = set(family_analysis.get("dead_zone_signatures", set()))
         dead_zone_signatures.update(family_analysis.get("poor_region_signatures", set()))
         budget = int(budgets.get(family, 0))
+        family_confirmation_mode = confirmation_mode and family == confirmation_focus_family
+        confirmation_trial_budget = max(0, budget)
+        confirmation_focus_only = family_confirmation_mode
+        if family_confirmation_mode:
+            confirmation_trial_budget = max(1, min(budget, max(4, int(round(max(1, budget) * 0.25)))))
         stagnation_batches = max(int(family_analysis.get("stagnation_batches") or 0), int(family_memory.get("stagnation_batches") or 0))
         exploration_fraction = request.exploration_fraction
         exploitation_fraction = request.exploitation_fraction
@@ -998,6 +1055,12 @@ def generate_next_round_proposal(
             cross_family_n = max(1, int(round(explore_n * request.cross_family_fraction)))
             cross_family_n = min(cross_family_n, explore_n)
         local_explore_n = max(0, explore_n - template_n - cross_family_n)
+        if family_confirmation_mode:
+            exploit_n = max(1, min(budget, max(1, int(round(max(1, budget) * 0.25)))))
+            explore_n = max(0, budget - exploit_n)
+            template_n = 0
+            cross_family_n = 0
+            local_explore_n = explore_n
 
         top = select_top_configs(history, family, limit=max(1, min(8, exploit_n or 1)))
         seen_hashes = set(explored_hashes)
@@ -1010,6 +1073,53 @@ def generate_next_round_proposal(
                 if item.get("family") == family:
                     guidance_focus = item
                     break
+        def _append_confirmation_reproduction(seed_row: pd.Series) -> None:
+            if not family_confirmation_mode or len(selection_pool) >= confirmation_trial_budget:
+                return
+            exact_config = dict(seed_row.get("config") or {})
+            if not exact_config:
+                return
+            normalized = normalize_experiment_config(family, exact_config)
+            config_hash = compute_config_hash(family, normalized)
+            if any(item.get("config_hash") == config_hash for item in selection_pool):
+                return
+            novelty = SimpleNamespace(
+                exact_duplicate=False,
+                near_duplicate=False,
+                near_duplicate_of=seed_row.get("config_hash"),
+                duplicate_risk="confirmation_exact",
+                novelty_score=1.0,
+                selection_score=max(1.0, _safe_float(seed_row.get("objective_score"), 0.0) + 0.5),
+                objective_proxy=_safe_float(seed_row.get("objective_score"), 0.0),
+                dead_zone_risk=0.0,
+                dead_zone_flags=[],
+            )
+            selection_pool.append(
+                _candidate_metadata(
+                    family=family,
+                    candidate=normalized,
+                    novelty=novelty,
+                    strategy_type=_family_strategy_type(family),
+                    source_type="confirmation_reproduction",
+                    template_id=seed_row.get("template_id") or "confirmation_reproduce",
+                    hypothesis=seed_row.get("hypothesis") or family_analysis.get("baseline_name"),
+                    reason_selected="exact reproduction to confirm a promoted winner",
+                    exploration_mode="confirmation",
+                    proposal_role="confirm",
+                    region_label="confirmation_exact",
+                    parent_config_hash=seed_row.get("config_hash"),
+                    source_batch_ids=request.source_batch_ids or all_source_batch_ids,
+                    source_proposal_id=request.proposal_id,
+                    source_idea_ids=[],
+                    confirmation_state=request.confirmation_state,
+                    confirmation_required=request.confirmation_required,
+                    confirmation_reason=request.confirmation_reason,
+                    confirmation_batch_id=request.confirmation_batch_id,
+                    confirmation_trial_kind="reproduce",
+                )
+            )
+            seen_hashes.add(config_hash)
+            seen_signatures.add(coarse_signature_key(family, normalized))
 
         def _try_add_candidate(
             candidate: dict[str, Any],
@@ -1080,45 +1190,49 @@ def generate_next_round_proposal(
                 )
             )
 
-        for idea in family_ideas:
-            if len(selection_pool) >= budget:
-                break
-            suggested = idea.get("suggested_config") or {}
-            seed_config: dict[str, Any] | None = None
-            parent_hash = suggested.get("parent_config_hash") if isinstance(suggested, dict) else None
-            if parent_hash:
-                match = history[history["config_hash"].astype(str) == str(parent_hash)] if not history.empty else history
-                if not match.empty:
-                    seed_config = dict(match.iloc[0].get("config") or {})
-            if not seed_config and isinstance(suggested, dict):
-                seed_config = {k: v for k, v in suggested.items() if k != "parent_config_hash"}
-            if not seed_config:
-                continue
-            neighbors = build_local_neighbors(
-                family,
-                seed_config,
-                limit=2,
-                seed=request.seed + idx + len(selection_pool),
-                dead_zones=dead_zones,
-                explored_hashes=seen_hashes,
-            )
-            for neighbor in neighbors:
+        if family_confirmation_mode and not history.empty:
+            _append_confirmation_reproduction(top.iloc[0])
+
+        if not confirmation_focus_only:
+            for idea in family_ideas:
                 if len(selection_pool) >= budget:
                     break
-                _try_add_candidate(
-                    neighbor,
-                    source_type="idea_seed",
-                    strategy_type=idea.get("strategy_type") or _family_strategy_type(family),
-                    template_id=idea.get("suggested_template_id"),
-                    hypothesis=idea.get("hypothesis"),
-                    reason_selected=idea.get("rationale") or "seeded from helper idea queue",
-                    exploration_mode="idea_seed",
-                    proposal_role="explore",
-                    region_label=idea.get("suggested_template_id") or "idea_seed",
-                    parent_config_hash=parent_hash,
-                    source_idea_ids=[idea.get("idea_id")] if idea.get("idea_id") else [],
-                    allow_near_duplicate=True,
+                suggested = idea.get("suggested_config") or {}
+                seed_config: dict[str, Any] | None = None
+                parent_hash = suggested.get("parent_config_hash") if isinstance(suggested, dict) else None
+                if parent_hash:
+                    match = history[history["config_hash"].astype(str) == str(parent_hash)] if not history.empty else history
+                    if not match.empty:
+                        seed_config = dict(match.iloc[0].get("config") or {})
+                if not seed_config and isinstance(suggested, dict):
+                    seed_config = {k: v for k, v in suggested.items() if k != "parent_config_hash"}
+                if not seed_config:
+                    continue
+                neighbors = build_local_neighbors(
+                    family,
+                    seed_config,
+                    limit=2,
+                    seed=request.seed + idx + len(selection_pool),
+                    dead_zones=dead_zones,
+                    explored_hashes=seen_hashes,
                 )
+                for neighbor in neighbors:
+                    if len(selection_pool) >= budget:
+                        break
+                    _try_add_candidate(
+                        neighbor,
+                        source_type="idea_seed",
+                        strategy_type=idea.get("strategy_type") or _family_strategy_type(family),
+                        template_id=idea.get("suggested_template_id"),
+                        hypothesis=idea.get("hypothesis"),
+                        reason_selected=idea.get("rationale") or "seeded from helper idea queue",
+                        exploration_mode="idea_seed",
+                        proposal_role="explore",
+                        region_label=idea.get("suggested_template_id") or "idea_seed",
+                        parent_config_hash=parent_hash,
+                        source_idea_ids=[idea.get("idea_id")] if idea.get("idea_id") else [],
+                        allow_near_duplicate=True,
+                    )
 
         for top_idx, row in top.iterrows():
             if len(selection_pool) >= exploit_n:
@@ -1150,135 +1264,160 @@ def generate_next_round_proposal(
                     allow_near_duplicate=False,
                 )
 
-        template_payloads = _template_payloads_for_family(
-            family,
-            limit=max(template_n + cross_family_n + 4, 8),
-            seed=request.seed + 1000 + idx,
-            allow_cross_family=True,
-        )
-        template_payloads.sort(key=lambda item: item["metadata"].get("source_type") != "cross_family_hybrid")
-        template_count = 0
-        cross_count = 0
-        for payload in template_payloads:
-            if len(selection_pool) >= budget:
-                break
-            metadata = payload["metadata"]
-            if metadata.get("source_type") == "cross_family_hybrid":
-                if cross_count >= cross_family_n and len(selection_pool) >= exploit_n + template_n:
-                    continue
-                cross_count += 1
-            else:
-                if template_count >= template_n and len(selection_pool) >= exploit_n + template_n:
-                    continue
-                template_count += 1
-            _try_add_candidate(
-                payload["config"],
-                source_type=metadata.get("source_type") or "template_expansion",
-                strategy_type=metadata.get("strategy_type") or _family_strategy_type(family),
-                template_id=metadata.get("template_id"),
-                hypothesis=metadata.get("hypothesis"),
-                reason_selected=metadata.get("reason_selected"),
-                exploration_mode=metadata.get("exploration_mode") or "template_expansion",
-                proposal_role="explore",
-                region_label=metadata.get("template_id") or metadata.get("source_type") or "template_expansion",
-                parent_config_hash=family_analysis.get("top_performers", [{}])[0].get("config_hash") if family_analysis.get("top_performers") else None,
-                source_idea_ids=[],
-                template_tags=metadata.get("tags"),
-                allow_near_duplicate=False,
+        if not confirmation_focus_only:
+            template_payloads = _template_payloads_for_family(
+                family,
+                limit=max(template_n + cross_family_n + 4, 8),
+                seed=request.seed + 1000 + idx,
+                allow_cross_family=True,
             )
-
-        exploration_candidates = sample_exploration_configs(
-            family,
-            limit=max(local_explore_n * 4, local_explore_n, 4),
-            seed=request.seed + 2000 + idx,
-            explored_hashes=seen_hashes,
-            dead_zones=dead_zones,
-        )
-        for candidate in exploration_candidates:
-            if len(selection_pool) >= budget:
-                break
-            _try_add_candidate(
-                candidate,
-                source_type="broad_exploration",
-                strategy_type=_family_strategy_type(family),
-                template_id="under_tested_region",
-                hypothesis="Explore under-tested parameter regions.",
-                reason_selected="coverage of under-tested regions and dead-zone escape",
-                exploration_mode="broader_exploration",
-                proposal_role="explore",
-                region_label="under_tested_region",
-                source_idea_ids=[],
-                allow_near_duplicate=False,
-            )
-
-        if request.allow_external_seeds:
-            for seed_payload in load_external_idea_seeds(enabled=True):
+            template_payloads.sort(key=lambda item: item["metadata"].get("source_type") != "cross_family_hybrid")
+            template_count = 0
+            cross_count = 0
+            for payload in template_payloads:
                 if len(selection_pool) >= budget:
                     break
+                metadata = payload["metadata"]
+                if metadata.get("source_type") == "cross_family_hybrid":
+                    if cross_count >= cross_family_n and len(selection_pool) >= exploit_n + template_n:
+                        continue
+                    cross_count += 1
+                else:
+                    if template_count >= template_n and len(selection_pool) >= exploit_n + template_n:
+                        continue
+                    template_count += 1
                 _try_add_candidate(
-                    seed_payload.get("config", {}),
-                    source_type="external_seed",
-                    strategy_type=seed_payload.get("strategy_type") or _family_strategy_type(family),
-                    template_id=seed_payload.get("template_id"),
-                    hypothesis=seed_payload.get("hypothesis"),
-                    reason_selected=seed_payload.get("reason_selected"),
-                    exploration_mode="external_seed",
+                    payload["config"],
+                    source_type=metadata.get("source_type") or "template_expansion",
+                    strategy_type=metadata.get("strategy_type") or _family_strategy_type(family),
+                    template_id=metadata.get("template_id"),
+                    hypothesis=metadata.get("hypothesis"),
+                    reason_selected=metadata.get("reason_selected"),
+                    exploration_mode=metadata.get("exploration_mode") or "template_expansion",
                     proposal_role="explore",
-                    region_label=seed_payload.get("template_id") or "external_seed",
-                    parent_config_hash=seed_payload.get("parent_config_hash"),
+                    region_label=metadata.get("template_id") or metadata.get("source_type") or "template_expansion",
+                    parent_config_hash=family_analysis.get("top_performers", [{}])[0].get("config_hash") if family_analysis.get("top_performers") else None,
                     source_idea_ids=[],
+                    template_tags=metadata.get("tags"),
                     allow_near_duplicate=False,
                 )
 
-        if len(selection_pool) < budget:
-            fallback = sample_exploration_configs(
+            exploration_candidates = sample_exploration_configs(
                 family,
-                limit=budget - len(selection_pool),
-                seed=request.seed + 3000 + idx,
+                limit=max(local_explore_n * 4, local_explore_n, 4),
+                seed=request.seed + 2000 + idx,
                 explored_hashes=seen_hashes,
-                dead_zones={},
+                dead_zones=dead_zones,
             )
-            for candidate in fallback:
+            for candidate in exploration_candidates:
                 if len(selection_pool) >= budget:
                     break
                 _try_add_candidate(
                     candidate,
                     source_type="broad_exploration",
                     strategy_type=_family_strategy_type(family),
-                    template_id="fallback_random",
-                    hypothesis="Fallback random exploration when candidate pool is sparse.",
-                    reason_selected="fill remaining budget with novel fallback samples",
+                    template_id="under_tested_region",
+                    hypothesis="Explore under-tested parameter regions.",
+                    reason_selected="coverage of under-tested regions and dead-zone escape",
                     exploration_mode="broader_exploration",
                     proposal_role="explore",
-                    region_label="fallback_random",
+                    region_label="under_tested_region",
                     source_idea_ids=[],
                     allow_near_duplicate=False,
                 )
 
-        if len(selection_pool) < budget:
-            saturation_escape = sample_exploration_configs(
+            if request.allow_external_seeds:
+                for seed_payload in load_external_idea_seeds(enabled=True):
+                    if len(selection_pool) >= budget:
+                        break
+                    _try_add_candidate(
+                        seed_payload.get("config", {}),
+                        source_type="external_seed",
+                        strategy_type=seed_payload.get("strategy_type") or _family_strategy_type(family),
+                        template_id=seed_payload.get("template_id"),
+                        hypothesis=seed_payload.get("hypothesis"),
+                        reason_selected=seed_payload.get("reason_selected"),
+                        exploration_mode="external_seed",
+                        proposal_role="explore",
+                        region_label=seed_payload.get("template_id") or "external_seed",
+                        parent_config_hash=seed_payload.get("parent_config_hash"),
+                        source_idea_ids=[],
+                        allow_near_duplicate=False,
+                    )
+
+            if len(selection_pool) < budget:
+                fallback = sample_exploration_configs(
+                    family,
+                    limit=budget - len(selection_pool),
+                    seed=request.seed + 3000 + idx,
+                    explored_hashes=seen_hashes,
+                    dead_zones={},
+                )
+                for candidate in fallback:
+                    if len(selection_pool) >= budget:
+                        break
+                    _try_add_candidate(
+                        candidate,
+                        source_type="broad_exploration",
+                        strategy_type=_family_strategy_type(family),
+                        template_id="fallback_random",
+                        hypothesis="Fallback random exploration when candidate pool is sparse.",
+                        reason_selected="fill remaining budget with novel fallback samples",
+                        exploration_mode="broader_exploration",
+                        proposal_role="explore",
+                        region_label="fallback_random",
+                        source_idea_ids=[],
+                        allow_near_duplicate=False,
+                    )
+
+            if len(selection_pool) < budget:
+                saturation_escape = sample_exploration_configs(
+                    family,
+                    limit=budget - len(selection_pool),
+                    seed=request.seed + 4000 + idx,
+                    explored_hashes=seen_hashes,
+                    dead_zones={},
+                    sample_multiplier=64,
+                )
+                for candidate in saturation_escape:
+                    if len(selection_pool) >= budget:
+                        break
+                    _try_add_candidate(
+                        candidate,
+                        source_type="saturation_escape",
+                        strategy_type=_family_strategy_type(family),
+                        template_id="saturation_escape_random",
+                        hypothesis="Saturation escape when normal novelty filters produce too few candidates.",
+                        reason_selected="exact-new config selected after normal proposal filters were exhausted",
+                        exploration_mode="saturation_escape",
+                        proposal_role="explore",
+                        region_label="saturation_escape",
+                        source_idea_ids=[],
+                        allow_near_duplicate=True,
+                    )
+        else:
+            exploration_candidates = sample_exploration_configs(
                 family,
-                limit=budget - len(selection_pool),
-                seed=request.seed + 4000 + idx,
+                limit=max(confirmation_trial_budget - len(selection_pool), 1),
+                seed=request.seed + 2000 + idx,
                 explored_hashes=seen_hashes,
-                dead_zones={},
-                sample_multiplier=64,
+                dead_zones=dead_zones,
             )
-            for candidate in saturation_escape:
-                if len(selection_pool) >= budget:
+            for candidate in exploration_candidates:
+                if len(selection_pool) >= confirmation_trial_budget:
                     break
                 _try_add_candidate(
                     candidate,
-                    source_type="saturation_escape",
+                    source_type="confirmation_check",
                     strategy_type=_family_strategy_type(family),
-                    template_id="saturation_escape_random",
-                    hypothesis="Saturation escape when normal novelty filters produce too few candidates.",
-                    reason_selected="exact-new config selected after normal proposal filters were exhausted",
-                    exploration_mode="saturation_escape",
-                    proposal_role="explore",
-                    region_label="saturation_escape",
+                    template_id="confirmation_robustness_check",
+                    hypothesis="Robustness check around the promoted winner.",
+                    reason_selected="confirmation batch robustness check",
+                    exploration_mode="confirmation",
+                    proposal_role="confirm",
+                    region_label="confirmation_robustness_check",
                     source_idea_ids=[],
-                    allow_near_duplicate=True,
+                    allow_near_duplicate=False,
                 )
 
         ranked_payloads = sorted(
@@ -1320,6 +1459,12 @@ def generate_next_round_proposal(
             "baseline_win_rate": family_analysis["baseline_win_rate"],
             "novelty_floor": novelty_floor,
             "selection_count": len(candidate_configs[family]),
+            "confirmation_state": request.confirmation_state,
+            "confirmation_required": bool(request.confirmation_required),
+            "confirmation_reason": request.confirmation_reason,
+            "confirmation_batch_id": request.confirmation_batch_id,
+            "confirmation_trial_budget": confirmation_trial_budget if family_confirmation_mode else None,
+            "confirmation_focus_family": confirmation_focus_family,
         }
 
     proposal_memory = load_research_memory(base_dir)

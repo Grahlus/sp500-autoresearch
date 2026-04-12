@@ -432,6 +432,38 @@ class ExperimentRefinementTests(unittest.TestCase):
         self.assertFalse(quality["execution_allowed"])
         self.assertIn("zero_selected_for_family", quality["shortfall_reasons"])
 
+    def test_confirmation_batches_allow_intentional_small_confirmation_runs(self):
+        request = build_proposal_request(
+            strategy_families=["momentum"],
+            seed=7,
+            max_experiments=6,
+            confirmation_required=True,
+            confirmation_batch_experiments=6,
+        )
+        analysis = {"families": {"momentum": {"explored_hashes": set(), "dead_zones": {}, "poor_region_signatures": set()}}}
+        quality = score_proposal_quality(
+            request,
+            budgets={"momentum": 6},
+            candidate_configs={"momentum": [{"FG_MIN": 10.0}]},
+            candidate_metadata={
+                "momentum": [
+                    {
+                        "source_type": "confirmation_reproduction",
+                        "strategy_type": "classical",
+                        "proposal_role": "confirm",
+                        "confirmation_trial_kind": "reproduce",
+                    }
+                ]
+            },
+            analysis=analysis,
+        )
+
+        self.assertEqual(minimum_viable_candidate_count(request), 1)
+        self.assertTrue(quality["confirmation_batch_small_valid"])
+        self.assertTrue(quality["execution_allowed"])
+        self.assertNotIn("confirmation_batch_underfilled", quality["quality_flags"])
+        self.assertIn(quality["status"], {"pass", "warn"})
+
     def test_proposal_quality_passes_meaningful_large_search(self):
         request = build_proposal_request(strategy_families=["momentum"], seed=7, max_experiments=96)
         configs = [{"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
