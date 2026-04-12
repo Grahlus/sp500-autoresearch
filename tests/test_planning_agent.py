@@ -74,6 +74,7 @@ class PlanningAgentTests(unittest.TestCase):
                 workspace_root=tmp,
             )
             before = (experiments_dir / "index.csv").read_text()
+            proposals_before = (experiments_dir / "proposals" / "index.csv").read_text()
 
             rc = planning_agent.main(
                 [
@@ -89,15 +90,151 @@ class PlanningAgentTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0)
             self.assertEqual((experiments_dir / "index.csv").read_text(), before)
+            self.assertEqual((experiments_dir / "proposals" / "index.csv").read_text(), proposals_before)
+            self.assertFalse((experiments_dir / "memory.json").exists())
+            self.assertFalse((experiments_dir / "scorecards").exists())
+            self.assertEqual([path.name for path in (experiments_dir / "proposals").iterdir()], ["index.csv"])
             proposal_files = list((Path(tmp) / "queues" / "proposals").glob("*.json"))
             self.assertEqual(len(proposal_files), 1)
             payload = json.loads(proposal_files[0].read_text())
             self.assertIn("source_idea_ids", payload)
+            self.assertIn("idea1", payload["source_idea_ids"])
             self.assertIn("candidate_specs", payload)
             self.assertIn("planning_rationale", payload)
+            self.assertEqual(payload["analysis_provenance"]["report_id"], "report1")
             self.assertIn("quality_report", payload)
             self.assertIn("proposal_quality", payload["planning_rationale"]["reasoning_summary"])
+            self.assertIn("family_budget_rationale", payload["planning_rationale"])
+            self.assertIn("cycle_mode", payload["planning_rationale"])
             self.assertEqual(len(list((Path(tmp) / "reports").glob("*.json"))), 1)
+
+    def test_planning_agent_uses_scorecards_to_weight_family_budgets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            reports_dir = Path(tmp) / "reports" / "score_summaries"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "report_id": "analysis_score",
+                        "batch_ids": ["batch1"],
+                        "score_summary": {
+                            "momentum": {
+                                "total_experiments": 50,
+                                "viable_rate": 0.35,
+                                "search_priority": 0.85,
+                                "confidence": 0.8,
+                                "dead_zone_density": 0.05,
+                                "duplicate_saturation": 0.10,
+                                "stagnation_experiments": 2,
+                            },
+                            "superstock": {
+                                "total_experiments": 50,
+                                "viable_rate": 0.0,
+                                "search_priority": 0.10,
+                                "confidence": 0.8,
+                                "dead_zone_density": 0.80,
+                                "duplicate_saturation": 0.20,
+                                "stagnation_experiments": 10,
+                            },
+                            "rl_bandit": {
+                                "total_experiments": 20,
+                                "viable_rate": 0.0,
+                                "search_priority": 0.05,
+                                "confidence": 0.5,
+                                "dead_zone_density": 0.90,
+                                "duplicate_saturation": 0.20,
+                                "stagnation_experiments": 10,
+                            },
+                        },
+                        "next_focus": [
+                            {"family": "momentum", "focus": "refine", "reason": "strong viable evidence"},
+                            {"family": "superstock", "focus": "deprioritize", "reason": "dead-zone heavy"},
+                            {"family": "rl_bandit", "focus": "deprioritize", "reason": "weak evidence"},
+                        ],
+                        "best_viable_result": {"experiment_id": "m_best", "strategy_family": "momentum"},
+                        "best_baseline_beating_result": {"experiment_id": "m_base", "strategy_family": "momentum"},
+                    }
+                )
+            )
+
+            record = planning_agent.build_planning_proposal(
+                workspace_root=tmp,
+                experiments_dir=str(experiments_dir),
+                families=["momentum", "superstock", "rl_bandit"],
+                max_experiments=12,
+                seed=7,
+            )
+
+            self.assertGreater(record.family_budget.get("momentum", 0), record.family_budget.get("superstock", 0))
+            self.assertGreater(record.family_budget.get("momentum", 0), record.family_budget.get("rl_bandit", 0))
+            self.assertGreaterEqual(record.family_budget.get("superstock", 0), 1)
+            rationale = record.planning_rationale
+            self.assertEqual(rationale["analysis_report_ids_used"]["score_summary_report_id"], "analysis_score")
+            self.assertEqual(rationale["best_viable_result"]["experiment_id"], "m_best")
+            self.assertEqual(rationale["best_baseline_beating_result"]["experiment_id"], "m_base")
+            self.assertEqual(rationale["family_budget_rationale"]["mode"], "analysis_scorecard_weighted")
+            self.assertIn("momentum", rationale["family_budget_rationale"]["families"])
+
+    def test_stagnation_signal_widens_exploration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            reports_dir = Path(tmp) / "reports" / "score_summaries"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "report_id": "analysis_stagnation",
+                        "score_summary": {
+                            "momentum": {
+                                "total_experiments": 100,
+                                "viable_rate": 0.20,
+                                "search_priority": 0.70,
+                                "confidence": 1.0,
+                                "dead_zone_density": 0.10,
+                                "duplicate_saturation": 0.20,
+                                "stagnation_experiments": 75,
+                            }
+                        },
+                        "next_focus": [{"family": "momentum", "focus": "recover", "reason": "stagnated"}],
+                    }
+                )
+            )
+
+            record = planning_agent.build_planning_proposal(
+                workspace_root=tmp,
+                experiments_dir=str(experiments_dir),
+                families=["momentum"],
+                max_experiments=8,
+                seed=7,
+                exploration_fraction=0.55,
+                exploitation_fraction=0.45,
+            )
+
+            self.assertEqual(record.planning_rationale["cycle_mode"], "stagnation_escape")
+            self.assertGreaterEqual(record.exploration_fraction, 0.80)
+            self.assertEqual(record.exploitation_fraction, 0.20)
+            self.assertEqual(record.planning_rationale["stagnation_signals"]["momentum"], 75)
+
+    def test_planning_agent_falls_back_when_analysis_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+
+            record = planning_agent.build_planning_proposal(
+                workspace_root=tmp,
+                experiments_dir=str(experiments_dir),
+                families=["momentum", "superstock"],
+                max_experiments=4,
+                seed=7,
+                use_analysis_guidance=True,
+            )
+
+            self.assertEqual(record.planning_rationale["family_budget_rationale"]["mode"], "fallback_internal")
+            self.assertFalse(record.planning_rationale["analysis_guidance_used"])
+            self.assertTrue(record.candidate_specs)
 
     def test_planning_agent_does_not_reference_execution_authority(self):
         source = inspect.getsource(planning_agent)

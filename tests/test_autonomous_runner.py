@@ -148,6 +148,8 @@ class AutonomousRunnerTests(unittest.TestCase):
                     exploitation_fraction=0.35,
                     family_budget={"momentum": 1},
                     timestamp_utc="2026-04-04T00:00:00+00:00",
+                    planning_rationale={"planner": "test"},
+                    analysis_provenance={"report_id": "analysis1", "batch_ids": ["batch0"]},
                 ),
                 workspace_root=tmp,
             )
@@ -179,6 +181,12 @@ class AutonomousRunnerTests(unittest.TestCase):
                 rc = main(["--family", "momentum", "--run-proposal", "--base-dir", str(Path(tmp) / "experiments")])
             self.assertEqual(rc, 0)
             self.assertTrue(mock_converter.called)
+            queued_proposal = mock_converter.call_args.args[0]
+            self.assertEqual(queued_proposal.request.source_idea_ids, ["idea1"])
+            self.assertEqual(queued_proposal.request.source_batch_ids, ["batch0"])
+            self.assertEqual(queued_proposal.candidate_metadata["momentum"][0]["source_idea_ids"], ["idea1"])
+            self.assertEqual(queued_proposal.reasoning_summary["planning_rationale"], {"planner": "test"})
+            self.assertEqual(queued_proposal.reasoning_summary["analysis_provenance"]["report_id"], "analysis1")
             self.assertFalse(mock_batch_builder.called)
             self.assertFalse(mock_generator.called)
             self.assertIsNone(load_latest_pending_proposal_record(tmp))

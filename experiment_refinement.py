@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import random
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +14,7 @@ from experiment_batch import DEFAULT_BASELINES
 from experiment_idea_library import expand_template_candidates, load_external_idea_seeds
 from experiment_memory import load_research_memory, save_research_memory, update_family_memory
 from experiment_novelty import coarse_signature_key, score_candidate, signature_distance
+from experiment_scorecards import build_family_scorecards, save_family_scorecards, scorecards_to_records
 from experiment_spaces import (
     get_family_search_space,
     list_searchable_families,
@@ -52,6 +53,9 @@ def build_proposal_request(
     large_search_threshold: int = 50,
     min_large_search_candidates: int = 48,
     quality_gate: bool = True,
+    persist_scorecards: bool = True,
+    persist_memory: bool = True,
+    persist_proposal: bool = True,
 ) -> ProposalRequest:
     families = [family.strip().lower() for family in strategy_families if family and family.strip()]
     unknown = sorted(set(families) - set(list_searchable_families()))
@@ -98,6 +102,9 @@ def build_proposal_request(
         large_search_threshold=int(large_search_threshold),
         min_large_search_candidates=int(min_large_search_candidates),
         quality_gate=bool(quality_gate),
+        persist_scorecards=bool(persist_scorecards),
+        persist_memory=bool(persist_memory),
+        persist_proposal=bool(persist_proposal),
     )
 
 
@@ -448,6 +455,8 @@ def analyze_experiment_history(
 ) -> dict[str, Any]:
     baseline_by_family = {**DEFAULT_BASELINES, **(baseline_by_family or {})}
     memory = load_research_memory(base_dir)
+    scorecards = build_family_scorecards(families=families, base_dir=base_dir)
+    scorecard_records = scorecards_to_records(scorecards)
     summary: dict[str, Any] = {"families": {}}
     for family in families:
         history = _load_detailed_history(family, base_dir)
@@ -470,6 +479,7 @@ def analyze_experiment_history(
         summary["families"][family] = {
             "baseline_name": baseline_by_family.get(family),
             "history_count": int(len(history)),
+            "scorecard": scorecard_records.get(family, {}),
             "success_count": int((history["status"] == "success").sum()) if not history.empty else 0,
             "viable_rate": float(history["viable"].fillna(False).mean()) if not history.empty else 0.0,
             "objective_mean": float(history["objective_score"].fillna(0).mean()) if not history.empty else 0.0,
@@ -584,10 +594,12 @@ def negotiate_family_budgets(
         objective_max = _safe_float(family_analysis.get("objective_max"), 0.0)
         objective_mean = _safe_float(family_analysis.get("objective_mean"), 0.0)
         history_count = int(family_analysis.get("history_count") or 0)
+        scorecard = family_analysis.get("scorecard") or {}
         score = base_weights.get(family, 0.05)
         score += min(max(viable_rate, 0.0), 1.0) * 0.20
         score += max(min(objective_max, 3.0), 0.0) * 0.04
         score += max(min(objective_mean, 2.0), -2.0) * 0.02
+        score += _safe_float(scorecard.get("search_priority"), 0.0) * _safe_float(scorecard.get("confidence"), 0.0) * 0.25
 
         if family in {"ml_ranker", "rl_bandit"} and history_count >= 5 and viable_rate <= 0.0:
             score *= 0.45
@@ -595,6 +607,12 @@ def negotiate_family_budgets(
             score *= 1.15
         if family == "superstock" and viable_rate > 0.10:
             score *= 1.05
+        if _safe_float(scorecard.get("dead_zone_density"), 0.0) >= 0.75:
+            score *= 0.85
+        if _safe_float(scorecard.get("duplicate_saturation"), 0.0) >= 0.50:
+            score *= 0.90
+        if scorecard.get("recovery_signal"):
+            score *= 1.10
 
         if guidance:
             for item in guidance.get("next_focus", []):
@@ -614,6 +632,15 @@ def negotiate_family_budgets(
             "objective_max": objective_max,
             "objective_mean": objective_mean,
             "history_count": history_count,
+            "scorecard": {
+                "confidence": scorecard.get("confidence"),
+                "evidence_weight": scorecard.get("evidence_weight"),
+                "search_priority": scorecard.get("search_priority"),
+                "exploration_budget_recommendation": scorecard.get("exploration_budget_recommendation"),
+                "exploitation_budget_recommendation": scorecard.get("exploitation_budget_recommendation"),
+                "stagnation_experiments": scorecard.get("stagnation_experiments"),
+                "recovery_signal": scorecard.get("recovery_signal"),
+            },
             "negotiated_weight": round(family_scores[family], 6),
         }
 
@@ -893,34 +920,7 @@ def generate_next_round_proposal(
     analysis_guidance = _latest_analysis_guidance(request=request, base_dir=base_dir)
     request_source_idea_ids = list(dict.fromkeys((request.source_idea_ids or []) + [record.get("idea_id") for record in helper_ideas]))
     if request_source_idea_ids != list(request.source_idea_ids or []):
-        request = ProposalRequest(
-            proposal_id=request.proposal_id,
-            timestamp_utc=request.timestamp_utc,
-            source_batch_ids=request.source_batch_ids,
-            strategy_families=request.strategy_families,
-            objective_name=request.objective_name,
-            baseline_name=request.baseline_name,
-            seed=request.seed,
-            exploration_fraction=request.exploration_fraction,
-            exploitation_fraction=request.exploitation_fraction,
-            max_experiments=request.max_experiments,
-            per_family_budgets=request.per_family_budgets,
-            resume=request.resume,
-            novelty_floor=request.novelty_floor,
-            template_fraction=request.template_fraction,
-            cross_family_fraction=request.cross_family_fraction,
-            max_near_duplicate_distance=request.max_near_duplicate_distance,
-            stagnation_escape_batches=request.stagnation_escape_batches,
-            allow_external_seeds=request.allow_external_seeds,
-            source_idea_ids=request_source_idea_ids,
-            use_idea_queue=request.use_idea_queue,
-            use_analysis_guidance=request.use_analysis_guidance,
-            min_viable_fill_rate=request.min_viable_fill_rate,
-            min_viable_candidates=request.min_viable_candidates,
-            large_search_threshold=request.large_search_threshold,
-            min_large_search_candidates=request.min_large_search_candidates,
-            quality_gate=request.quality_gate,
-        )
+        request = replace(request, source_idea_ids=request_source_idea_ids)
     analysis = analyze_experiment_history(
         families=request.strategy_families,
         base_dir=base_dir,
@@ -934,35 +934,12 @@ def generate_next_round_proposal(
         }
     )
     if not request.source_batch_ids:
-        request = ProposalRequest(
-            proposal_id=request.proposal_id,
-            timestamp_utc=request.timestamp_utc,
-            source_batch_ids=all_source_batch_ids,
-            strategy_families=request.strategy_families,
-            objective_name=request.objective_name,
-            baseline_name=request.baseline_name,
-            seed=request.seed,
-            exploration_fraction=request.exploration_fraction,
-            exploitation_fraction=request.exploitation_fraction,
-            max_experiments=request.max_experiments,
-            per_family_budgets=request.per_family_budgets,
-            resume=request.resume,
-            novelty_floor=request.novelty_floor,
-            template_fraction=request.template_fraction,
-            cross_family_fraction=request.cross_family_fraction,
-            max_near_duplicate_distance=request.max_near_duplicate_distance,
-            stagnation_escape_batches=request.stagnation_escape_batches,
-            allow_external_seeds=request.allow_external_seeds,
-            source_idea_ids=request.source_idea_ids,
-            use_idea_queue=request.use_idea_queue,
-            use_analysis_guidance=request.use_analysis_guidance,
-            min_viable_fill_rate=request.min_viable_fill_rate,
-            min_viable_candidates=request.min_viable_candidates,
-            large_search_threshold=request.large_search_threshold,
-            min_large_search_candidates=request.min_large_search_candidates,
-            quality_gate=request.quality_gate,
-        )
+        request = replace(request, source_batch_ids=all_source_batch_ids)
     budgets, budget_negotiation = negotiate_family_budgets(request, analysis, guidance=analysis_guidance)
+    scorecard_records = {
+        family: analysis["families"].get(family, {}).get("scorecard", {})
+        for family in request.strategy_families
+    }
     candidate_configs: dict[str, list[dict[str, Any]]] = {}
     candidate_metadata: dict[str, list[dict[str, Any]]] = {}
     reasoning: dict[str, Any] = {
@@ -970,6 +947,7 @@ def generate_next_round_proposal(
         "source_idea_ids": request.source_idea_ids or [],
         "family_budget_decision": budgets,
         "family_budget_negotiation": budget_negotiation,
+        "family_scorecards": scorecard_records,
         "analysis_guidance": analysis_guidance.get("next_focus") if analysis_guidance else [],
         "novelty_policy": {
             "exploration_fraction": request.exploration_fraction,
@@ -1367,7 +1345,12 @@ def generate_next_round_proposal(
             best_config_hash=family_analysis.get("top_performers", [{}])[0].get("config_hash") if family_analysis.get("top_performers") else None,
             stagnation_batches=stagnation_batches,
         )
-    save_research_memory(proposal_memory, base_dir)
+    if request.persist_memory:
+        save_research_memory(proposal_memory, base_dir)
+    if request.persist_scorecards:
+        scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir)
+        scorecard_path = save_family_scorecards(scorecards, base_dir=base_dir, timestamp_utc=request.timestamp_utc)
+        reasoning["family_scorecard_path"] = str(scorecard_path)
 
     reasoning["proposal_quality"] = score_proposal_quality(
         request,
@@ -1384,6 +1367,17 @@ def generate_next_round_proposal(
         candidate_metadata=candidate_metadata,
         reasoning_summary=reasoning,
     )
+    if not request.persist_proposal:
+        return ProposalResult(
+            request=proposal.request,
+            status=proposal.status,
+            candidate_configs=proposal.candidate_configs,
+            candidate_metadata=proposal.candidate_metadata,
+            reasoning_summary=proposal.reasoning_summary,
+            proposal_path=None,
+            summary_path=None,
+        )
+
     payload = asdict(proposal)
     saved = save_proposal_result(payload, base_dir=base_dir)
     return ProposalResult(

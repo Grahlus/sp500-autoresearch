@@ -77,12 +77,16 @@ def _proposal_from_record(record: dict[str, Any]) -> ProposalResult:
     families = list(record.get("strategy_families") or [])
     candidate_configs: dict[str, list[dict[str, Any]]] = {family: [] for family in families}
     candidate_metadata: dict[str, list[dict[str, Any]]] = {family: [] for family in families}
+    record_source_idea_ids = list(record.get("source_idea_ids") or [])
     for spec in specs:
         family = str(spec.get("family") or "")
         params = dict(spec.get("params") or {})
         metadata = dict(spec.get("metadata") or {})
         if not family:
             continue
+        if record_source_idea_ids and not metadata.get("source_idea_ids"):
+            metadata["source_idea_ids"] = list(record_source_idea_ids)
+        metadata.setdefault("source_planning_proposal_id", record.get("proposal_id"))
         candidate_configs.setdefault(family, []).append(params)
         candidate_metadata.setdefault(family, []).append(metadata)
     candidate_count = sum(len(items) for items in candidate_configs.values())
@@ -111,7 +115,7 @@ def _proposal_from_record(record: dict[str, Any]) -> ProposalResult:
         max_experiments=sum(len(items) for items in candidate_configs.values()),
         per_family_budgets=dict(record.get("family_budget") or {}),
         resume=True,
-        source_idea_ids=list(record.get("source_idea_ids") or []),
+        source_idea_ids=record_source_idea_ids,
     )
     return ProposalResult(
         request=request,

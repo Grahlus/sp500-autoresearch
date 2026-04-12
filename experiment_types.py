@@ -90,6 +90,7 @@ class BatchRequest:
     precomputed_configs: dict[str, list[dict[str, Any]]] | None = None
     precomputed_specs: dict[str, list[ExperimentSpec]] | None = None
     source_proposal_id: str | None = None
+    proposal_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,9 @@ class ProposalRequest:
     large_search_threshold: int = 50
     min_large_search_candidates: int = 48
     quality_gate: bool = True
+    persist_scorecards: bool = True
+    persist_memory: bool = True
+    persist_proposal: bool = True
 
 
 @dataclass(frozen=True)

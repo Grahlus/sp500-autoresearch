@@ -22,6 +22,8 @@ class IdeaRecord:
     timestamp_utc: str
     novelty_score: float | None = None
     rationale: str | None = None
+    estimated_runtime_cost: str | None = None
+    runtime_cost_reason: str | None = None
     suggested_template_id: str | None = None
     suggested_config: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
@@ -91,6 +93,11 @@ def _normalize_json_value(value: Any) -> Any:
         return [_normalize_json_value(item) for item in value]
     if isinstance(value, float) and math.isnan(value):
         return None
+    if hasattr(value, "item"):
+        try:
+            return _normalize_json_value(value.item())
+        except (TypeError, ValueError):
+            return value
     return value
 
 
