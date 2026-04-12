@@ -38,6 +38,7 @@ class ExperimentSpec:
     selection_score: float | None = None
     source_proposal_id: str | None = None
     source_batch_id: str | None = None
+    source_idea_ids: list[str] | None = None
 
     @property
     def strategy_family(self) -> str:
@@ -128,6 +129,14 @@ class ProposalRequest:
     max_near_duplicate_distance: int = 1
     stagnation_escape_batches: int = 3
     allow_external_seeds: bool = False
+    source_idea_ids: list[str] | None = None
+    use_idea_queue: bool = True
+    use_analysis_guidance: bool = True
+    min_viable_fill_rate: float = 0.50
+    min_viable_candidates: int | None = None
+    large_search_threshold: int = 50
+    min_large_search_candidates: int = 48
+    quality_gate: bool = True
 
 
 @dataclass(frozen=True)
