@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from experiment_best_results import BEST_RESULTS_COLUMNS, latest_non_empty_batch, load_best_results
+from experiment_best_results import BEST_RESULTS_COLUMNS, latest_non_empty_batch, rank_best_results
 from experiment_scorecards import build_family_scorecards, scorecards_to_records
 from experiment_store import load_results_index
 
@@ -171,10 +171,10 @@ def build_best_results_dashboard(
     families: list[str] | None = None,
 ) -> BestResultsDashboard:
     index = load_results_index(base_dir)
-    best = _normalize_results(load_best_results(base_dir))
+    best = _normalize_results(rank_best_results(load_results_index(base_dir)))
     top_overall = _sort_dashboard_results(best)
     top_viable = _sort_dashboard_results(best[best["viable"]].copy())
-    baseline_mask = best["beats_baseline_objective"] | best["beats_baseline_guardrails"]
+    baseline_mask = best["viable"] & (best["beats_baseline_objective"] | best["beats_baseline_guardrails"])
     top_baseline = _sort_dashboard_results(best[baseline_mask].copy())
     top_per_family = {
         family: _records(_sort_dashboard_results(frame), limit=per_family_limit)
@@ -195,7 +195,7 @@ def build_best_results_dashboard(
     return BestResultsDashboard(
         generated_at_utc=datetime.now(UTC).isoformat(),
         base_dir=str(base_dir),
-        ranking_policy="viable-first, then objective_score/sharpe/calmar/total_return descending",
+        ranking_policy="viable-first for all best views; baseline-beating requires viability",
         counts={
             "official_result_rows": int(len(index)),
             "eligible_result_rows": int(len(best)),

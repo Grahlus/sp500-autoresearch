@@ -100,7 +100,7 @@ class ExperimentDashboardTests(unittest.TestCase):
                 family="rl_bandit",
                 objective_score=9.0,
                 viable=False,
-                beats_baseline=False,
+                beats_baseline=True,
                 timestamp_utc="2026-04-12T00:00:03+00:00",
             )
             _save_result(
