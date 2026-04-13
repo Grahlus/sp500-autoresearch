@@ -6,7 +6,8 @@ from typing import Any
 
 import pandas as pd
 
-from experiment_runtime_decision import build_runtime_decision, save_runtime_decision
+from experiment_runtime_decision import _targeted_follow_up_plan, build_runtime_decision, save_runtime_decision
+from experiment_memory import load_research_memory
 from experiment_store import init_store, save_experiment_result
 from experiment_types import RuntimeDecisionInput
 
@@ -128,6 +129,12 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertTrue(set(decision.winner_validation_regime_tags or []) & {"stable_in_trend", "strong_in_bear", "regime_mixed"})
         self.assertIn(decision.winner_validation_scope, {"broad", "partial"})
         self.assertFalse(decision.winner_validation_needs_follow_up)
+        self.assertFalse(decision.holdout_check_required)
+        self.assertEqual(decision.holdout_check_outcome, "broadly_confirmed")
+        self.assertFalse(decision.targeted_follow_up_required)
+        self.assertIsNone(decision.targeted_follow_up_type)
+        self.assertFalse(decision.rationale["targeted_follow_up"]["required"])
+        self.assertIn("holdout_check", decision.rationale)
         self.assertIn("runtime_", payload["decision_id"])
         self.assertIn("runtime decision", payload["rationale"]["reason"].lower())
         self.assertEqual(payload["winner_promotion_status"], "promoted")
@@ -256,6 +263,37 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertTrue(decision.confirmation_required or decision.winner_promotion_status in {"hold_for_confirmation", "cautious_promotion"})
         self.assertLessEqual(decision.winner_exploitation_cap, 0.4)
         self.assertIn(decision.rationale["winner_promotion_policy"]["signals"]["validation_scope"], {"narrow", "partial"})
+        self.assertTrue(decision.targeted_follow_up_required)
+        self.assertIsNotNone(decision.targeted_follow_up_type)
+        self.assertGreater(decision.targeted_follow_up_priority or 0.0, 0.0)
+        self.assertTrue(decision.rationale["targeted_follow_up"]["required"])
+        self.assertIn(decision.rationale["targeted_follow_up"]["type"], {"long_horizon_confirmation", "coverage_expansion_confirmation", "mixed_regime_clarification", "targeted_follow_up_confirmation"})
+        self.assertIn("reason", decision.rationale["targeted_follow_up"])
+        self.assertTrue(decision.holdout_check_required)
+        self.assertIn(decision.holdout_check_type, {"long_horizon_holdout", "coverage_expansion_holdout", "mixed_regime_clarification_holdout", "generic_holdout"})
+
+    def test_targeted_follow_up_plan_maps_mixed_regime_to_clarification(self):
+        plan = _targeted_follow_up_plan(
+            family="momentum",
+            scorecard={
+                "validation_horizon_tags": ["stable_medium_horizon"],
+                "validation_regime_tags": ["regime_mixed"],
+                "validation_scope": "partial",
+                "validation_confidence": 0.72,
+                "validation_coverage": 0.55,
+                "robustness_score": 0.58,
+                "overfit_risk": 0.42,
+                "recent_robustness_trend": -0.02,
+                "viable_rate": 0.18,
+                "win_rate_vs_baseline": 0.46,
+            },
+            promotion_policy={"winner_promotion_status": "cautious_promotion"},
+        )
+
+        self.assertTrue(plan["targeted_follow_up_required"])
+        self.assertEqual(plan["targeted_follow_up_type"], "mixed_regime_clarification")
+        self.assertGreater(plan["targeted_follow_up_priority"], 0.0)
+        self.assertIn("regime evidence is mixed", plan["targeted_follow_up_reason"])
 
     def test_runtime_decision_downweights_suspicious_overfit_winner(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,6 +467,7 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertEqual(decision.cycle_mode, "diagnostics")
         self.assertFalse(decision.confirmation_required)
         self.assertFalse(decision.confirmation_batch_requested)
+        self.assertFalse(decision.targeted_follow_up_required)
 
     def test_runtime_decision_widens_for_underfilled_batches(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -493,6 +532,144 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertEqual(decision.status, "fallback")
         self.assertEqual(decision.cycle_mode, "legacy_fallback")
         self.assertIsNone(decision.family_budgets)
+
+    def test_runtime_decision_persists_confirmed_promotion_state_across_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            _save_result(
+                str(experiments_dir),
+                experiment_id="momentum_confirmed",
+                family="momentum",
+                objective_score=1.55,
+                viable=True,
+                beats_baseline=True,
+                config={"LOOKBACK_WEEKS": 24, "FG_MIN": 10.0},
+            )
+            _save_result(
+                str(experiments_dir),
+                experiment_id="superstock_control",
+                family="superstock",
+                objective_score=0.35,
+                viable=False,
+                beats_baseline=False,
+                config={"max_positions": 5},
+            )
+            batch_dir = experiments_dir / "batches" / "proposal_20260413_confirmed_batch"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            (batch_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "proposal_20260413_confirmed_batch",
+                        "timestamp_utc": "2026-04-13T00:00:00+00:00",
+                        "total_requested": 6,
+                        "total_sampled": 6,
+                        "total_executed": 6,
+                        "total_failed": 0,
+                        "shortfall": 0,
+                        "status_counts": {"success": 6},
+                        "proposal_metadata": {
+                            "confirmation_required": True,
+                            "confirmation_state": "unconfirmed",
+                            "confirmation_batch_id": "runtime_123_confirm_momentum",
+                            "confirmation_outcome": "passed",
+                        },
+                    }
+                )
+            )
+
+            decision1 = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum", "superstock"],
+                    max_experiments=24,
+                )
+            )
+            save_runtime_decision(decision1, workspace_root=tmp)
+            memory = load_research_memory(str(experiments_dir))
+            record = (memory.get("promotion_states") or {}).get("momentum", {}).get("momentum_confirmed")
+
+            decision2 = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum", "superstock"],
+                    max_experiments=24,
+                )
+            )
+
+        self.assertIsInstance(record, dict)
+        self.assertEqual(record["promotion_state"], "confirmed")
+        self.assertEqual(decision2.promotion_state, "confirmed")
+        self.assertFalse(decision2.promotion_state_blocked_pending_new_evidence)
+        self.assertEqual(decision2.promotion_state_record["promotion_state"], "confirmed")
+        self.assertEqual(decision2.used_signals["promotion_state_record"]["promotion_state"], "confirmed")
+        self.assertIn("persisted_promotion_state", decision2.used_signals)
+        self.assertEqual(decision2.family_scorecards["momentum"]["promotion_state"], "confirmed")
+        self.assertGreaterEqual(decision2.winner_exploitation_cap or 0.0, 0.50)
+        self.assertIn("persisted confirmation state", decision2.rationale["winner_promotion_policy"]["reasons"][0])
+
+    def test_runtime_decision_reuses_blocked_promotion_state_on_followup_cycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            _save_result(
+                str(experiments_dir),
+                experiment_id="momentum_blocked",
+                family="momentum",
+                objective_score=1.55,
+                viable=True,
+                beats_baseline=True,
+                config={"LOOKBACK_WEEKS": 24, "FG_MIN": 10.0},
+            )
+            batch_dir = experiments_dir / "batches" / "proposal_20260413_confirm_batch"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            (batch_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "proposal_20260413_confirm_batch",
+                        "timestamp_utc": "2026-04-13T00:00:00+00:00",
+                        "total_requested": 6,
+                        "total_sampled": 1,
+                        "total_executed": 0,
+                        "total_failed": 0,
+                        "shortfall": 6,
+                        "status_counts": {},
+                        "proposal_metadata": {
+                            "confirmation_required": True,
+                            "confirmation_state": "unconfirmed",
+                            "confirmation_batch_id": "runtime_123_confirm_momentum",
+                        },
+                    }
+                )
+            )
+
+            decision1 = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum"],
+                    max_experiments=24,
+                )
+            )
+            save_runtime_decision(decision1, workspace_root=tmp)
+            decision2 = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum"],
+                    max_experiments=24,
+                )
+            )
+
+        self.assertEqual(decision1.confirmation_outcome, "failed")
+        self.assertEqual(decision1.promotion_state, "rejected")
+        self.assertIn(decision2.promotion_state, {"rejected", "blocked_pending_new_evidence"})
+        self.assertTrue(decision2.promotion_state_blocked_pending_new_evidence)
+        self.assertEqual(decision2.cycle_mode, "diagnostics")
+        self.assertTrue(decision2.rationale["promotion_state_blocked_pending_new_evidence"])
+        self.assertIn("blocked pending new evidence", " ".join(decision2.rationale["winner_promotion_policy"]["reasons"]))
 
 
 if __name__ == "__main__":

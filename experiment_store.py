@@ -56,6 +56,25 @@ INDEX_COLUMNS = [
     "near_duplicate_of",
     "dead_zone_flags",
     "source_proposal_id",
+    "source_idea_ids",
+    "confirmation_state",
+    "confirmation_required",
+    "confirmation_reason",
+    "confirmation_batch_id",
+    "confirmation_trial_kind",
+    "targeted_follow_up_required",
+    "targeted_follow_up_reason",
+    "targeted_follow_up_type",
+    "targeted_follow_up_priority",
+    "targeted_follow_up_batch_id",
+    "holdout_check_required",
+    "holdout_check_type",
+    "holdout_check_status",
+    "holdout_check_outcome",
+    "holdout_check_scope",
+    "holdout_check_batch_id",
+    "holdout_horizon_tags",
+    "holdout_regime_tags",
     "max_workers",
     "fail_fast",
     "execution_mode",
@@ -86,6 +105,7 @@ PROPOSAL_INDEX_COLUMNS = [
     "exploration_fraction",
     "exploitation_fraction",
     "max_experiments",
+    "source_idea_ids",
     "status",
     "proposal_dir",
 ]
@@ -211,6 +231,25 @@ def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
         "near_duplicate_of": spec.get("near_duplicate_of"),
         "dead_zone_flags": json.dumps(spec.get("dead_zone_flags")) if spec.get("dead_zone_flags") is not None else None,
         "source_proposal_id": spec.get("source_proposal_id"),
+        "source_idea_ids": json.dumps(spec.get("source_idea_ids")) if spec.get("source_idea_ids") is not None else None,
+        "confirmation_state": spec.get("confirmation_state"),
+        "confirmation_required": spec.get("confirmation_required"),
+        "confirmation_reason": spec.get("confirmation_reason"),
+        "confirmation_batch_id": spec.get("confirmation_batch_id"),
+        "confirmation_trial_kind": spec.get("confirmation_trial_kind"),
+        "targeted_follow_up_required": spec.get("targeted_follow_up_required"),
+        "targeted_follow_up_reason": spec.get("targeted_follow_up_reason"),
+        "targeted_follow_up_type": spec.get("targeted_follow_up_type"),
+        "targeted_follow_up_priority": spec.get("targeted_follow_up_priority"),
+        "targeted_follow_up_batch_id": spec.get("targeted_follow_up_batch_id"),
+        "holdout_check_required": spec.get("holdout_check_required"),
+        "holdout_check_type": spec.get("holdout_check_type"),
+        "holdout_check_status": spec.get("holdout_check_status"),
+        "holdout_check_outcome": spec.get("holdout_check_outcome"),
+        "holdout_check_scope": spec.get("holdout_check_scope"),
+        "holdout_check_batch_id": spec.get("holdout_check_batch_id"),
+        "holdout_horizon_tags": json.dumps(spec.get("holdout_horizon_tags")) if spec.get("holdout_horizon_tags") is not None else None,
+        "holdout_regime_tags": json.dumps(spec.get("holdout_regime_tags")) if spec.get("holdout_regime_tags") is not None else None,
         "max_workers": spec.get("max_workers"),
         "fail_fast": spec.get("fail_fast"),
         "execution_mode": spec.get("execution_mode"),
@@ -247,6 +286,14 @@ def _serialize_result(result: dict[str, Any]) -> dict[str, Any]:
     if "error_message" not in payload and "error" in payload:
         payload["error_message"] = payload["error"]
     return payload
+
+
+def _allows_confirmation_reproduction(spec: dict[str, Any]) -> bool:
+    if not bool(spec.get("confirmation_required")):
+        return False
+    if str(spec.get("confirmation_trial_kind") or "") not in {"reproduce", "confirmation_reproduce"}:
+        return False
+    return bool(spec.get("confirmation_batch_id"))
 
 
 def has_experiment_result(config_hash: str, family: str | None = None, base_dir: str = "experiments") -> bool:
@@ -299,7 +346,7 @@ def save_experiment_result_atomic(result: dict[str, Any], base_dir: str = "exper
             matches = index[index["config_hash"] == config_hash]
             if family is not None and not matches.empty:
                 matches = matches[matches["strategy_family"] == family]
-            if not matches.empty and (matches["status"] == "success").any():
+            if not matches.empty and (matches["status"] == "success").any() and not _allows_confirmation_reproduction(spec):
                 return False
 
         result_dir.mkdir(parents=True, exist_ok=True)
@@ -361,6 +408,7 @@ def save_proposal_result_atomic(proposal: dict[str, Any], base_dir: str = "exper
             "exploration_fraction": request.get("exploration_fraction"),
             "exploitation_fraction": request.get("exploitation_fraction"),
             "max_experiments": request.get("max_experiments"),
+            "source_idea_ids": json.dumps(request.get("source_idea_ids") or []),
             "status": proposal.get("status"),
             "proposal_dir": str(proposal_dir),
         }

@@ -11,6 +11,17 @@ from typing import Any
 import pandas as pd
 
 from experiment_dashboard import build_best_results_dashboard
+from experiment_lineage import build_lineage_summary
+from experiment_memory import (
+    get_lineage_state_record,
+    get_promotion_state_record,
+    load_lineage_state_records,
+    load_research_memory,
+    save_research_memory,
+    update_lineage_state_record,
+    update_promotion_state_record,
+)
+from experiment_validation_tags import summarize_holdout_checks
 from experiment_types import RuntimeDecision, RuntimeDecisionInput
 
 
@@ -121,6 +132,219 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _safe_str(value: Any, default: str | None = None) -> str | None:
+    if value is None:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text or default
+
+
+def _normalize_promotion_state(value: Any) -> str:
+    text = _safe_str(value, "unconfirmed") or "unconfirmed"
+    normalized = text.strip().lower()
+    if normalized in {"promoted"}:
+        return "confirmed"
+    if normalized in {"hold_for_confirmation"}:
+        return "unconfirmed"
+    if normalized in {"cautious_promotion"}:
+        return "provisional"
+    if normalized in {"blocked", "blocked_pending"}:
+        return "blocked_pending_new_evidence"
+    if normalized in {"confirmed", "provisional", "unconfirmed", "rejected", "blocked_pending_new_evidence"}:
+        return normalized
+    return "unconfirmed"
+
+
+def _promotion_state_history_entry(
+    *,
+    decision_id: str,
+    timestamp_utc: str,
+    cycle_mode: str,
+    promotion_state: str,
+    winner_promotion_status: str,
+    confirmation_required: bool,
+    confirmation_outcome: str | None,
+    holdout_check_required: bool,
+    holdout_check_type: str | None,
+    holdout_check_status: str | None,
+    holdout_check_outcome: str | None,
+    holdout_check_scope: str | None,
+    holdout_check_batch_id: str | None,
+    targeted_follow_up_required: bool,
+    targeted_follow_up_type: str | None,
+    targeted_follow_up_reason: str | None,
+    targeted_follow_up_batch_id: str | None,
+    reason: str | None,
+) -> dict[str, Any]:
+    return {
+        "decision_id": decision_id,
+        "timestamp_utc": timestamp_utc,
+        "cycle_mode": cycle_mode,
+        "promotion_state": promotion_state,
+        "winner_promotion_status": winner_promotion_status,
+        "confirmation_required": confirmation_required,
+        "confirmation_outcome": confirmation_outcome,
+        "holdout_check_required": holdout_check_required,
+        "holdout_check_type": holdout_check_type,
+        "holdout_check_status": holdout_check_status,
+        "holdout_check_outcome": holdout_check_outcome,
+        "holdout_check_scope": holdout_check_scope,
+        "holdout_check_batch_id": holdout_check_batch_id,
+        "targeted_follow_up_required": targeted_follow_up_required,
+        "targeted_follow_up_type": targeted_follow_up_type,
+        "targeted_follow_up_reason": targeted_follow_up_reason,
+        "targeted_follow_up_batch_id": targeted_follow_up_batch_id,
+        "reason": reason,
+    }
+
+
+def _build_promotion_state_record(
+    *,
+    previous: dict[str, Any] | None,
+    decision_id: str,
+    timestamp_utc: str,
+    cycle_mode: str,
+    family: str | None,
+    config_hash: str | None,
+    experiment_id: str | None,
+    winner_promotion_status: str,
+    confirmation_required: bool,
+    confirmation_reason: str | None,
+    confirmation_batch_id: str | None,
+    confirmation_outcome: str | None,
+    holdout_check_required: bool,
+    holdout_check_type: str | None,
+    holdout_check_status: str | None,
+    holdout_check_outcome: str | None,
+    holdout_check_scope: str | None,
+    holdout_check_batch_id: str | None,
+    targeted_follow_up_required: bool,
+    targeted_follow_up_reason: str | None,
+    targeted_follow_up_type: str | None,
+    targeted_follow_up_batch_id: str | None,
+    winner_validation_horizon_tags: list[str] | None,
+    winner_validation_regime_tags: list[str] | None,
+    winner_validation_scope: str | None,
+    winner_validation_confidence: float | None,
+    winner_validation_coverage: float | None,
+    promotion_state: str,
+    block_reason: str | None,
+) -> dict[str, Any]:
+    previous = dict(previous or {})
+    promotion_state = _normalize_promotion_state(promotion_state)
+    confirmation_outcome = _safe_str(confirmation_outcome, None)
+    holdout_check_outcome = _safe_str(holdout_check_outcome, None)
+    current_event = _promotion_state_history_entry(
+        decision_id=decision_id,
+        timestamp_utc=timestamp_utc,
+        cycle_mode=cycle_mode,
+        promotion_state=promotion_state,
+        winner_promotion_status=winner_promotion_status,
+        confirmation_required=confirmation_required,
+        confirmation_outcome=confirmation_outcome,
+        holdout_check_required=holdout_check_required,
+        holdout_check_type=holdout_check_type,
+        holdout_check_status=holdout_check_status,
+        holdout_check_outcome=holdout_check_outcome,
+        holdout_check_scope=holdout_check_scope,
+        holdout_check_batch_id=holdout_check_batch_id,
+        targeted_follow_up_required=targeted_follow_up_required,
+        targeted_follow_up_type=targeted_follow_up_type,
+        targeted_follow_up_reason=targeted_follow_up_reason,
+        targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+        reason=block_reason,
+    )
+
+    confirmation_history = list(previous.get("confirmation_history") or [])
+    holdout_history = list(previous.get("holdout_history") or [])
+    history = list(previous.get("history") or [])
+    history_ids = {str(item.get("decision_id") or "") for item in history if isinstance(item, dict)}
+    if current_event["decision_id"] not in history_ids:
+        history.append(current_event)
+    else:
+        history = [
+            {**item, **current_event}
+            if str(item.get("decision_id") or "") == current_event["decision_id"]
+            else item
+            for item in history
+        ]
+
+    if confirmation_required or confirmation_outcome or previous.get("confirmation_history"):
+        confirmation_entry = dict(current_event)
+        confirmation_entry["event_type"] = "confirmation"
+        if confirmation_entry["decision_id"] not in {str(item.get("decision_id") or "") for item in confirmation_history if isinstance(item, dict)}:
+            confirmation_history.append(confirmation_entry)
+    if holdout_check_required or holdout_check_outcome or previous.get("holdout_history"):
+        holdout_entry = dict(current_event)
+        holdout_entry["event_type"] = "holdout"
+        if holdout_entry["decision_id"] not in {str(item.get("decision_id") or "") for item in holdout_history if isinstance(item, dict)}:
+            holdout_history.append(holdout_entry)
+
+    if len(confirmation_history) > 50:
+        confirmation_history = confirmation_history[-50:]
+    if len(holdout_history) > 50:
+        holdout_history = holdout_history[-50:]
+    if len(history) > 50:
+        history = history[-50:]
+
+    blocked_pending_new_evidence = bool(
+        promotion_state == "blocked_pending_new_evidence"
+        or previous.get("blocked_pending_new_evidence")
+        or confirmation_outcome in {"failed", "rejected"}
+        or holdout_check_outcome == "rejected"
+    )
+    if promotion_state == "confirmed":
+        blocked_pending_new_evidence = False
+    if promotion_state == "rejected" and not blocked_pending_new_evidence:
+        blocked_pending_new_evidence = True
+
+    record = {
+        "family": family,
+        "config_hash": config_hash,
+        "experiment_id": experiment_id,
+        "promotion_state": promotion_state,
+        "winner_promotion_status": winner_promotion_status,
+        "confirmation_required": confirmation_required,
+        "confirmation_reason": confirmation_reason,
+        "confirmation_batch_id": confirmation_batch_id,
+        "confirmation_outcome": confirmation_outcome,
+        "holdout_check_required": holdout_check_required,
+        "holdout_check_type": holdout_check_type,
+        "holdout_check_status": holdout_check_status,
+        "holdout_check_outcome": holdout_check_outcome,
+        "holdout_check_scope": holdout_check_scope,
+        "holdout_check_batch_id": holdout_check_batch_id,
+        "confirmation_history": confirmation_history,
+        "holdout_history": holdout_history,
+        "history": history,
+        "last_confirmation_timestamp_utc": timestamp_utc if confirmation_outcome in {"confirmed", "passed", "success"} else previous.get("last_confirmation_timestamp_utc"),
+        "last_confirmation_cycle_id": decision_id if confirmation_outcome in {"confirmed", "passed", "success"} else previous.get("last_confirmation_cycle_id"),
+        "last_failed_confirmation_timestamp_utc": timestamp_utc if confirmation_outcome in {"failed", "rejected"} else previous.get("last_failed_confirmation_timestamp_utc"),
+        "last_failed_confirmation_cycle_id": decision_id if confirmation_outcome in {"failed", "rejected"} else previous.get("last_failed_confirmation_cycle_id"),
+        "last_holdout_timestamp_utc": timestamp_utc if holdout_check_outcome in {"confirmed", "broadly_confirmed", "rejected"} else previous.get("last_holdout_timestamp_utc"),
+        "last_holdout_cycle_id": decision_id if holdout_check_outcome in {"confirmed", "broadly_confirmed", "rejected"} else previous.get("last_holdout_cycle_id"),
+        "blocked_pending_new_evidence": blocked_pending_new_evidence,
+        "block_reason": block_reason,
+        "last_seen_timestamp_utc": timestamp_utc,
+        "last_seen_cycle_id": decision_id,
+        "source_batch_ids": list(previous.get("source_batch_ids") or []),
+        "source_proposal_id": previous.get("source_proposal_id"),
+        "winner_family": family,
+        "validation_horizon_tags": list(winner_validation_horizon_tags or previous.get("validation_horizon_tags") or []),
+        "validation_regime_tags": list(winner_validation_regime_tags or previous.get("validation_regime_tags") or []),
+        "validation_scope": winner_validation_scope or previous.get("validation_scope"),
+        "validation_confidence": winner_validation_confidence if winner_validation_confidence is not None else previous.get("validation_confidence"),
+        "validation_coverage": winner_validation_coverage if winner_validation_coverage is not None else previous.get("validation_coverage"),
+        "updated_at": timestamp_utc,
+    }
+    return record
+
+
 def _overfitting_signals(
     *,
     family: str,
@@ -161,8 +385,46 @@ def _overfitting_signals(
     validation_regime_tags = list(scorecard.get("validation_regime_tags") or [])
     validation_scope = str(scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
     validation_confidence = _safe_float(scorecard.get("validation_confidence"), 0.0)
+    holdout_check_type = str(scorecard.get("holdout_check_type") or "").strip() or None
+    holdout_check_status = str(scorecard.get("holdout_check_status") or "").strip().lower() or "unknown"
+    holdout_check_outcome = str(scorecard.get("holdout_check_outcome") or "").strip().lower() or "unknown"
+    holdout_check_scope = str(scorecard.get("holdout_check_scope") or "").strip().lower() or "unknown"
+    holdout_horizon_tags = list(scorecard.get("holdout_horizon_tags") or [])
+    holdout_regime_tags = list(scorecard.get("holdout_regime_tags") or [])
+    persisted_promotion_state = str(scorecard.get("promotion_state") or "").strip().lower() or "unconfirmed"
+    promotion_blocked_pending_new_evidence = bool(scorecard.get("promotion_blocked_pending_new_evidence"))
+    confirmation_history_count = int(scorecard.get("confirmation_history_count") or 0)
+    holdout_history_count = int(scorecard.get("holdout_history_count") or 0)
+    promotion_history_count = int(scorecard.get("promotion_history_count") or 0)
+    last_confirmation_timestamp_utc = scorecard.get("last_confirmation_timestamp_utc")
+    last_confirmation_cycle_id = scorecard.get("last_confirmation_cycle_id")
+    last_failed_confirmation_timestamp_utc = scorecard.get("last_failed_confirmation_timestamp_utc")
+    last_failed_confirmation_cycle_id = scorecard.get("last_failed_confirmation_cycle_id")
+    lineage_status_summary = str(scorecard.get("lineage_status_summary") or "seed").strip().lower() or "seed"
+    lineage_trust_score = _safe_float(scorecard.get("lineage_trust_score"), 0.0)
+    lineage_depth = int(scorecard.get("lineage_depth") or 0)
+    lineage_descendant_count = int(scorecard.get("descendant_count") or 0)
+    lineage_confirmation_descendant_count = int(scorecard.get("confirmation_descendant_count") or 0)
+    lineage_holdout_descendant_count = int(scorecard.get("holdout_descendant_count") or 0)
+    lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
+    promotion_state = str(scorecard.get("promotion_state") or "").strip().lower() or "unconfirmed"
+    promotion_blocked_pending_new_evidence = bool(scorecard.get("promotion_blocked_pending_new_evidence"))
+    confirmation_history_count = int(scorecard.get("confirmation_history_count") or 0)
+    holdout_history_count = int(scorecard.get("holdout_history_count") or 0)
+    promotion_history_count = int(scorecard.get("promotion_history_count") or 0)
+    last_confirmation_timestamp_utc = scorecard.get("last_confirmation_timestamp_utc")
+    last_confirmation_cycle_id = scorecard.get("last_confirmation_cycle_id")
+    last_failed_confirmation_timestamp_utc = scorecard.get("last_failed_confirmation_timestamp_utc")
+    last_failed_confirmation_cycle_id = scorecard.get("last_failed_confirmation_cycle_id")
     validation_coverage = _safe_float(scorecard.get("validation_coverage"), 0.0)
     stagnation = int(scorecard.get("stagnation_experiments") or 0)
+    lineage_status_summary = str(scorecard.get("lineage_status_summary") or "seed").strip().lower() or "seed"
+    lineage_trust_score = _safe_float(scorecard.get("lineage_trust_score"), 0.0)
+    lineage_depth = int(scorecard.get("lineage_depth") or 0)
+    lineage_descendant_count = int(scorecard.get("descendant_count") or 0)
+    lineage_confirmation_descendant_count = int(scorecard.get("confirmation_descendant_count") or 0)
+    lineage_holdout_descendant_count = int(scorecard.get("holdout_descendant_count") or 0)
+    lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
 
     if not viable:
         risk += 0.25
@@ -216,6 +478,33 @@ def _overfitting_signals(
         risk += 0.08
         flags.append("objective_trend_negative")
         reasons.append("recent objective trend is weakening")
+    if lineage_status_summary == "strengthening":
+        risk -= 0.06
+        flags.append("lineage_strengthening")
+        reasons.append("lineage branch is strengthening")
+    elif lineage_status_summary == "failing":
+        risk += 0.12
+        flags.append("lineage_failing")
+        reasons.append("lineage branch is failing")
+    elif lineage_status_summary == "mixed":
+        risk += 0.03
+        flags.append("lineage_mixed")
+        reasons.append("lineage evidence is mixed")
+    elif lineage_status_summary == "leaf":
+        flags.append("lineage_leaf")
+        reasons.append("lineage branch is a leaf")
+    if lineage_trust_score >= 0.70:
+        risk -= 0.05
+        flags.append("lineage_trust_high")
+        reasons.append("lineage trust is high")
+    elif lineage_trust_score <= 0.30 and lineage_descendant_count > 0:
+        risk += 0.06
+        flags.append("lineage_trust_low")
+        reasons.append("lineage trust is low")
+    if lineage_rejected_descendant_count >= max(2, lineage_confirmation_descendant_count + lineage_holdout_descendant_count):
+        risk += 0.08
+        flags.append("lineage_rejected_branch")
+        reasons.append("branch has many rejected descendants")
     if validation_scope == "broad":
         risk -= 0.08
         flags.append("broad_validation")
@@ -252,6 +541,10 @@ def _overfitting_signals(
         risk -= 0.03
         flags.append("stable_in_trend")
         reasons.append("winner is stable in trend-like regimes")
+    if promotion_state == "blocked_pending_new_evidence" or promotion_blocked_pending_new_evidence:
+        risk += 0.20
+        flags.append("promotion_blocked")
+        reasons.append("winner is blocked pending new evidence")
     if "weak_in_high_vol" in validation_regime_tags:
         risk += 0.08
         flags.append("weak_in_high_vol")
@@ -276,6 +569,10 @@ def _overfitting_signals(
         risk += 0.10
         flags.append("weak_exploratory_family")
         reasons.append("exploratory family remains weak")
+    if promotion_state == "blocked_pending_new_evidence" or promotion_blocked_pending_new_evidence:
+        risk += 0.20
+        flags.append("promotion_blocked")
+        reasons.append("winner is blocked pending new evidence")
     if robustness_score >= 0.75:
         risk -= 0.08
         flags.append("robust_family")
@@ -319,6 +616,15 @@ def _overfitting_signals(
         "validation_scope": validation_scope,
         "validation_confidence": validation_confidence,
         "validation_coverage": validation_coverage,
+        "promotion_state": promotion_state,
+        "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+        "confirmation_history_count": confirmation_history_count,
+        "holdout_history_count": holdout_history_count,
+        "promotion_history_count": promotion_history_count,
+        "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+        "last_confirmation_cycle_id": last_confirmation_cycle_id,
+        "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+        "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
         "risk_score": round(risk, 6),
         "flags": flags,
         "reasons": reasons,
@@ -346,11 +652,27 @@ def _overfitting_signals(
             "dead_zone_density": dead_zone_density,
             "duplicate_saturation": duplicate_saturation,
             "stagnation_experiments": stagnation,
+            "lineage_status_summary": lineage_status_summary,
+            "lineage_trust_score": lineage_trust_score,
+            "lineage_depth": lineage_depth,
+            "lineage_descendant_count": lineage_descendant_count,
+            "lineage_confirmation_descendant_count": lineage_confirmation_descendant_count,
+            "lineage_holdout_descendant_count": lineage_holdout_descendant_count,
+            "lineage_rejected_descendant_count": lineage_rejected_descendant_count,
             "validation_horizon_tags": validation_horizon_tags,
             "validation_regime_tags": validation_regime_tags,
             "validation_scope": validation_scope,
             "validation_confidence": validation_confidence,
             "validation_coverage": validation_coverage,
+            "promotion_state": promotion_state,
+            "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+            "confirmation_history_count": confirmation_history_count,
+            "holdout_history_count": holdout_history_count,
+            "promotion_history_count": promotion_history_count,
+            "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+            "last_confirmation_cycle_id": last_confirmation_cycle_id,
+            "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+            "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
         },
     }
 
@@ -383,6 +705,28 @@ def _winner_promotion_policy(
     validation_regime_tags = list(scorecard.get("validation_regime_tags") or [])
     validation_scope = str(scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
     validation_confidence = _safe_float(scorecard.get("validation_confidence"), 0.0)
+    holdout_check_type = str(scorecard.get("holdout_check_type") or "").strip() or None
+    holdout_check_status = str(scorecard.get("holdout_check_status") or "").strip().lower() or "unknown"
+    holdout_check_outcome = str(scorecard.get("holdout_check_outcome") or "").strip().lower() or "unknown"
+    holdout_check_scope = str(scorecard.get("holdout_check_scope") or "").strip().lower() or "unknown"
+    holdout_horizon_tags = list(scorecard.get("holdout_horizon_tags") or [])
+    holdout_regime_tags = list(scorecard.get("holdout_regime_tags") or [])
+    promotion_state = str(scorecard.get("promotion_state") or "").strip().lower() or "unconfirmed"
+    promotion_blocked_pending_new_evidence = bool(scorecard.get("promotion_blocked_pending_new_evidence"))
+    confirmation_history_count = int(scorecard.get("confirmation_history_count") or 0)
+    holdout_history_count = int(scorecard.get("holdout_history_count") or 0)
+    promotion_history_count = int(scorecard.get("promotion_history_count") or 0)
+    last_confirmation_timestamp_utc = scorecard.get("last_confirmation_timestamp_utc")
+    last_confirmation_cycle_id = scorecard.get("last_confirmation_cycle_id")
+    last_failed_confirmation_timestamp_utc = scorecard.get("last_failed_confirmation_timestamp_utc")
+    last_failed_confirmation_cycle_id = scorecard.get("last_failed_confirmation_cycle_id")
+    lineage_status_summary = str(scorecard.get("lineage_status_summary") or "seed").strip().lower() or "seed"
+    lineage_trust_score = _safe_float(scorecard.get("lineage_trust_score"), 0.0)
+    lineage_depth = int(scorecard.get("lineage_depth") or 0)
+    lineage_descendant_count = int(scorecard.get("descendant_count") or 0)
+    lineage_confirmation_descendant_count = int(scorecard.get("confirmation_descendant_count") or 0)
+    lineage_holdout_descendant_count = int(scorecard.get("holdout_descendant_count") or 0)
+    lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
     viable = _truthy(result.get("viable"))
     baseline_support = _truthy(result.get("beats_baseline_objective")) or _truthy(result.get("beats_baseline_guardrails")) or win_rate >= 0.50
     trades_per_year = _safe_float(result.get("trades_per_year"), 0.0)
@@ -393,6 +737,178 @@ def _winner_promotion_policy(
     unstable_trend = recent_robustness_trend < -0.05 or _safe_float(scorecard.get("recent_viable_trend"), 0.0) < -0.05
     narrow_validation = validation_scope in {"narrow", "unknown"} or "weak_long_horizon" in validation_horizon_tags or "weak_in_high_vol" in validation_regime_tags
     broad_validation = validation_scope == "broad" and ("stable_in_trend" in validation_regime_tags or "strong_in_bear" in validation_regime_tags)
+    holdout = summarize_holdout_checks(
+        validation_horizon_tags=validation_horizon_tags,
+        validation_regime_tags=validation_regime_tags,
+        validation_scope=validation_scope,
+        validation_confidence=validation_confidence,
+        validation_coverage=_safe_float(scorecard.get("validation_coverage"), 0.0),
+        targeted_follow_up_type=str(scorecard.get("targeted_follow_up_type") or "") or None,
+        holdout_check_type=str(scorecard.get("holdout_check_type") or "") or None,
+        holdout_check_status=str(scorecard.get("holdout_check_status") or "") or None,
+        holdout_check_outcome=str(scorecard.get("holdout_check_outcome") or "") or None,
+        holdout_check_scope=str(scorecard.get("holdout_check_scope") or "") or None,
+        holdout_check_batch_id=scorecard.get("holdout_check_batch_id"),
+        holdout_horizon_tags=list(scorecard.get("holdout_horizon_tags") or []) or None,
+        holdout_regime_tags=list(scorecard.get("holdout_regime_tags") or []) or None,
+        confirmation_outcome=str(scorecard.get("confirmation_outcome") or "") or None,
+        promotion_state=str(scorecard.get("promotion_state") or "") or None,
+    )
+    holdout_required = bool(holdout.get("holdout_check_required"))
+    holdout_status = str(holdout.get("holdout_check_status") or "unknown").strip().lower() or "unknown"
+    holdout_outcome = str(holdout.get("holdout_check_outcome") or "unknown").strip().lower() or "unknown"
+    holdout_scope = str(holdout.get("holdout_check_scope") or "unknown").strip().lower() or "unknown"
+    holdout_horizon_tags = list(holdout.get("holdout_horizon_tags") or [])
+    holdout_regime_tags = list(holdout.get("holdout_regime_tags") or [])
+    reasons: list[str] = []
+    if promotion_state == "blocked_pending_new_evidence" or promotion_blocked_pending_new_evidence:
+        return {
+            "winner_family": family,
+            "winner_promotion_status": "blocked_pending_new_evidence",
+            "winner_exploitation_cap": 0.15,
+            "confirmation_batch_requested": False,
+            "reasons": [
+                "winner is blocked pending new evidence",
+                "prior confirmation or holdout failure must be resolved before promotion",
+            ],
+            "signals": {
+                "robustness_score": robustness_score,
+                "scorecard_overfit_risk": overfit_risk,
+                "overfit_risk": overfit_risk,
+                "viable_rate": viable_rate,
+                "win_rate_vs_baseline": win_rate,
+                "sparse_activity": sparse_activity,
+                "family_support_missing": family_support_missing,
+                "unstable_trend": unstable_trend,
+                "baseline_support": baseline_support,
+                "validation_horizon_tags": validation_horizon_tags,
+                "validation_regime_tags": validation_regime_tags,
+                "validation_scope": validation_scope,
+                "validation_confidence": validation_confidence,
+                "narrow_validation": narrow_validation,
+                "holdout_check_required": holdout_required,
+                "holdout_check_type": holdout.get("holdout_check_type"),
+                "holdout_check_status": holdout.get("holdout_check_status"),
+                "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+                "holdout_check_scope": holdout.get("holdout_check_scope"),
+                "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+                "holdout_horizon_tags": holdout_horizon_tags,
+                "holdout_regime_tags": holdout_regime_tags,
+                "promotion_state": promotion_state,
+                "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+                "confirmation_history_count": confirmation_history_count,
+                "holdout_history_count": holdout_history_count,
+                "promotion_history_count": promotion_history_count,
+                "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+                "last_confirmation_cycle_id": last_confirmation_cycle_id,
+                "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+                "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+            },
+        }
+    persisted_support_count = confirmation_history_count + holdout_history_count + promotion_history_count
+    persisted_confirmed = (
+        promotion_state == "confirmed"
+        and persisted_support_count > 0
+        and holdout_outcome in {"confirmed", "broadly_confirmed", "passed", "success"}
+        and not sparse_activity
+        and not family_support_missing
+        and not unstable_trend
+    )
+    persisted_cautious = (
+        promotion_state == "confirmed"
+        and persisted_support_count > 0
+        and not persisted_confirmed
+    )
+    if persisted_confirmed:
+        return {
+            "winner_family": family,
+            "winner_promotion_status": "promoted",
+            "winner_exploitation_cap": 0.70,
+            "confirmation_batch_requested": False,
+            "reasons": [
+                "persisted confirmation state supports normal promotion",
+                "winner has already accumulated repeat evidence across cycles",
+            ],
+            "signals": {
+                "robustness_score": robustness_score,
+                "scorecard_overfit_risk": overfit_risk,
+                "overfit_risk": overfit_risk,
+                "viable_rate": viable_rate,
+                "win_rate_vs_baseline": win_rate,
+                "sparse_activity": sparse_activity,
+                "family_support_missing": family_support_missing,
+                "unstable_trend": unstable_trend,
+                "baseline_support": baseline_support,
+                "validation_horizon_tags": validation_horizon_tags,
+                "validation_regime_tags": validation_regime_tags,
+                "validation_scope": validation_scope,
+                "validation_confidence": validation_confidence,
+                "narrow_validation": narrow_validation,
+                "holdout_check_required": holdout_required,
+                "holdout_check_type": holdout.get("holdout_check_type"),
+                "holdout_check_status": holdout.get("holdout_check_status"),
+                "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+                "holdout_check_scope": holdout.get("holdout_check_scope"),
+                "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+                "holdout_horizon_tags": holdout_horizon_tags,
+                "holdout_regime_tags": holdout_regime_tags,
+                "promotion_state": promotion_state,
+                "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+                "confirmation_history_count": confirmation_history_count,
+                "holdout_history_count": holdout_history_count,
+                "promotion_history_count": promotion_history_count,
+                "persisted_support_count": persisted_support_count,
+                "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+                "last_confirmation_cycle_id": last_confirmation_cycle_id,
+                "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+                "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+            },
+        }
+    if persisted_cautious:
+        return {
+            "winner_family": family,
+            "winner_promotion_status": "cautious_promotion",
+            "winner_exploitation_cap": 0.50,
+            "confirmation_batch_requested": False,
+            "reasons": [
+                "persisted confirmation state is present but needs another cycle of evidence before full promotion",
+                "hold current exploitation restraint while the state matures",
+            ],
+            "signals": {
+                "robustness_score": robustness_score,
+                "scorecard_overfit_risk": overfit_risk,
+                "overfit_risk": overfit_risk,
+                "viable_rate": viable_rate,
+                "win_rate_vs_baseline": win_rate,
+                "sparse_activity": sparse_activity,
+                "family_support_missing": family_support_missing,
+                "unstable_trend": unstable_trend,
+                "baseline_support": baseline_support,
+                "validation_horizon_tags": validation_horizon_tags,
+                "validation_regime_tags": validation_regime_tags,
+                "validation_scope": validation_scope,
+                "validation_confidence": validation_confidence,
+                "narrow_validation": narrow_validation,
+                "holdout_check_required": holdout_required,
+                "holdout_check_type": holdout.get("holdout_check_type"),
+                "holdout_check_status": holdout.get("holdout_check_status"),
+                "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+                "holdout_check_scope": holdout.get("holdout_check_scope"),
+                "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+                "holdout_horizon_tags": holdout_horizon_tags,
+                "holdout_regime_tags": holdout_regime_tags,
+                "promotion_state": promotion_state,
+                "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+                "confirmation_history_count": confirmation_history_count,
+                "holdout_history_count": holdout_history_count,
+                "promotion_history_count": promotion_history_count,
+                "persisted_support_count": persisted_support_count,
+                "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+                "last_confirmation_cycle_id": last_confirmation_cycle_id,
+                "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+                "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+            },
+        }
     suspicious = (
         overfit_risk >= 0.60
         or robustness_score < 0.50
@@ -401,6 +917,9 @@ def _winner_promotion_policy(
         or family_support_missing
         or unstable_trend
         or narrow_validation
+        or holdout_required
+        or holdout_outcome in {"pending", "provisional", "unproven", "rejected"}
+        or holdout_scope in {"long_horizon", "high_volatility", "mixed_regime", "coverage_expansion"} and overfit_risk >= 0.45
         or bool(signal.get("do_not_over_exploit_yet"))
     )
     cautious = (
@@ -412,8 +931,17 @@ def _winner_promotion_policy(
             or viable_rate < 0.10
             or not broad_validation
             or validation_confidence < 0.50
+            or holdout_outcome in {"provisional", "unproven"}
         )
     )
+    if lineage_status_summary == "failing" or lineage_rejected_descendant_count >= max(2, lineage_confirmation_descendant_count + lineage_holdout_descendant_count):
+        suspicious = True
+        reasons.append("lineage branch is failing or has too many rejected descendants")
+    if lineage_status_summary in {"mixed", "leaf"} and lineage_trust_score < 0.55:
+        cautious = True
+        reasons.append("lineage evidence is not yet broad enough for aggressive exploitation")
+    if lineage_status_summary == "strengthening" and lineage_trust_score >= 0.70 and not suspicious:
+        cautious = False
     if suspicious:
         return {
             "winner_family": family,
@@ -438,6 +966,23 @@ def _winner_promotion_policy(
                 "validation_scope": validation_scope,
                 "validation_confidence": validation_confidence,
                 "narrow_validation": narrow_validation,
+                "holdout_check_required": holdout_required,
+                "holdout_check_type": holdout.get("holdout_check_type"),
+                "holdout_check_status": holdout.get("holdout_check_status"),
+                "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+                "holdout_check_scope": holdout.get("holdout_check_scope"),
+                "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+                "holdout_horizon_tags": holdout_horizon_tags,
+                "holdout_regime_tags": holdout_regime_tags,
+                "promotion_state": promotion_state,
+                "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+                "confirmation_history_count": confirmation_history_count,
+                "holdout_history_count": holdout_history_count,
+                "promotion_history_count": promotion_history_count,
+                "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+                "last_confirmation_cycle_id": last_confirmation_cycle_id,
+                "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+                "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
             },
         }
     if cautious:
@@ -464,6 +1009,23 @@ def _winner_promotion_policy(
                 "validation_scope": validation_scope,
                 "validation_confidence": validation_confidence,
                 "narrow_validation": narrow_validation,
+                "holdout_check_required": holdout_required,
+                "holdout_check_type": holdout.get("holdout_check_type"),
+                "holdout_check_status": holdout.get("holdout_check_status"),
+                "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+                "holdout_check_scope": holdout.get("holdout_check_scope"),
+                "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+                "holdout_horizon_tags": holdout_horizon_tags,
+                "holdout_regime_tags": holdout_regime_tags,
+                "promotion_state": promotion_state,
+                "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+                "confirmation_history_count": confirmation_history_count,
+                "holdout_history_count": holdout_history_count,
+                "promotion_history_count": promotion_history_count,
+                "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+                "last_confirmation_cycle_id": last_confirmation_cycle_id,
+                "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+                "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
             },
         }
     return {
@@ -488,6 +1050,178 @@ def _winner_promotion_policy(
             "validation_scope": validation_scope,
             "validation_confidence": validation_confidence,
             "narrow_validation": narrow_validation,
+            "holdout_check_required": holdout_required,
+            "holdout_check_type": holdout.get("holdout_check_type"),
+            "holdout_check_status": holdout.get("holdout_check_status"),
+            "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+            "holdout_check_scope": holdout.get("holdout_check_scope"),
+            "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+            "holdout_horizon_tags": holdout_horizon_tags,
+            "holdout_regime_tags": holdout_regime_tags,
+            "promotion_state": promotion_state,
+            "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+            "confirmation_history_count": confirmation_history_count,
+            "holdout_history_count": holdout_history_count,
+            "promotion_history_count": promotion_history_count,
+            "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+            "last_confirmation_cycle_id": last_confirmation_cycle_id,
+            "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+            "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+        },
+    }
+
+
+def _targeted_follow_up_plan(
+    *,
+    family: str | None,
+    scorecard: dict[str, Any],
+    promotion_policy: dict[str, Any],
+) -> dict[str, Any]:
+    if not family:
+        return {
+            "targeted_follow_up_required": False,
+            "targeted_follow_up_reason": None,
+            "targeted_follow_up_type": None,
+            "targeted_follow_up_priority": 0.0,
+            "targeted_follow_up_batch_id": None,
+            "signals": {},
+        }
+
+    winner_promotion_status = str(promotion_policy.get("winner_promotion_status") or "not_promoted")
+    validation_horizon_tags = list(scorecard.get("validation_horizon_tags") or [])
+    validation_regime_tags = list(scorecard.get("validation_regime_tags") or [])
+    validation_scope = str(scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
+    validation_confidence = _safe_float(scorecard.get("validation_confidence"), 0.0)
+    validation_coverage = _safe_float(scorecard.get("validation_coverage"), 0.0)
+    robustness_score = _safe_float(scorecard.get("robustness_score"), 0.0)
+    overfit_risk = _safe_float(scorecard.get("overfit_risk"), 1.0 - robustness_score)
+    lineage_status_summary = str(scorecard.get("lineage_status_summary") or "seed").strip().lower() or "seed"
+    lineage_trust_score = _safe_float(scorecard.get("lineage_trust_score"), 0.0)
+    lineage_depth = int(scorecard.get("lineage_depth") or 0)
+    lineage_descendant_count = int(scorecard.get("descendant_count") or 0)
+    lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
+    recent_robustness_trend = _safe_float(scorecard.get("recent_robustness_trend"), 0.0)
+    viable_rate = _safe_float(scorecard.get("viable_rate"), 0.0)
+    win_rate = _safe_float(scorecard.get("win_rate_vs_baseline"), 0.0)
+
+    reasons: list[str] = []
+    follow_up_type: str | None = None
+    priority = 0.0
+
+    weak_long = "weak_long_horizon" in validation_horizon_tags
+    weak_high_vol = "weak_in_high_vol" in validation_regime_tags
+    mixed_regime = "regime_mixed" in validation_regime_tags
+    unknown_coverage = validation_scope in {"unknown", "narrow", "partial"} or validation_confidence < 0.50 or validation_coverage < 0.75
+    only_short = "strong_short_horizon" in validation_horizon_tags and "stable_medium_horizon" not in validation_horizon_tags and "strong_long_horizon" not in validation_horizon_tags
+    stable_trend = "stable_in_trend" in validation_regime_tags
+
+    if not (
+        winner_promotion_status in {"promoted", "cautious_promotion", "hold_for_confirmation"}
+        and (unknown_coverage or weak_long or weak_high_vol or mixed_regime or only_short or (not stable_trend and validation_scope != "broad"))
+    ):
+        return {
+            "targeted_follow_up_required": False,
+            "targeted_follow_up_reason": None,
+            "targeted_follow_up_type": None,
+            "targeted_follow_up_priority": 0.0,
+            "targeted_follow_up_batch_id": None,
+            "signals": {
+                "validation_horizon_tags": validation_horizon_tags,
+                "validation_regime_tags": validation_regime_tags,
+                "validation_scope": validation_scope,
+                "validation_confidence": validation_confidence,
+                "validation_coverage": validation_coverage,
+                "robustness_score": robustness_score,
+                "overfit_risk": overfit_risk,
+                "lineage_status_summary": lineage_status_summary,
+                "lineage_trust_score": lineage_trust_score,
+                "lineage_depth": lineage_depth,
+                "lineage_descendant_count": lineage_descendant_count,
+                "lineage_rejected_descendant_count": lineage_rejected_descendant_count,
+            },
+        }
+
+    if mixed_regime:
+        follow_up_type = "mixed_regime_clarification"
+        priority += 0.35
+        reasons.append("regime evidence is mixed")
+    if weak_long:
+        follow_up_type = follow_up_type or "long_horizon_confirmation"
+        priority += 0.30
+        reasons.append("long-horizon validation is weak")
+    if weak_high_vol:
+        follow_up_type = follow_up_type or "high_volatility_confirmation"
+        priority += 0.30
+        reasons.append("high-volatility validation is weak")
+    if only_short:
+        follow_up_type = follow_up_type or "short_horizon_confirmation"
+        priority += 0.20
+        reasons.append("winner is only strong on the short horizon")
+    if not stable_trend and not mixed_regime and validation_scope != "broad":
+        follow_up_type = follow_up_type or "low_vol_trend_confirmation"
+        priority += 0.15
+        reasons.append("trend regime support is incomplete")
+    if unknown_coverage and not follow_up_type:
+        follow_up_type = "coverage_expansion_confirmation"
+        priority += 0.35
+        reasons.append("validation coverage is incomplete")
+    if recent_robustness_trend < -0.05:
+        priority += 0.10
+        reasons.append("recent robustness trend is weakening")
+    if viable_rate < 0.20:
+        priority += 0.10
+        reasons.append("family support is still thin")
+    if win_rate < 0.50:
+        priority += 0.10
+        reasons.append("baseline-beating support is not yet durable")
+    if robustness_score < 0.60:
+        priority += 0.10
+        reasons.append("robustness is not yet strong enough")
+    if overfit_risk >= 0.45:
+        priority += 0.15
+        reasons.append("overfit risk remains elevated")
+    if lineage_status_summary == "failing":
+        follow_up_type = follow_up_type or "holdout_confirmation"
+        priority += 0.18
+        reasons.append("lineage branch is failing")
+    elif lineage_status_summary == "strengthening":
+        priority -= 0.05
+        reasons.append("lineage branch is strengthening")
+    elif lineage_status_summary == "mixed":
+        priority += 0.08
+        reasons.append("lineage evidence is mixed")
+    elif lineage_status_summary == "leaf":
+        reasons.append("lineage branch is a leaf")
+    if lineage_trust_score >= 0.70:
+        priority -= 0.06
+        reasons.append("lineage trust is high")
+    elif lineage_trust_score <= 0.30 and lineage_descendant_count > 0:
+        priority += 0.08
+        reasons.append("lineage trust is low")
+    if lineage_rejected_descendant_count >= max(2, lineage_descendant_count // 2):
+        priority += 0.10
+        reasons.append("lineage has many rejected descendants")
+
+    if not follow_up_type:
+        follow_up_type = "targeted_follow_up_confirmation"
+    priority = max(0.0, min(1.0, priority))
+    return {
+        "targeted_follow_up_required": True,
+        "targeted_follow_up_reason": "; ".join(dict.fromkeys(reasons)) or "winner needs targeted follow-up validation",
+        "targeted_follow_up_type": follow_up_type,
+        "targeted_follow_up_priority": round(priority, 6),
+        "targeted_follow_up_batch_id": None,
+        "signals": {
+            "validation_horizon_tags": validation_horizon_tags,
+            "validation_regime_tags": validation_regime_tags,
+            "validation_scope": validation_scope,
+            "validation_confidence": validation_confidence,
+            "validation_coverage": validation_coverage,
+            "robustness_score": robustness_score,
+            "overfit_risk": overfit_risk,
+            "recent_robustness_trend": recent_robustness_trend,
+            "viable_rate": viable_rate,
+            "win_rate_vs_baseline": win_rate,
         },
     }
 
@@ -514,6 +1248,17 @@ def _confirmation_batch_plan(
     validation_regime_tags = list(winner_scorecard.get("validation_regime_tags") or [])
     validation_scope = str(winner_scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
     validation_confidence = _safe_float(winner_scorecard.get("validation_confidence"), 0.0)
+    validation_coverage = _safe_float(winner_scorecard.get("validation_coverage"), 0.0)
+    targeted_follow_up = _targeted_follow_up_plan(
+        family=winner_family,
+        scorecard=winner_scorecard,
+        promotion_policy=promotion_policy,
+    )
+    if targeted_follow_up.get("targeted_follow_up_required"):
+        confirmation_required = True
+        targeted_reason = str(targeted_follow_up.get("targeted_follow_up_reason") or "").strip()
+        if targeted_reason:
+            confirmation_reason_parts.append(targeted_reason)
 
     if winner_promotion_status == "promoted" and confidence < 0.35:
         confirmation_required = True
@@ -582,7 +1327,20 @@ def _confirmation_batch_plan(
         confirmation_required = False
         if promotion_state == "unconfirmed":
             promotion_state = "confirmed"
+    if latest_confirmation_outcome in {"failed", "rejected"} or promotion_state == "rejected":
+        targeted_follow_up = {
+            "targeted_follow_up_required": False,
+            "targeted_follow_up_reason": None,
+            "targeted_follow_up_type": None,
+            "targeted_follow_up_priority": 0.0,
+            "targeted_follow_up_batch_id": None,
+            "signals": {
+                "confirmation_failed": True,
+                "latest_confirmation_outcome": latest_confirmation_outcome,
+            },
+        }
     confirmation_batch_id = f"{decision_id}_confirm_{winner_family}" if confirmation_required and winner_family else None
+    targeted_follow_up_batch_id = f"{decision_id}_followup_{winner_family}" if targeted_follow_up.get("targeted_follow_up_required") and winner_family else None
     planned_max_experiments = int(request.max_experiments)
     if confirmation_required:
         planned_max_experiments = max(1, min(int(request.max_experiments), max(4, int(round(int(request.max_experiments) * 0.25)))))
@@ -606,6 +1364,24 @@ def _confirmation_batch_plan(
                 if assigned < planned_max_experiments:
                     confirmation_family_budgets[winner_family] += planned_max_experiments - assigned
 
+    holdout = summarize_holdout_checks(
+        validation_horizon_tags=validation_horizon_tags,
+        validation_regime_tags=validation_regime_tags,
+        validation_scope=validation_scope,
+        validation_confidence=validation_confidence,
+        validation_coverage=validation_coverage,
+        targeted_follow_up_type=str(targeted_follow_up.get("targeted_follow_up_type") or "") or None,
+        holdout_check_type=str(targeted_follow_up.get("targeted_follow_up_type") or "") or None,
+        holdout_check_status="required" if confirmation_required else "not_required",
+        holdout_check_outcome=latest_confirmation_outcome,
+        holdout_check_scope=str(targeted_follow_up.get("targeted_follow_up_type") or "") or None,
+        holdout_check_batch_id=confirmation_batch_id or targeted_follow_up_batch_id,
+        holdout_horizon_tags=list(targeted_follow_up.get("signals", {}).get("validation_horizon_tags") or validation_horizon_tags),
+        holdout_regime_tags=list(targeted_follow_up.get("signals", {}).get("validation_regime_tags") or validation_regime_tags),
+        confirmation_outcome=latest_confirmation_outcome,
+        promotion_state=promotion_state,
+    )
+
     return {
         "promotion_state": promotion_state,
         "confirmation_required": confirmation_required,
@@ -615,10 +1391,24 @@ def _confirmation_batch_plan(
         "confirmation_family_budgets": confirmation_family_budgets,
         "confirmation_outcome": latest_confirmation_outcome,
         "latest_confirmation_required": latest_confirmation_required,
+        "targeted_follow_up_required": bool(targeted_follow_up.get("targeted_follow_up_required")),
+        "targeted_follow_up_reason": targeted_follow_up.get("targeted_follow_up_reason"),
+        "targeted_follow_up_type": targeted_follow_up.get("targeted_follow_up_type"),
+        "targeted_follow_up_priority": targeted_follow_up.get("targeted_follow_up_priority"),
+        "targeted_follow_up_batch_id": targeted_follow_up_batch_id,
+        "holdout_check_required": bool(holdout.get("holdout_check_required")),
+        "holdout_check_type": holdout.get("holdout_check_type"),
+        "holdout_check_status": holdout.get("holdout_check_status"),
+        "holdout_check_outcome": holdout.get("holdout_check_outcome"),
+        "holdout_check_scope": holdout.get("holdout_check_scope"),
+        "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+        "holdout_horizon_tags": holdout.get("holdout_horizon_tags"),
+        "holdout_regime_tags": holdout.get("holdout_regime_tags"),
         "validation_horizon_tags": validation_horizon_tags,
         "validation_regime_tags": validation_regime_tags,
         "validation_scope": validation_scope,
         "validation_confidence": validation_confidence,
+        "validation_coverage": validation_coverage,
     }
 
 
@@ -649,6 +1439,28 @@ def _family_weight(
     validation_regime_tags = list(scorecard.get("validation_regime_tags") or [])
     validation_scope = str(scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
     validation_confidence = _safe_float(scorecard.get("validation_confidence"), 0.0)
+    holdout_check_type = str(scorecard.get("holdout_check_type") or "").strip() or None
+    holdout_check_status = str(scorecard.get("holdout_check_status") or "").strip().lower() or "unknown"
+    holdout_check_outcome = str(scorecard.get("holdout_check_outcome") or "").strip().lower() or "unknown"
+    holdout_check_scope = str(scorecard.get("holdout_check_scope") or "").strip().lower() or "unknown"
+    holdout_horizon_tags = list(scorecard.get("holdout_horizon_tags") or [])
+    holdout_regime_tags = list(scorecard.get("holdout_regime_tags") or [])
+    promotion_state = str(scorecard.get("promotion_state") or "").strip().lower() or "unconfirmed"
+    promotion_blocked_pending_new_evidence = bool(scorecard.get("promotion_blocked_pending_new_evidence"))
+    confirmation_history_count = int(scorecard.get("confirmation_history_count") or 0)
+    holdout_history_count = int(scorecard.get("holdout_history_count") or 0)
+    promotion_history_count = int(scorecard.get("promotion_history_count") or 0)
+    last_confirmation_timestamp_utc = scorecard.get("last_confirmation_timestamp_utc")
+    last_confirmation_cycle_id = scorecard.get("last_confirmation_cycle_id")
+    last_failed_confirmation_timestamp_utc = scorecard.get("last_failed_confirmation_timestamp_utc")
+    last_failed_confirmation_cycle_id = scorecard.get("last_failed_confirmation_cycle_id")
+    lineage_status_summary = str(scorecard.get("lineage_status_summary") or "seed").strip().lower() or "seed"
+    lineage_trust_score = _safe_float(scorecard.get("lineage_trust_score"), 0.0)
+    lineage_depth = int(scorecard.get("lineage_depth") or 0)
+    lineage_descendant_count = int(scorecard.get("descendant_count") or 0)
+    lineage_confirmation_descendant_count = int(scorecard.get("confirmation_descendant_count") or 0)
+    lineage_holdout_descendant_count = int(scorecard.get("holdout_descendant_count") or 0)
+    lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
 
     if family == "momentum" and viable_rate > 0.05:
         weight += 0.10
@@ -719,6 +1531,53 @@ def _family_weight(
     if validation_confidence < 0.35:
         weight *= 0.92
         reasons.append("validation_confidence_low")
+    if holdout_check_outcome == "confirmed":
+        weight += 0.06
+        reasons.append("holdout_confirmed")
+    elif holdout_check_outcome == "broadly_confirmed":
+        weight += 0.08
+        reasons.append("holdout_broadly_confirmed")
+    elif holdout_check_outcome in {"pending", "provisional", "unproven"}:
+        weight *= 0.88
+        reasons.append("holdout_unproven")
+        if budget_stance == "active":
+            budget_stance = "controlled"
+    elif holdout_check_outcome == "rejected":
+        weight *= 0.55
+        reasons.append("holdout_rejected")
+        budget_stance = "paused"
+    if holdout_check_status in {"required", "partial"}:
+        weight *= 0.90
+        reasons.append("holdout_required")
+    if holdout_check_scope in {"long_horizon", "high_volatility", "mixed_regime", "coverage_expansion"}:
+        reasons.append(f"holdout_scope={holdout_check_scope}")
+    if holdout_horizon_tags:
+        reasons.append(f"holdout_horizon_tags={holdout_horizon_tags}")
+    if holdout_regime_tags:
+        reasons.append(f"holdout_regime_tags={holdout_regime_tags}")
+    if lineage_status_summary == "strengthening":
+        weight += 0.08
+        reasons.append("lineage_strengthening")
+    elif lineage_status_summary == "failing":
+        weight *= 0.72
+        budget_stance = "paused"
+        reasons.append("lineage_failing")
+    elif lineage_status_summary == "mixed":
+        weight *= 0.90
+        reasons.append("lineage_mixed")
+    elif lineage_status_summary == "leaf":
+        weight *= 0.95
+        reasons.append("lineage_leaf")
+    if lineage_trust_score >= 0.70:
+        weight += 0.06
+        reasons.append("lineage_trust_high")
+    elif lineage_trust_score <= 0.30 and lineage_descendant_count > 0:
+        weight *= 0.84
+        reasons.append("lineage_trust_low")
+    if lineage_rejected_descendant_count >= max(2, lineage_confirmation_descendant_count + lineage_holdout_descendant_count):
+        weight *= 0.82
+        budget_stance = "paused" if family != "momentum" else budget_stance
+        reasons.append("lineage_rejected_branch")
     if family == (best_overall or {}).get("strategy_family"):
         weight += 0.15
         reasons.append("best_overall")
@@ -778,6 +1637,10 @@ def _family_weight(
             weight *= 0.25
             budget_stance = "controlled"
             reasons.append("weak_exploratory_family")
+    if promotion_state == "blocked_pending_new_evidence" or promotion_blocked_pending_new_evidence:
+        weight *= 0.40
+        budget_stance = "controlled"
+        reasons.append("winner_blocked_pending_new_evidence")
     if promotion_policy and family == promotion_policy.get("winner_family"):
         status = str(promotion_policy.get("winner_promotion_status") or "not_promoted")
         if status == "promoted":
@@ -823,7 +1686,29 @@ def _family_weight(
         "validation_confidence": validation_confidence,
         "validation_coverage": _safe_float(scorecard.get("validation_coverage"), 0.0),
         "overfit_flags": overfit_flags,
+        "lineage_status_summary": lineage_status_summary,
+        "lineage_trust_score": lineage_trust_score,
+        "lineage_depth": lineage_depth,
+        "lineage_descendant_count": lineage_descendant_count,
+        "lineage_confirmation_descendant_count": lineage_confirmation_descendant_count,
+        "lineage_holdout_descendant_count": lineage_holdout_descendant_count,
+        "lineage_rejected_descendant_count": lineage_rejected_descendant_count,
+        "promotion_state": promotion_state,
+        "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
+        "confirmation_history_count": confirmation_history_count,
+        "holdout_history_count": holdout_history_count,
+        "promotion_history_count": promotion_history_count,
+        "last_confirmation_timestamp_utc": last_confirmation_timestamp_utc,
+        "last_confirmation_cycle_id": last_confirmation_cycle_id,
+        "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
+        "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
         "reasons": reasons,
+        "holdout_check_type": holdout_check_type,
+        "holdout_check_status": holdout_check_status,
+        "holdout_check_outcome": holdout_check_outcome,
+        "holdout_check_scope": holdout_check_scope,
+        "holdout_horizon_tags": holdout_horizon_tags,
+        "holdout_regime_tags": holdout_regime_tags,
     }
 
 
@@ -909,6 +1794,8 @@ def _cycle_mode(
         return "stagnation_escape", reasons
     if (promotion_policy or {}).get("winner_promotion_status") == "hold_for_confirmation":
         return "diagnostics", reasons | {"promotion_gate": "hold_for_confirmation"}
+    if (promotion_policy or {}).get("winner_promotion_status") == "blocked_pending_new_evidence":
+        return "diagnostics", reasons | {"promotion_gate": "blocked_pending_new_evidence"}
     if overfit_pressure >= 0.45:
         return "normal_exploration", reasons | {"anti_overfitting": True}
     if best_baseline_family in selected_families or best_viable_family in selected_families:
@@ -945,6 +1832,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             best_viable=None,
             best_baseline_beating=None,
             family_scorecards={},
+            lineage_summary={},
             used_signals={"fallback": True},
             rationale={"reason": "no strategy families selected"},
             fallback_used=True,
@@ -972,6 +1860,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             best_viable=None,
             best_baseline_beating=None,
             family_scorecards={family: dict((dashboard.get("family_scorecards") or {}).get(family) or {}) for family in selected_families},
+            lineage_summary=dashboard.get("lineage_summary") or {},
             used_signals={"dashboard_empty": True},
             rationale={
                 "reason": "legacy fallback because the dashboard has no official results yet",
@@ -980,7 +1869,9 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             fallback_used=True,
         )
     latest_non_empty_batch = dashboard.get("latest_non_empty_batch")
+    lineage_summary = dashboard.get("lineage_summary") or {}
     latest_batch_overview = _latest_batch_overview(request.experiments_dir)
+    memory = load_research_memory(request.experiments_dir)
     family_risk_reports: dict[str, Any] = {}
     for family in selected_families:
         family_risk_reports[family] = _overfitting_signals(
@@ -1025,6 +1916,11 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             break
     winner_scorecard = _scorecard_dict(dashboard, winner_family) if winner_family else {}
     winner_result = _top_family_result(dashboard, winner_family) if winner_family else None
+    winner_config_hash = _safe_str((winner_result or {}).get("config_hash"), None)
+    winner_experiment_id = _safe_str((winner_result or {}).get("experiment_id"), None)
+    persisted_promotion_state = (
+        get_promotion_state_record(memory, winner_family, winner_config_hash) if winner_family and winner_config_hash else None
+    )
     winner_overfit_signal = family_risk_reports.get(winner_family) if winner_family else None
     promotion_policy = _winner_promotion_policy(
         family=winner_family,
@@ -1040,6 +1936,12 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         promotion_policy=promotion_policy,
         latest_batch_overview=latest_batch_overview,
     )
+    holdout_check = confirmation_plan
+    targeted_follow_up = confirmation_plan
+    confirmation_required = bool(confirmation_plan.get("confirmation_required"))
+    confirmation_reason = confirmation_plan.get("confirmation_reason")
+    confirmation_batch_id = confirmation_plan.get("confirmation_batch_id")
+    latest_confirmation_outcome = confirmation_plan.get("confirmation_outcome")
     cycle_mode, mode_signals = _cycle_mode(
         selected_families=selected_families,
         max_experiments=int(request.max_experiments),
@@ -1066,7 +1968,69 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         exploration_fraction = min(max(exploration_fraction, 0.45), 0.60)
     if overfit_pressure >= 0.45:
         exploration_fraction = max(exploration_fraction, 0.72)
+    winner_validation_horizon_tags = list(winner_scorecard.get("validation_horizon_tags") or [])
+    winner_validation_regime_tags = list(winner_scorecard.get("validation_regime_tags") or [])
+    winner_validation_scope = str(winner_scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
+    winner_validation_confidence = _safe_float(winner_scorecard.get("validation_confidence"), 0.0)
+    winner_validation_coverage = _safe_float(winner_scorecard.get("validation_coverage"), 0.0)
+    promotion_state = str(confirmation_plan.get("promotion_state") or "unconfirmed")
+    if promotion_state == "not_promoted":
+        promotion_state = "unconfirmed"
+    holdout_required = bool(holdout_check.get("holdout_check_required"))
+    holdout_status = str(holdout_check.get("holdout_check_status") or "unknown").strip().lower() or "unknown"
+    holdout_outcome = str(holdout_check.get("holdout_check_outcome") or "unknown").strip().lower() or "unknown"
+    holdout_scope = str(holdout_check.get("holdout_check_scope") or "unknown").strip().lower() or "unknown"
+    holdout_horizon_tags = list(holdout_check.get("holdout_horizon_tags") or [])
+    holdout_regime_tags = list(holdout_check.get("holdout_regime_tags") or [])
+    promotion_state_record = _build_promotion_state_record(
+        previous=persisted_promotion_state,
+        decision_id=decision_id,
+        timestamp_utc=timestamp,
+        cycle_mode=cycle_mode,
+        family=winner_family,
+        config_hash=winner_config_hash,
+        experiment_id=winner_experiment_id,
+        winner_promotion_status=str(promotion_policy.get("winner_promotion_status") or "not_promoted"),
+        confirmation_required=bool(confirmation_required),
+        confirmation_reason=confirmation_reason,
+        confirmation_batch_id=confirmation_batch_id,
+        confirmation_outcome=latest_confirmation_outcome,
+        holdout_check_required=holdout_required,
+        holdout_check_type=holdout_check.get("holdout_check_type"),
+        holdout_check_status=holdout_status,
+        holdout_check_outcome=holdout_outcome,
+        holdout_check_scope=holdout_scope,
+        holdout_check_batch_id=holdout_check.get("holdout_check_batch_id"),
+        targeted_follow_up_required=bool(targeted_follow_up.get("targeted_follow_up_required")),
+        targeted_follow_up_reason=targeted_follow_up.get("targeted_follow_up_reason"),
+        targeted_follow_up_type=targeted_follow_up.get("targeted_follow_up_type"),
+        targeted_follow_up_batch_id=targeted_follow_up.get("targeted_follow_up_batch_id"),
+        winner_validation_horizon_tags=winner_validation_horizon_tags,
+        winner_validation_regime_tags=winner_validation_regime_tags,
+        winner_validation_scope=winner_validation_scope,
+        winner_validation_confidence=winner_validation_confidence,
+        winner_validation_coverage=winner_validation_coverage,
+        promotion_state=promotion_state,
+        block_reason=confirmation_reason or targeted_follow_up.get("targeted_follow_up_reason") or "runtime promotion state updated",
+    )
+    promotion_state = str(promotion_state_record.get("promotion_state") or promotion_state)
+    promotion_state_blocked_pending_new_evidence = bool(promotion_state_record.get("blocked_pending_new_evidence"))
+    promotion_state_changed_this_cycle = bool(
+        not persisted_promotion_state
+        or _normalize_promotion_state(persisted_promotion_state.get("promotion_state")) != _normalize_promotion_state(promotion_state_record.get("promotion_state"))
+        or bool(persisted_promotion_state.get("blocked_pending_new_evidence")) != promotion_state_blocked_pending_new_evidence
+        or _safe_str(persisted_promotion_state.get("confirmation_outcome"), None) != _safe_str(promotion_state_record.get("confirmation_outcome"), None)
+        or _safe_str(persisted_promotion_state.get("holdout_check_outcome"), None) != _safe_str(promotion_state_record.get("holdout_check_outcome"), None)
+    )
     winner_exploitation_cap = _safe_float(promotion_policy.get("winner_exploitation_cap"), 0.35)
+    if holdout_required or holdout_outcome in {"pending", "provisional", "unproven"}:
+        winner_exploitation_cap = min(winner_exploitation_cap, 0.40)
+    if holdout_outcome == "confirmed":
+        winner_exploitation_cap = max(winner_exploitation_cap, 0.55)
+    elif holdout_outcome == "broadly_confirmed":
+        winner_exploitation_cap = max(winner_exploitation_cap, 0.60)
+    elif holdout_outcome == "rejected":
+        winner_exploitation_cap = min(winner_exploitation_cap, 0.20)
     exploitation_fraction = round(max(0.0, min(1.0, min(1.0 - exploration_fraction, winner_exploitation_cap))), 6)
     exploration_fraction = round(max(0.0, min(1.0, 1.0 - exploitation_fraction)), 6)
 
@@ -1207,18 +2171,17 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         adjusted_min_large = max(adjusted_min_large, min(int(request.max_experiments), max(48, int(round(int(request.max_experiments) * 0.50)))))
     elif cycle_mode == "confirmation":
         adjusted_min_large = max(4, min(adjusted_min_large, planned_max_experiments))
-    winner_validation_horizon_tags = list(winner_scorecard.get("validation_horizon_tags") or [])
-    winner_validation_regime_tags = list(winner_scorecard.get("validation_regime_tags") or [])
-    winner_validation_scope = str(winner_scorecard.get("validation_scope") or "unknown").strip().lower() or "unknown"
-    winner_validation_confidence = _safe_float(winner_scorecard.get("validation_confidence"), 0.0)
-    winner_validation_coverage = _safe_float(winner_scorecard.get("validation_coverage"), 0.0)
     winner_validation_needs_follow_up = bool(
-        winner_validation_scope in {"narrow", "unknown"}
+        winner_validation_scope in {"narrow", "partial", "unknown"}
         or "weak_long_horizon" in winner_validation_horizon_tags
         or "weak_in_high_vol" in winner_validation_regime_tags
+        or "regime_mixed" in winner_validation_regime_tags
+        or winner_validation_confidence < 0.50
+        or winner_validation_coverage < 0.75
         or (promotion_policy or {}).get("winner_promotion_status") == "hold_for_confirmation"
+        or holdout_required
+        or holdout_outcome in {"pending", "provisional", "unproven"}
     )
-
     used_signals = {
         "best_overall": best_overall,
         "best_viable": best_viable,
@@ -1226,6 +2189,14 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "latest_non_empty_batch": latest_non_empty_batch,
         "latest_batch_overview": latest_batch_overview,
         "family_scorecards": scorecards,
+        "lineage_summary": {
+            "latest_batch_id": lineage_summary.get("latest_batch_id"),
+            "lineage_status_counts": lineage_summary.get("lineage_status_counts"),
+            "family_summaries": {
+                family: (lineage_summary.get("family_summaries") or {}).get(family, {})
+                for family in selected_families
+            },
+        },
         "promotion_state": confirmation_plan.get("promotion_state"),
         "confirmation_required": bool(confirmation_plan.get("confirmation_required")),
         "confirmation_reason": confirmation_plan.get("confirmation_reason"),
@@ -1243,6 +2214,14 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "dashboard_counts": dashboard.get("counts") or {},
         "mode_signals": mode_signals,
         "overfit_focus_families": focus_families,
+        "lineage_summary": {
+            "latest_batch_id": lineage_summary.get("latest_batch_id"),
+            "lineage_status_counts": lineage_summary.get("lineage_status_counts"),
+            "family_summaries": {
+                family: (lineage_summary.get("family_summaries") or {}).get(family, {})
+                for family in selected_families
+            },
+        },
         "winner_promotion_policy": promotion_policy,
         "winner_validation_horizon_tags": winner_validation_horizon_tags,
         "winner_validation_regime_tags": winner_validation_regime_tags,
@@ -1250,11 +2229,32 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "winner_validation_confidence": round(float(winner_validation_confidence), 6),
         "winner_validation_coverage": round(float(winner_validation_coverage), 6),
         "winner_validation_needs_follow_up": winner_validation_needs_follow_up,
+        "holdout_check": {
+            "required": holdout_required,
+            "type": holdout_check.get("holdout_check_type"),
+            "status": holdout_status,
+            "outcome": holdout_outcome,
+            "scope": holdout_scope,
+            "batch_id": holdout_check.get("holdout_check_batch_id"),
+            "horizon_tags": holdout_horizon_tags,
+            "regime_tags": holdout_regime_tags,
+        },
+        "targeted_follow_up": {
+            "required": bool(targeted_follow_up.get("targeted_follow_up_required")),
+            "reason": targeted_follow_up.get("targeted_follow_up_reason"),
+            "type": targeted_follow_up.get("targeted_follow_up_type"),
+            "priority": targeted_follow_up.get("targeted_follow_up_priority"),
+            "batch_id": targeted_follow_up.get("targeted_follow_up_batch_id"),
+        },
+        "promotion_state_record": promotion_state_record,
+        "promotion_state_blocked_pending_new_evidence": promotion_state_blocked_pending_new_evidence,
+        "promotion_state_changed_this_cycle": promotion_state_changed_this_cycle,
+        "persisted_promotion_state": persisted_promotion_state,
     }
     rationale = {
         "reason": "dashboard and scorecard evidence drove the runtime decision, cycle mode, and family budget split",
         "cycle_mode": cycle_mode,
-        "promotion_state": confirmation_plan.get("promotion_state"),
+        "promotion_state": promotion_state,
         "confirmation_required": bool(confirmation_plan.get("confirmation_required")),
         "confirmation_reason": confirmation_plan.get("confirmation_reason"),
         "confirmation_batch_id": confirmation_plan.get("confirmation_batch_id"),
@@ -1262,6 +2262,14 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "confirmation_family_budgets": confirmation_plan.get("confirmation_family_budgets"),
         "mode_signals": mode_signals,
         "family_budget_rationale": families_report,
+        "lineage_summary": {
+            "latest_batch_id": lineage_summary.get("latest_batch_id"),
+            "lineage_status_counts": lineage_summary.get("lineage_status_counts"),
+            "family_summaries": {
+                family: (lineage_summary.get("family_summaries") or {}).get(family, {})
+                for family in selected_families
+            },
+        },
         "anti_overfitting": {
             "overfit_pressure": round(float(overfit_pressure), 6),
             "overfit_family": overfit_family,
@@ -1282,7 +2290,28 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "winner_validation_confidence": round(float(winner_validation_confidence), 6),
         "winner_validation_coverage": round(float(winner_validation_coverage), 6),
         "winner_validation_needs_follow_up": winner_validation_needs_follow_up,
+        "holdout_check": {
+            "required": holdout_required,
+            "type": holdout_check.get("holdout_check_type"),
+            "status": holdout_status,
+            "outcome": holdout_outcome,
+            "scope": holdout_scope,
+            "batch_id": holdout_check.get("holdout_check_batch_id"),
+            "horizon_tags": holdout_horizon_tags,
+            "regime_tags": holdout_regime_tags,
+        },
+        "targeted_follow_up": {
+            "required": bool(targeted_follow_up.get("targeted_follow_up_required")),
+            "reason": targeted_follow_up.get("targeted_follow_up_reason"),
+            "type": targeted_follow_up.get("targeted_follow_up_type"),
+            "priority": targeted_follow_up.get("targeted_follow_up_priority"),
+            "batch_id": targeted_follow_up.get("targeted_follow_up_batch_id"),
+        },
         "confirmation_plan": confirmation_plan,
+        "promotion_state_record": promotion_state_record,
+        "promotion_state_blocked_pending_new_evidence": promotion_state_blocked_pending_new_evidence,
+        "promotion_state_changed_this_cycle": promotion_state_changed_this_cycle,
+        "persisted_promotion_state": persisted_promotion_state,
     }
 
     return RuntimeDecision(
@@ -1304,9 +2333,10 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         best_viable=best_viable,
         best_baseline_beating=best_baseline,
         family_scorecards={family: dict(scorecards.get(family) or {}) for family in selected_families},
+        lineage_summary=lineage_summary,
         used_signals=used_signals,
         rationale=rationale,
-        promotion_state=str(confirmation_plan.get("promotion_state") or "unconfirmed"),
+        promotion_state=promotion_state,
         winner_family=winner_family,
         winner_promotion_status=str(promotion_policy.get("winner_promotion_status") or "not_promoted"),
         winner_exploitation_cap=_safe_float(promotion_policy.get("winner_exploitation_cap"), 0.35) if promotion_policy else None,
@@ -1316,13 +2346,31 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         winner_validation_confidence=winner_validation_confidence,
         winner_validation_coverage=winner_validation_coverage,
         winner_validation_needs_follow_up=winner_validation_needs_follow_up,
-        confirmation_batch_requested=bool(confirmation_plan.get("confirmation_required")),
-        confirmation_required=bool(confirmation_plan.get("confirmation_required")),
-        confirmation_reason=confirmation_plan.get("confirmation_reason"),
-        confirmation_batch_id=confirmation_plan.get("confirmation_batch_id"),
-        confirmation_outcome=confirmation_plan.get("confirmation_outcome"),
+        holdout_check_required=holdout_required,
+        holdout_check_type=holdout_check.get("holdout_check_type"),
+        holdout_check_status=holdout_status,
+        holdout_check_outcome=holdout_outcome,
+        holdout_check_scope=holdout_scope,
+        holdout_check_batch_id=holdout_check.get("holdout_check_batch_id"),
+        holdout_horizon_tags=holdout_horizon_tags,
+        holdout_regime_tags=holdout_regime_tags,
+        targeted_follow_up_required=bool(targeted_follow_up.get("targeted_follow_up_required")),
+        targeted_follow_up_reason=targeted_follow_up.get("targeted_follow_up_reason"),
+        targeted_follow_up_type=targeted_follow_up.get("targeted_follow_up_type"),
+        targeted_follow_up_priority=_safe_float(targeted_follow_up.get("targeted_follow_up_priority"), 0.0)
+        if targeted_follow_up.get("targeted_follow_up_priority") is not None
+        else None,
+        targeted_follow_up_batch_id=targeted_follow_up.get("targeted_follow_up_batch_id"),
+        confirmation_batch_requested=confirmation_required,
+        confirmation_required=confirmation_required,
+        confirmation_reason=confirmation_reason,
+        confirmation_batch_id=confirmation_batch_id,
+        confirmation_outcome=latest_confirmation_outcome,
         planned_max_experiments=planned_max_experiments,
         confirmation_family_budgets=confirmation_plan.get("confirmation_family_budgets"),
+        promotion_state_record=promotion_state_record,
+        promotion_state_blocked_pending_new_evidence=promotion_state_blocked_pending_new_evidence,
+        promotion_state_changed_this_cycle=promotion_state_changed_this_cycle,
     )
 
 
@@ -1338,6 +2386,61 @@ def save_runtime_decision(decision: RuntimeDecision, *, workspace_root: str = ".
     reports_dir = Path(workspace_root) / "reports" / "runtime_decisions"
     reports_dir.mkdir(parents=True, exist_ok=True)
     payload = _json_safe(asdict(decision))
+    experiments_dir = Path(workspace_root) / "experiments"
+    memory = load_research_memory(str(experiments_dir))
+    promotion_state_record = decision.promotion_state_record or {}
+    if not promotion_state_record and decision.winner_family and decision.winner_config_hash:
+        promotion_state_record = {
+            "family": decision.winner_family,
+            "config_hash": decision.winner_config_hash,
+            "experiment_id": decision.winner_experiment_id,
+            "promotion_state": decision.promotion_state,
+            "winner_promotion_status": decision.winner_promotion_status,
+            "confirmation_required": decision.confirmation_required,
+            "confirmation_reason": decision.confirmation_reason,
+            "confirmation_batch_id": decision.confirmation_batch_id,
+            "confirmation_outcome": decision.confirmation_outcome,
+            "holdout_check_required": decision.holdout_check_required,
+            "holdout_check_type": decision.holdout_check_type,
+            "holdout_check_status": decision.holdout_check_status,
+            "holdout_check_outcome": decision.holdout_check_outcome,
+            "holdout_check_scope": decision.holdout_check_scope,
+            "holdout_check_batch_id": decision.holdout_check_batch_id,
+            "confirmation_history": [],
+            "holdout_history": [],
+            "history": [],
+            "blocked_pending_new_evidence": decision.promotion_state_blocked_pending_new_evidence,
+            "block_reason": decision.rationale.get("confirmation_reason") if isinstance(decision.rationale, dict) else None,
+            "last_seen_timestamp_utc": decision.timestamp_utc,
+            "last_seen_cycle_id": decision.decision_id,
+            "source_batch_ids": [],
+            "source_proposal_id": None,
+            "winner_family": decision.winner_family,
+            "validation_horizon_tags": list(decision.winner_validation_horizon_tags or []),
+            "validation_regime_tags": list(decision.winner_validation_regime_tags or []),
+            "validation_scope": decision.winner_validation_scope,
+            "validation_confidence": decision.winner_validation_confidence,
+            "validation_coverage": decision.winner_validation_coverage,
+            "updated_at": decision.timestamp_utc,
+        }
+    if promotion_state_record:
+        update_promotion_state_record(memory, promotion_state_record)
+    lineage_summary = decision.lineage_summary or {}
+    lineage_records = lineage_summary.get("records") if isinstance(lineage_summary, dict) else {}
+    if isinstance(lineage_records, dict):
+        for family_records in lineage_records.values():
+            if not isinstance(family_records, dict):
+                continue
+            for record in family_records.values():
+                if isinstance(record, dict):
+                    update_lineage_state_record(memory, record)
+        if lineage_records:
+            _atomic_write_text(
+                reports_dir / "latest_lineage.json",
+                json.dumps(_json_safe(lineage_summary), indent=2, sort_keys=True, allow_nan=False),
+            )
+    if promotion_state_record or lineage_records:
+        save_research_memory(memory, str(experiments_dir))
     timestamped_path = reports_dir / f"{decision.decision_id}.json"
     latest_path = reports_dir / "latest.json"
     _atomic_write_text(timestamped_path, json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
