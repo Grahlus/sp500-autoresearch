@@ -12,8 +12,9 @@ import pandas as pd
 
 from agents.schemas import load_idea_records, load_latest_analysis_report
 from experiment_batch import DEFAULT_BASELINES
+from experiment_lineage import build_branch_budget_plan, build_lineage_summary
 from experiment_idea_library import expand_template_candidates, load_external_idea_seeds
-from experiment_memory import load_research_memory, save_research_memory, update_family_memory
+from experiment_memory import load_lineage_state_records, load_research_memory, save_research_memory, update_family_memory
 from experiment_novelty import coarse_signature_key, score_candidate, signature_distance
 from experiment_scorecards import build_family_scorecards, save_family_scorecards, scorecards_to_records
 from experiment_spaces import (
@@ -22,7 +23,7 @@ from experiment_spaces import (
     normalize_experiment_config,
     sample_random_candidates,
 )
-from experiment_store import compute_config_hash, load_prior_results, save_proposal_result
+from experiment_store import compute_config_hash, load_prior_results, load_results_index, save_proposal_result
 from experiment_types import ProposalRequest, ProposalResult
 
 
@@ -47,6 +48,8 @@ def build_proposal_request(
     stagnation_escape_batches: int = 3,
     allow_external_seeds: bool = False,
     source_idea_ids: list[str] | None = None,
+    branch_budgets: dict[str, list[dict[str, Any]]] | None = None,
+    branch_budget_rationale: dict[str, Any] | None = None,
     use_idea_queue: bool = True,
     use_analysis_guidance: bool = True,
     confirmation_state: str | None = None,
@@ -55,6 +58,19 @@ def build_proposal_request(
     confirmation_batch_id: str | None = None,
     confirmation_focus_family: str | None = None,
     confirmation_batch_experiments: int | None = None,
+    targeted_follow_up_required: bool = False,
+    targeted_follow_up_reason: str | None = None,
+    targeted_follow_up_type: str | None = None,
+    targeted_follow_up_priority: float = 0.0,
+    targeted_follow_up_batch_id: str | None = None,
+    holdout_check_required: bool = False,
+    holdout_check_type: str | None = None,
+    holdout_check_status: str | None = None,
+    holdout_check_outcome: str | None = None,
+    holdout_check_scope: str | None = None,
+    holdout_check_batch_id: str | None = None,
+    holdout_horizon_tags: list[str] | None = None,
+    holdout_regime_tags: list[str] | None = None,
     min_viable_fill_rate: float = 0.50,
     min_viable_candidates: int | None = None,
     large_search_threshold: int = 50,
@@ -102,6 +118,8 @@ def build_proposal_request(
         stagnation_escape_batches=int(stagnation_escape_batches),
         allow_external_seeds=bool(allow_external_seeds),
         source_idea_ids=list(source_idea_ids or []),
+        branch_budgets=branch_budgets,
+        branch_budget_rationale=branch_budget_rationale,
         use_idea_queue=bool(use_idea_queue),
         use_analysis_guidance=bool(use_analysis_guidance),
         confirmation_state=confirmation_state,
@@ -110,6 +128,19 @@ def build_proposal_request(
         confirmation_batch_id=confirmation_batch_id,
         confirmation_focus_family=confirmation_focus_family,
         confirmation_batch_experiments=None if confirmation_batch_experiments is None else int(confirmation_batch_experiments),
+        targeted_follow_up_required=bool(targeted_follow_up_required),
+        targeted_follow_up_reason=targeted_follow_up_reason,
+        targeted_follow_up_type=targeted_follow_up_type,
+        targeted_follow_up_priority=float(targeted_follow_up_priority),
+        targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+        holdout_check_required=bool(holdout_check_required),
+        holdout_check_type=holdout_check_type,
+        holdout_check_status=holdout_check_status,
+        holdout_check_outcome=holdout_check_outcome,
+        holdout_check_scope=holdout_check_scope,
+        holdout_check_batch_id=holdout_check_batch_id,
+        holdout_horizon_tags=list(holdout_horizon_tags or []),
+        holdout_regime_tags=list(holdout_regime_tags or []),
         min_viable_fill_rate=float(min_viable_fill_rate),
         min_viable_candidates=None if min_viable_candidates is None else int(min_viable_candidates),
         large_search_threshold=int(large_search_threshold),
@@ -686,7 +717,7 @@ def _allocate_family_budgets(
 
 
 def minimum_viable_candidate_count(request: ProposalRequest) -> int:
-    if request.confirmation_required:
+    if request.confirmation_required or bool(getattr(request, "holdout_check_required", False)):
         if request.max_experiments <= 0:
             return 0
         return 1
@@ -814,7 +845,9 @@ def score_proposal_quality(
 
     exhausted = bool(shortfall_reasons) and shortfall_reasons.issubset({"exhausted_search_space", "family_budget_overconstraint"})
     confirmation_batch_small_valid = bool(request.confirmation_required and candidate_count > 0)
-    pass_minimum = confirmation_batch_small_valid or candidate_count >= min_viable or exhausted
+    holdout_check_small_valid = bool(getattr(request, "holdout_check_required", False) and candidate_count > 0)
+    small_batch_valid = confirmation_batch_small_valid or holdout_check_small_valid
+    pass_minimum = small_batch_valid or candidate_count >= min_viable or exhausted
     large_search_underfilled = (
         request.max_experiments >= request.large_search_threshold
         and candidate_count < min_viable
@@ -822,15 +855,20 @@ def score_proposal_quality(
         and not confirmation_batch_small_valid
     )
     confirmation_underfilled = bool(request.confirmation_required) and candidate_count <= 0
+    holdout_underfilled = bool(getattr(request, "holdout_check_required", False)) and candidate_count <= 0
     quality_flags: list[str] = []
-    if candidate_count < min_viable and not confirmation_batch_small_valid:
+    if candidate_count < min_viable and not small_batch_valid:
         quality_flags.append("too_small")
     if confirmation_batch_small_valid:
         quality_flags.append("confirmation_batch_small_valid")
+    if holdout_check_small_valid:
+        quality_flags.append("holdout_check_small_valid")
     if confirmation_underfilled:
         quality_flags.append("confirmation_batch_underfilled")
     if large_search_underfilled:
         quality_flags.append("large_search_underfilled")
+    if holdout_underfilled:
+        quality_flags.append("holdout_check_underfilled")
     if candidate_count > 0 and len(source_types) <= 1 and len(strategy_types) <= 1 and len(request.strategy_families) > 1:
         quality_flags.append("too_narrow")
     if duplicate_risk_count / max(1, candidate_count) >= 0.25:
@@ -857,8 +895,10 @@ def score_proposal_quality(
         "fill_rate": round(fill_rate, 6),
         "pass_minimum_viable_batch": pass_minimum,
         "confirmation_batch_small_valid": confirmation_batch_small_valid,
+        "holdout_check_small_valid": holdout_check_small_valid,
         "large_search_underfilled": large_search_underfilled,
         "confirmation_batch_underfilled": confirmation_underfilled,
+        "holdout_check_underfilled": holdout_underfilled,
         "quality_flags": sorted(set(quality_flags)),
         "families_present": families_present,
         "family_reports": family_reports,
@@ -891,11 +931,29 @@ def _candidate_metadata(
     source_proposal_id: str | None,
     source_idea_ids: list[str] | None = None,
     template_tags: list[str] | None = None,
+    lineage_root_config_hash: str | None = None,
+    branch_budget: int | None = None,
+    branch_budget_share: float | None = None,
+    branch_budget_stance: str | None = None,
+    branch_budget_reason: str | None = None,
     confirmation_state: str | None = None,
     confirmation_required: bool = False,
     confirmation_reason: str | None = None,
     confirmation_batch_id: str | None = None,
     confirmation_trial_kind: str | None = None,
+    targeted_follow_up_required: bool = False,
+    targeted_follow_up_reason: str | None = None,
+    targeted_follow_up_type: str | None = None,
+    targeted_follow_up_priority: float | None = None,
+    targeted_follow_up_batch_id: str | None = None,
+    holdout_check_required: bool = False,
+    holdout_check_type: str | None = None,
+    holdout_check_status: str | None = None,
+    holdout_check_outcome: str | None = None,
+    holdout_check_scope: str | None = None,
+    holdout_check_batch_id: str | None = None,
+    holdout_horizon_tags: list[str] | None = None,
+    holdout_regime_tags: list[str] | None = None,
 ) -> dict[str, Any]:
     from experiment_store import compute_config_hash
 
@@ -924,11 +982,29 @@ def _candidate_metadata(
         "source_batch_id": ",".join(source_batch_ids) if source_batch_ids else None,
         "source_idea_ids": list(source_idea_ids or []),
         "template_tags": template_tags or [],
+        "lineage_root_config_hash": lineage_root_config_hash,
+        "branch_budget": branch_budget,
+        "branch_budget_share": branch_budget_share,
+        "branch_budget_stance": branch_budget_stance,
+        "branch_budget_reason": branch_budget_reason,
         "confirmation_state": confirmation_state,
         "confirmation_required": confirmation_required,
         "confirmation_reason": confirmation_reason,
         "confirmation_batch_id": confirmation_batch_id,
         "confirmation_trial_kind": confirmation_trial_kind,
+        "targeted_follow_up_required": targeted_follow_up_required,
+        "targeted_follow_up_reason": targeted_follow_up_reason,
+        "targeted_follow_up_type": targeted_follow_up_type,
+        "targeted_follow_up_priority": targeted_follow_up_priority,
+        "targeted_follow_up_batch_id": targeted_follow_up_batch_id,
+        "holdout_check_required": holdout_check_required,
+        "holdout_check_type": holdout_check_type,
+        "holdout_check_status": holdout_check_status,
+        "holdout_check_outcome": holdout_check_outcome,
+        "holdout_check_scope": holdout_check_scope,
+        "holdout_check_batch_id": holdout_check_batch_id,
+        "holdout_horizon_tags": holdout_horizon_tags or [],
+        "holdout_regime_tags": holdout_regime_tags or [],
     }
 
 
@@ -983,14 +1059,68 @@ def generate_next_round_proposal(
     candidate_configs: dict[str, list[dict[str, Any]]] = {}
     candidate_metadata: dict[str, list[dict[str, Any]]] = {}
     confirmation_mode = bool(request.confirmation_required)
+    targeted_follow_up_mode = bool(getattr(request, "targeted_follow_up_required", False))
+    targeted_follow_up_type = getattr(request, "targeted_follow_up_type", None)
+    targeted_follow_up_reason = getattr(request, "targeted_follow_up_reason", None)
+    targeted_follow_up_priority = float(getattr(request, "targeted_follow_up_priority", 0.0) or 0.0)
+    targeted_follow_up_batch_id = getattr(request, "targeted_follow_up_batch_id", None)
+    holdout_check_required = bool(getattr(request, "holdout_check_required", False))
+    holdout_check_type = getattr(request, "holdout_check_type", None)
+    holdout_check_status = getattr(request, "holdout_check_status", None)
+    holdout_check_outcome = getattr(request, "holdout_check_outcome", None)
+    holdout_check_scope = getattr(request, "holdout_check_scope", None)
+    holdout_check_batch_id = getattr(request, "holdout_check_batch_id", None)
+    holdout_horizon_tags = list(getattr(request, "holdout_horizon_tags", None) or [])
+    holdout_regime_tags = list(getattr(request, "holdout_regime_tags", None) or [])
     confirmation_focus_family = request.confirmation_focus_family
     if not confirmation_focus_family and len(request.strategy_families) == 1:
         confirmation_focus_family = request.strategy_families[0]
+    official_index = load_results_index(base_dir)
+    lineage_summary = build_lineage_summary(
+        official_index,
+        persisted_records=load_lineage_state_records(base_dir),
+        latest_batch=None,
+    )
+    lineage_cycle_mode = (
+        "confirmation"
+        if confirmation_mode or targeted_follow_up_mode or holdout_check_required
+        else "large-search"
+        if request.max_experiments >= request.large_search_threshold
+        else "normal_exploration"
+    )
+    branch_budgets = dict(request.branch_budgets or {})
+    branch_budget_rationale = dict(request.branch_budget_rationale or {})
+    if not branch_budgets:
+        branch_budgets, branch_budget_rationale = build_branch_budget_plan(
+            lineage_summary,
+            budgets,
+            cycle_mode=lineage_cycle_mode,
+            confirmation_family=confirmation_focus_family,
+            confirmation_required=confirmation_mode,
+            targeted_follow_up_required=targeted_follow_up_mode,
+            holdout_check_required=holdout_check_required,
+        )
+
+    def _branch_seed_row(family_history: pd.DataFrame, branch_entry: dict[str, Any]) -> pd.Series | None:
+        branch_hash = str(
+            branch_entry.get("best_branch_config_hash")
+            or branch_entry.get("branch_root_config_hash")
+            or ""
+        ).strip()
+        if not branch_hash or family_history.empty:
+            return None
+        match = family_history[family_history["config_hash"].astype(str) == branch_hash]
+        if match.empty:
+            return None
+        return match.iloc[0]
+
     reasoning: dict[str, Any] = {
         "source_batch_ids": request.source_batch_ids or all_source_batch_ids,
         "source_idea_ids": request.source_idea_ids or [],
         "family_budget_decision": budgets,
         "family_budget_negotiation": budget_negotiation,
+        "branch_budgets": branch_budgets,
+        "branch_budget_rationale": branch_budget_rationale,
         "family_scorecards": scorecard_records,
         "analysis_guidance": analysis_guidance.get("next_focus") if analysis_guidance else [],
         "novelty_policy": {
@@ -1011,6 +1141,31 @@ def generate_next_round_proposal(
             "focus_family": request.confirmation_focus_family,
             "batch_experiments": request.confirmation_batch_experiments,
         },
+        "targeted_follow_up": {
+            "required": targeted_follow_up_mode,
+            "reason": targeted_follow_up_reason,
+            "type": targeted_follow_up_type,
+            "priority": targeted_follow_up_priority,
+            "batch_id": targeted_follow_up_batch_id,
+        },
+        "holdout_check": {
+            "required": holdout_check_required,
+            "type": holdout_check_type,
+            "status": holdout_check_status,
+            "outcome": holdout_check_outcome,
+            "scope": holdout_check_scope,
+            "batch_id": holdout_check_batch_id,
+            "horizon_tags": holdout_horizon_tags,
+            "regime_tags": holdout_regime_tags,
+        },
+        "holdout_check_required": holdout_check_required,
+        "holdout_check_type": holdout_check_type,
+        "holdout_check_status": holdout_check_status,
+        "holdout_check_outcome": holdout_check_outcome,
+        "holdout_check_scope": holdout_check_scope,
+        "holdout_check_batch_id": holdout_check_batch_id,
+        "holdout_horizon_tags": holdout_horizon_tags,
+        "holdout_regime_tags": holdout_regime_tags,
         "families": {},
     }
     memory = load_research_memory(base_dir)
@@ -1067,6 +1222,18 @@ def generate_next_round_proposal(
         seen_signatures = set(explored_signatures.values())
         selection_pool: list[dict[str, Any]] = []
         family_ideas = [record for record in helper_ideas if record.get("family") in {None, family}]
+        family_branch_budget_entries = [
+            dict(entry)
+            for entry in (branch_budgets.get(family) or [])
+            if int((entry or {}).get("branch_budget") or 0) > 0
+        ]
+        family_branch_budget_entries.sort(
+            key=lambda item: (
+                -int(item.get("branch_budget") or 0),
+                -float(item.get("branch_trust_score") or item.get("branch_score") or 0.0),
+                str(item.get("branch_root_config_hash") or ""),
+            )
+        )
         guidance_focus = None
         if analysis_guidance:
             for item in analysis_guidance.get("next_focus", []):
@@ -1116,6 +1283,19 @@ def generate_next_round_proposal(
                     confirmation_reason=request.confirmation_reason,
                     confirmation_batch_id=request.confirmation_batch_id,
                     confirmation_trial_kind="reproduce",
+                    targeted_follow_up_required=targeted_follow_up_mode,
+                    targeted_follow_up_reason=targeted_follow_up_reason,
+                    targeted_follow_up_type=targeted_follow_up_type,
+                    targeted_follow_up_priority=targeted_follow_up_priority,
+                    targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+                    holdout_check_required=holdout_check_required,
+                    holdout_check_type=holdout_check_type,
+                    holdout_check_status=holdout_check_status,
+                    holdout_check_outcome=holdout_check_outcome,
+                    holdout_check_scope=holdout_check_scope,
+                    holdout_check_batch_id=holdout_check_batch_id,
+                    holdout_horizon_tags=holdout_horizon_tags,
+                    holdout_regime_tags=holdout_regime_tags,
                 )
             )
             seen_hashes.add(config_hash)
@@ -1135,7 +1315,18 @@ def generate_next_round_proposal(
             parent_config_hash: str | None = None,
             source_idea_ids: list[str] | None = None,
             template_tags: list[str] | None = None,
+            lineage_root_config_hash: str | None = None,
+            branch_budget: int | None = None,
+            branch_budget_share: float | None = None,
+            branch_budget_stance: str | None = None,
+            branch_budget_reason: str | None = None,
+            novelty_floor_override: float | None = None,
             allow_near_duplicate: bool = False,
+            targeted_follow_up_required: bool = targeted_follow_up_mode,
+            targeted_follow_up_reason: str | None = targeted_follow_up_reason,
+            targeted_follow_up_type: str | None = targeted_follow_up_type,
+            targeted_follow_up_priority: float | None = targeted_follow_up_priority,
+            targeted_follow_up_batch_id: str | None = targeted_follow_up_batch_id,
         ) -> None:
             novelty = score_candidate(
                 family,
@@ -1148,7 +1339,7 @@ def generate_next_round_proposal(
                 source_type=source_type,
                 template_id=template_id,
                 exploration_mode=exploration_mode,
-                novelty_floor=novelty_floor,
+                novelty_floor=novelty_floor if novelty_floor_override is None else float(novelty_floor_override),
                 near_duplicate_distance=request.max_near_duplicate_distance,
             )
             if novelty is None:
@@ -1187,11 +1378,72 @@ def generate_next_round_proposal(
                     source_proposal_id=request.proposal_id,
                     source_idea_ids=source_idea_ids,
                     template_tags=template_tags,
+                    lineage_root_config_hash=lineage_root_config_hash,
+                    branch_budget=branch_budget,
+                    branch_budget_share=branch_budget_share,
+                    branch_budget_stance=branch_budget_stance,
+                    branch_budget_reason=branch_budget_reason,
+                    targeted_follow_up_required=targeted_follow_up_required,
+                    targeted_follow_up_reason=targeted_follow_up_reason,
+                    targeted_follow_up_type=targeted_follow_up_type,
+                    targeted_follow_up_priority=targeted_follow_up_priority,
+                    targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+                    holdout_check_required=holdout_check_required,
+                    holdout_check_type=holdout_check_type,
+                    holdout_check_status=holdout_check_status,
+                    holdout_check_outcome=holdout_check_outcome,
+                    holdout_check_scope=holdout_check_scope,
+                    holdout_check_batch_id=holdout_check_batch_id,
+                    holdout_horizon_tags=holdout_horizon_tags,
+                    holdout_regime_tags=holdout_regime_tags,
                 )
             )
 
         if family_confirmation_mode and not history.empty:
             _append_confirmation_reproduction(top.iloc[0])
+
+        if family_branch_budget_entries and not family_confirmation_mode:
+            for branch_entry in family_branch_budget_entries:
+                if len(selection_pool) >= budget:
+                    break
+                branch_seed_row = _branch_seed_row(history, branch_entry)
+                if branch_seed_row is None:
+                    continue
+                branch_limit = max(1, min(int(branch_entry.get("branch_budget") or 0), budget - len(selection_pool)))
+                branch_neighbors = build_local_neighbors(
+                    family,
+                    dict(branch_seed_row.get("config") or {}),
+                    limit=branch_limit,
+                    seed=request.seed + idx + len(selection_pool) + branch_limit,
+                    dead_zones=dead_zones,
+                    explored_hashes=seen_hashes,
+                )
+                for neighbor in branch_neighbors:
+                    if len(selection_pool) >= budget:
+                        break
+                    branch_stance = str(branch_entry.get("branch_budget_stance") or "")
+                    _try_add_candidate(
+                        neighbor,
+                        source_type="template_expansion",
+                        strategy_type=_family_strategy_type(family),
+                        template_id=branch_entry.get("branch_root_config_hash") or "lineage_branch",
+                        hypothesis="Refine a promising lineage branch.",
+                        reason_selected=branch_entry.get("branch_budget_reason")
+                        or "lineage branch budget prioritizes a promising descendant branch",
+                        exploration_mode="branch_refinement",
+                        proposal_role="exploit",
+                        region_label=branch_entry.get("branch_root_config_hash") or "lineage_branch",
+                        parent_config_hash=branch_seed_row.get("config_hash"),
+                        source_idea_ids=[],
+                        template_tags=["lineage_branch"],
+                        lineage_root_config_hash=branch_entry.get("branch_root_config_hash") or branch_seed_row.get("config_hash"),
+                        branch_budget=int(branch_entry.get("branch_budget") or 0),
+                        branch_budget_share=float(branch_entry.get("branch_budget_share") or 0.0),
+                        branch_budget_stance=branch_stance,
+                        branch_budget_reason=branch_entry.get("branch_budget_reason"),
+                        novelty_floor_override=0.0,
+                        allow_near_duplicate=branch_stance in {"primary", "controlled"},
+                    )
 
         if not confirmation_focus_only:
             for idea in family_ideas:
@@ -1260,7 +1512,59 @@ def generate_next_round_proposal(
                     proposal_role="exploit",
                     region_label=row.get("template_id") or "local_refinement",
                     parent_config_hash=row.get("config_hash"),
-                    source_idea_ids=[],
+                    lineage_root_config_hash=row.get("lineage_root_config_hash") or row.get("config_hash"),
+                    branch_budget=(
+                        next(
+                            (
+                                int(entry.get("branch_budget") or 0)
+                                for entry in family_branch_budget_entries
+                                if str(entry.get("branch_root_config_hash") or "")
+                                == str(row.get("lineage_root_config_hash") or row.get("config_hash") or "")
+                            ),
+                            None,
+                        )
+                        if family_branch_budget_entries
+                        else None
+                    ),
+                    branch_budget_share=(
+                        next(
+                            (
+                                float(entry.get("branch_budget_share") or 0.0)
+                                for entry in family_branch_budget_entries
+                                if str(entry.get("branch_root_config_hash") or "")
+                                == str(row.get("lineage_root_config_hash") or row.get("config_hash") or "")
+                            ),
+                            None,
+                        )
+                        if family_branch_budget_entries
+                        else None
+                    ),
+                    branch_budget_stance=(
+                        next(
+                            (
+                                str(entry.get("branch_budget_stance") or "")
+                                for entry in family_branch_budget_entries
+                                if str(entry.get("branch_root_config_hash") or "")
+                                == str(row.get("lineage_root_config_hash") or row.get("config_hash") or "")
+                            ),
+                            None,
+                        )
+                        if family_branch_budget_entries
+                        else None
+                    ),
+                    branch_budget_reason=(
+                        next(
+                            (
+                                str(entry.get("branch_budget_reason") or "")
+                                for entry in family_branch_budget_entries
+                                if str(entry.get("branch_root_config_hash") or "")
+                                == str(row.get("lineage_root_config_hash") or row.get("config_hash") or "")
+                            ),
+                            None,
+                        )
+                        if family_branch_budget_entries
+                        else None
+                    ),
                     allow_near_duplicate=False,
                 )
 
@@ -1423,6 +1727,8 @@ def generate_next_round_proposal(
         ranked_payloads = sorted(
             selection_pool,
             key=lambda item: (
+                -int(bool(item.get("branch_budget_stance"))),
+                -float(item.get("branch_budget") or 0.0),
                 -int(bool(item.get("source_idea_ids"))),
                 -float(item.get("selection_score") or 0.0),
                 -float(item.get("novelty_score") or 0.0),
@@ -1451,6 +1757,8 @@ def generate_next_round_proposal(
             "analysis_next_focus": guidance_focus,
             "template_counts": family_analysis.get("template_counts", {}),
             "stagnation_batches": stagnation_batches,
+            "branch_budgets": branch_budgets.get(family) or [],
+            "branch_budget_rationale": (branch_budget_rationale.get("families") or {}).get(family, {}),
             "exploit_count": min(len(candidate_configs[family]), exploit_n),
             "explore_count": max(0, len(candidate_configs[family]) - min(len(candidate_configs[family]), exploit_n)),
             "exploration_fraction": exploration_fraction,
@@ -1465,6 +1773,19 @@ def generate_next_round_proposal(
             "confirmation_batch_id": request.confirmation_batch_id,
             "confirmation_trial_budget": confirmation_trial_budget if family_confirmation_mode else None,
             "confirmation_focus_family": confirmation_focus_family,
+            "targeted_follow_up_required": targeted_follow_up_mode,
+            "targeted_follow_up_reason": targeted_follow_up_reason,
+            "targeted_follow_up_type": targeted_follow_up_type,
+            "targeted_follow_up_priority": targeted_follow_up_priority,
+            "targeted_follow_up_batch_id": targeted_follow_up_batch_id,
+            "holdout_check_required": holdout_check_required,
+            "holdout_check_type": holdout_check_type,
+            "holdout_check_status": holdout_check_status,
+            "holdout_check_outcome": holdout_check_outcome,
+            "holdout_check_scope": holdout_check_scope,
+            "holdout_check_batch_id": holdout_check_batch_id,
+            "holdout_horizon_tags": holdout_horizon_tags,
+            "holdout_regime_tags": holdout_regime_tags,
         }
 
     proposal_memory = load_research_memory(base_dir)
