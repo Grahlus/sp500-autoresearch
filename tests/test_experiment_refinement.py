@@ -258,7 +258,38 @@ class ExperimentRefinementTests(unittest.TestCase):
         superstock_sources = {meta["source_type"] for meta in proposal.candidate_metadata["superstock"]}
         self.assertTrue({"template_expansion", "cross_family_hybrid"} & momentum_sources)
         self.assertTrue({"template_expansion", "cross_family_hybrid"} & superstock_sources)
-        self.assertGreater(len(proposal.candidate_configs["momentum"]), len(proposal.candidate_configs["superstock"]))
+        all_metadata = proposal.candidate_metadata["momentum"] + proposal.candidate_metadata["superstock"]
+        for metadata in all_metadata:
+            self.assertIn("is_new_idea", metadata)
+            self.assertIn("is_structurally_novel", metadata)
+            self.assertIn("is_uncommon_idea", metadata)
+            self.assertIn("new_idea_budget_bucket", metadata)
+            self.assertIn("uncommon_idea_reason", metadata)
+            self.assertIn("repeat_branch_depth", metadata)
+        structural = [metadata for metadata in all_metadata if metadata.get("is_structurally_novel")]
+        uncommon = [metadata for metadata in all_metadata if metadata.get("is_uncommon_idea")]
+        self.assertTrue(structural)
+        self.assertTrue(uncommon)
+        self.assertTrue(any(metadata.get("new_idea_budget_bucket") in {"new_idea", "uncommon_idea"} for metadata in all_metadata))
+
+    def test_proposal_uses_bounded_history_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                        "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                        "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None},
+                experiment_id="m_hist1",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            request = build_proposal_request(strategy_families=["momentum"], seed=7, max_experiments=12)
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        self.assertEqual(proposal.reasoning_summary["families"]["momentum"]["history_limit_per_family"], 12)
+        self.assertGreater(len(proposal.candidate_configs["momentum"]), 0)
         for family_metadata in proposal.candidate_metadata.values():
             for metadata in family_metadata:
                 self.assertIn("strategy_type", metadata)
@@ -463,6 +494,101 @@ class ExperimentRefinementTests(unittest.TestCase):
         self.assertTrue(quality["execution_allowed"])
         self.assertNotIn("confirmation_batch_underfilled", quality["quality_flags"])
         self.assertIn(quality["status"], {"pass", "warn"})
+
+    def test_new_idea_quality_distinguishes_structural_from_parameter_tweaks(self):
+        request = build_proposal_request(
+            strategy_families=["momentum"],
+            seed=7,
+            max_experiments=8,
+            new_idea_quota=2,
+            uncommon_idea_quota=1,
+        )
+        configs = [{"LOOKBACK_WEEKS": 26 + idx, "SKIP_WEEKS": 3} for idx in range(4)]
+        metadata = [
+            {
+                "source_type": "local_refinement",
+                "strategy_type": "classical",
+                "proposal_role": "refine",
+                "is_new_idea": False,
+                "is_structurally_novel": False,
+                "is_uncommon_idea": False,
+                "new_idea_budget_bucket": "branch_refinement",
+            },
+            {
+                "source_type": "broad_exploration",
+                "strategy_type": "classical",
+                "proposal_role": "explore",
+                "is_new_idea": False,
+                "is_structurally_novel": False,
+                "is_uncommon_idea": False,
+                "new_idea_budget_bucket": "parameter_exploration",
+            },
+            {
+                "source_type": "template_expansion",
+                "strategy_type": "classical",
+                "proposal_role": "explore",
+                "is_new_idea": True,
+                "is_structurally_novel": True,
+                "is_uncommon_idea": True,
+                "new_idea_budget_bucket": "uncommon_idea",
+            },
+            {
+                "source_type": "cross_family_hybrid",
+                "strategy_type": "classical",
+                "proposal_role": "explore",
+                "is_new_idea": True,
+                "is_structurally_novel": True,
+                "is_uncommon_idea": False,
+                "new_idea_budget_bucket": "new_idea",
+            },
+        ]
+        quality = score_proposal_quality(
+            request,
+            budgets={"momentum": 8},
+            candidate_configs={"momentum": configs},
+            candidate_metadata={"momentum": metadata},
+            analysis={"families": {"momentum": {"explored_hashes": set(), "dead_zones": {}, "poor_region_signatures": set()}}},
+        )
+
+        self.assertEqual(quality["new_idea_count"], 2)
+        self.assertEqual(quality["structurally_novel_count"], 2)
+        self.assertEqual(quality["uncommon_idea_count"], 1)
+        self.assertNotIn("new_idea_quota_underfilled", quality["quality_flags"])
+        self.assertNotIn("uncommon_idea_quota_underfilled", quality["quality_flags"])
+        self.assertFalse(metadata[0]["is_new_idea"])
+        self.assertFalse(metadata[1]["is_new_idea"])
+
+    def test_confirmation_batches_expand_to_local_neighborhood_when_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97},
+                experiment_id="momentum_seed",
+                objective_score=1.5,
+                viable=True,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            request = build_proposal_request(
+                strategy_families=["momentum"],
+                seed=7,
+                max_experiments=6,
+                confirmation_required=True,
+                confirmation_batch_experiments=6,
+                confirmation_focus_family="momentum",
+            )
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        quality = proposal.reasoning_summary["proposal_quality"]
+        self.assertGreaterEqual(quality["candidate_count"], 2)
+        self.assertTrue(quality["confirmation_batch_small_valid"])
+        self.assertTrue(quality["execution_allowed"])
+        self.assertNotIn("confirmation_batch_underfilled", quality["quality_flags"])
+        self.assertIn(
+            "confirmation_local_neighborhood",
+            {item.get("region_label") for item in proposal.candidate_metadata["momentum"]},
+        )
 
     def test_proposal_quality_passes_meaningful_large_search(self):
         request = build_proposal_request(strategy_families=["momentum"], seed=7, max_experiments=96)

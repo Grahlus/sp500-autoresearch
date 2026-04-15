@@ -4,8 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agents.schemas import ProposalRecord, load_latest_pending_proposal_record, save_proposal_record
-from autonomous_runner import main, parse_args
+from autonomous_runner import _apply_runtime_memory_caps, main, parse_args
 from experiment_types import BatchRequest, BatchResult, ExperimentResult, ExperimentSpec, ProposalRequest, ProposalResult
+from experiment_types import RuntimeDecision
 
 
 class AutonomousRunnerTests(unittest.TestCase):
@@ -124,11 +125,315 @@ class AutonomousRunnerTests(unittest.TestCase):
             )
             with patch("autonomous_runner.build_proposal_request", return_value=proposal.request), patch(
                 "autonomous_runner.generate_next_round_proposal", return_value=proposal
-            ), patch("autonomous_runner.proposal_to_batch_request", return_value=batch_result.request), patch(
+                ), patch("autonomous_runner.proposal_to_batch_request", return_value=batch_result.request), patch(
                 "autonomous_runner.run_batch_experiments", return_value=batch_result
             ):
                 rc = main(["--family", "momentum", "--proposal-next", "--run-proposal", "--base-dir", tmp])
             self.assertEqual(rc, 0)
+
+    def test_main_uses_runtime_dashboard_decision_for_proposal_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            decision = RuntimeDecision(
+                decision_id="runtime_1",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                status="active",
+                selected_families=["momentum", "superstock"],
+                cycle_mode="local_refinement",
+                max_experiments=24,
+                exploration_fraction=0.55,
+                exploitation_fraction=0.45,
+                family_budgets={"momentum": 18, "superstock": 6},
+                large_search_mode=False,
+                min_large_search_candidates=48,
+                dashboard_report_id="dashboard_1",
+                latest_batch_overview={"batch_id": "batch_1"},
+                latest_non_empty_batch={"batch_id": "batch_1"},
+                best_overall={"strategy_family": "momentum"},
+                best_viable={"strategy_family": "momentum"},
+                best_baseline_beating={"strategy_family": "momentum"},
+                family_scorecards={"momentum": {"search_priority": 0.9}},
+                lineage_summary={},
+                used_signals={"best_viable": {"strategy_family": "momentum"}},
+                rationale={"reason": "dashboard and scorecard evidence drove the runtime cycle mode and family budget split"},
+                new_idea_quota=6,
+                uncommon_idea_quota=2,
+                repeat_branch_cap=4,
+                max_same_template_per_cycle=3,
+                max_same_lineage_per_cycle=3,
+            )
+            proposal = ProposalResult(
+                request=ProposalRequest(
+                    proposal_id="proposal_runtime",
+                    timestamp_utc="2026-04-12T00:00:00+00:00",
+                    source_batch_ids=["b1"],
+                    strategy_families=["momentum", "superstock"],
+                    seed=7,
+                    max_experiments=24,
+                ),
+                status="generated",
+                candidate_configs={
+                    "momentum": [{"LOOKBACK_WEEKS": 26}],
+                    "superstock": [{"N_TOP": 20}],
+                },
+                reasoning_summary={"families": {"momentum": {"exploit_count": 1}}},
+                proposal_path=str(Path(tmp) / "proposal.json"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            batch_request = BatchRequest(
+                batch_id="batch_runtime",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                strategy_families=["momentum", "superstock"],
+                sampler_type="random",
+                max_experiments=2,
+                max_per_family=1,
+                seed=7,
+                persist=True,
+                resume=True,
+            )
+            batch_result = BatchResult(
+                request=batch_request,
+                status="completed",
+                total_sampled=2,
+                total_executed=2,
+                total_skipped=0,
+                total_failed=0,
+                results=[],
+                leaderboard_path=str(Path(tmp) / "leaderboard.csv"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            with patch("autonomous_runner.build_runtime_decision", return_value=decision), patch(
+                "autonomous_runner.build_proposal_request", return_value=proposal.request
+            ) as mock_builder, patch("autonomous_runner.generate_next_round_proposal", return_value=proposal), patch(
+                "autonomous_runner.proposal_to_batch_request", return_value=batch_request
+            ), patch("autonomous_runner.run_batch_experiments", return_value=batch_result) as mock_runner:
+                rc = main(["--family", "all", "--proposal-next", "--run-proposal", "--base-dir", tmp])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(mock_builder.call_args.kwargs["exploration_fraction"], 0.55)
+            self.assertEqual(mock_builder.call_args.kwargs["exploitation_fraction"], 0.45)
+            self.assertEqual(mock_builder.call_args.kwargs["per_family_budgets"], {"momentum": 18, "superstock": 6})
+            self.assertEqual(mock_builder.call_args.kwargs["new_idea_quota"], 6)
+            self.assertEqual(mock_builder.call_args.kwargs["uncommon_idea_quota"], 2)
+            self.assertEqual(mock_builder.call_args.kwargs["repeat_branch_cap"], 4)
+            self.assertEqual(mock_builder.call_args.kwargs["max_same_template_per_cycle"], 3)
+            self.assertEqual(mock_builder.call_args.kwargs["max_same_lineage_per_cycle"], 3)
+            self.assertEqual(mock_builder.call_args.kwargs["structural_novelty_threshold"], 0.55)
+            self.assertEqual(mock_builder.call_args.kwargs["min_large_search_candidates"], 48)
+            self.assertEqual(mock_builder.call_args.kwargs["history_limit_per_family"], 12)
+            request = mock_runner.call_args.args[0]
+            self.assertIn("runtime_decision", request.proposal_metadata)
+            self.assertEqual(request.proposal_metadata["runtime_decision"]["cycle_mode"], "local_refinement")
+            self.assertEqual(request.proposal_metadata["runtime_decision"]["family_budgets"]["momentum"], 18)
+
+    def test_main_uses_confirmation_runtime_decision_for_smaller_proposal_batches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            decision = RuntimeDecision(
+                decision_id="runtime_confirm",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                status="active",
+                selected_families=["momentum", "superstock"],
+                cycle_mode="confirmation",
+                max_experiments=24,
+                exploration_fraction=0.75,
+                exploitation_fraction=0.25,
+                family_budgets={"momentum": 6, "superstock": 2},
+                large_search_mode=False,
+                min_large_search_candidates=8,
+                dashboard_report_id="dashboard_2",
+                latest_batch_overview={"batch_id": "batch_1"},
+                latest_non_empty_batch={"batch_id": "batch_1"},
+                best_overall={"strategy_family": "momentum"},
+                best_viable={"strategy_family": "momentum"},
+                best_baseline_beating={"strategy_family": "momentum"},
+                family_scorecards={"momentum": {"search_priority": 0.9}},
+                lineage_summary={},
+                used_signals={"best_viable": {"strategy_family": "momentum"}},
+                rationale={"reason": "dashboard and scorecard evidence drove the runtime cycle mode and family budget split"},
+                promotion_state="unconfirmed",
+                winner_family="momentum",
+                winner_promotion_status="hold_for_confirmation",
+                winner_exploitation_cap=0.25,
+                confirmation_batch_requested=True,
+                confirmation_required=True,
+                confirmation_reason="winner needs a confirmation batch",
+                confirmation_batch_id="runtime_confirm_momentum",
+                planned_max_experiments=8,
+                confirmation_family_budgets={"momentum": 6, "superstock": 2},
+            )
+            proposal = ProposalResult(
+                request=ProposalRequest(
+                    proposal_id="proposal_runtime_confirm",
+                    timestamp_utc="2026-04-12T00:00:00+00:00",
+                    source_batch_ids=["b1"],
+                    strategy_families=["momentum", "superstock"],
+                    seed=7,
+                    max_experiments=8,
+                ),
+                status="generated",
+                candidate_configs={
+                    "momentum": [{"LOOKBACK_WEEKS": 26}],
+                    "superstock": [{"N_TOP": 20}],
+                },
+                reasoning_summary={"families": {"momentum": {"exploit_count": 1}}},
+                proposal_path=str(Path(tmp) / "proposal.json"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            batch_request = BatchRequest(
+                batch_id="batch_runtime_confirm",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                strategy_families=["momentum", "superstock"],
+                sampler_type="random",
+                max_experiments=2,
+                max_per_family=1,
+                seed=7,
+                persist=True,
+                resume=True,
+            )
+            batch_result = BatchResult(
+                request=batch_request,
+                status="completed",
+                total_sampled=2,
+                total_executed=2,
+                total_skipped=0,
+                total_failed=0,
+                results=[],
+                leaderboard_path=str(Path(tmp) / "leaderboard.csv"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            with patch("autonomous_runner.build_runtime_decision", return_value=decision), patch(
+                "autonomous_runner.build_proposal_request", return_value=proposal.request
+            ) as mock_builder, patch("autonomous_runner.generate_next_round_proposal", return_value=proposal), patch(
+                "autonomous_runner.proposal_to_batch_request", return_value=batch_request
+            ), patch("autonomous_runner.run_batch_experiments", return_value=batch_result) as mock_runner:
+                rc = main(["--family", "all", "--proposal-next", "--run-proposal", "--base-dir", tmp])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(mock_builder.call_args.kwargs["max_experiments"], 8)
+            self.assertEqual(mock_builder.call_args.kwargs["confirmation_state"], "unconfirmed")
+            self.assertTrue(mock_builder.call_args.kwargs["confirmation_required"])
+            self.assertEqual(mock_builder.call_args.kwargs["confirmation_reason"], "winner needs a confirmation batch")
+            self.assertEqual(mock_builder.call_args.kwargs["confirmation_batch_id"], "runtime_confirm_momentum")
+            self.assertEqual(mock_builder.call_args.kwargs["confirmation_focus_family"], "momentum")
+            self.assertEqual(mock_builder.call_args.kwargs["confirmation_batch_experiments"], 8)
+            self.assertEqual(mock_builder.call_args.kwargs["per_family_budgets"], {"momentum": 6, "superstock": 2})
+            self.assertEqual(mock_builder.call_args.kwargs["history_limit_per_family"], 8)
+            request = mock_runner.call_args.args[0]
+            self.assertIn("runtime_decision", request.proposal_metadata)
+            self.assertEqual(request.proposal_metadata["runtime_decision"]["promotion_state"], "unconfirmed")
+            self.assertEqual(request.proposal_metadata["runtime_decision"]["planned_max_experiments"], 8)
+
+    def test_main_caps_workers_for_confirmation_cycles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            decision = RuntimeDecision(
+                decision_id="runtime_confirm_cap",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                status="active",
+                selected_families=["momentum"],
+                cycle_mode="confirmation",
+                max_experiments=24,
+                exploration_fraction=0.75,
+                exploitation_fraction=0.25,
+                family_budgets={"momentum": 8},
+                large_search_mode=False,
+                min_large_search_candidates=8,
+                dashboard_report_id="dashboard_2",
+                latest_batch_overview={"batch_id": "batch_1"},
+                latest_non_empty_batch={"batch_id": "batch_1"},
+                best_overall={"strategy_family": "momentum"},
+                best_viable={"strategy_family": "momentum"},
+                best_baseline_beating={"strategy_family": "momentum"},
+                family_scorecards={"momentum": {"search_priority": 0.9}},
+                lineage_summary={},
+                used_signals={"best_viable": {"strategy_family": "momentum"}},
+                rationale={"reason": "confirmation cycle"},
+                promotion_state="unconfirmed",
+                winner_family="momentum",
+                winner_promotion_status="hold_for_confirmation",
+                winner_exploitation_cap=0.25,
+                confirmation_batch_requested=True,
+                confirmation_required=True,
+                confirmation_reason="winner needs a confirmation batch",
+                confirmation_batch_id="runtime_confirm_momentum",
+                planned_max_experiments=24,
+                confirmation_family_budgets={"momentum": 8},
+            )
+            proposal = ProposalResult(
+                request=ProposalRequest(
+                    proposal_id="proposal_runtime_confirm_cap",
+                    timestamp_utc="2026-04-12T00:00:00+00:00",
+                    source_batch_ids=["b1"],
+                    strategy_families=["momentum"],
+                    seed=7,
+                    max_experiments=8,
+                ),
+                status="generated",
+                candidate_configs={"momentum": [{"LOOKBACK_WEEKS": 26}]},
+                reasoning_summary={"families": {"momentum": {"exploit_count": 1}}},
+                proposal_path=str(Path(tmp) / "proposal.json"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            batch_request = BatchRequest(
+                batch_id="batch_confirm_cap",
+                timestamp_utc="2026-04-12T00:00:00+00:00",
+                strategy_families=["momentum"],
+                sampler_type="random",
+                max_experiments=1,
+                max_per_family=1,
+                seed=7,
+                persist=True,
+                resume=True,
+            )
+            batch_result = BatchResult(
+                request=batch_request,
+                status="completed",
+                total_sampled=1,
+                total_executed=1,
+                total_skipped=0,
+                total_failed=0,
+                results=[],
+                leaderboard_path=str(Path(tmp) / "leaderboard.csv"),
+                summary_path=str(Path(tmp) / "summary.json"),
+            )
+            with patch("autonomous_runner.build_runtime_decision", return_value=decision), patch(
+                "autonomous_runner.build_proposal_request", return_value=proposal.request
+            ), patch("autonomous_runner.generate_next_round_proposal", return_value=proposal), patch(
+                "autonomous_runner.proposal_to_batch_request", return_value=batch_request
+            ) as mock_converter, patch("autonomous_runner.run_batch_experiments", return_value=batch_result):
+                rc = main(["--family", "all", "--proposal-next", "--run-proposal", "--base-dir", tmp, "--max-workers", "4", "--n", "24"])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(mock_converter.call_args.kwargs["max_workers"], 4)
+
+    def test_runtime_memory_caps_downshift_on_high_rss(self):
+        decision = RuntimeDecision(
+            decision_id="runtime_1",
+            timestamp_utc="2026-04-12T00:00:00+00:00",
+            status="active",
+            selected_families=["momentum"],
+            cycle_mode="normal_exploration",
+            max_experiments=24,
+            exploration_fraction=0.65,
+            exploitation_fraction=0.35,
+            family_budgets={"momentum": 24},
+            large_search_mode=False,
+            min_large_search_candidates=48,
+            dashboard_report_id=None,
+            latest_batch_overview=None,
+            latest_non_empty_batch=None,
+            best_overall=None,
+            best_viable=None,
+            best_baseline_beating=None,
+            family_scorecards={},
+            lineage_summary={},
+            used_signals={},
+            rationale={},
+        )
+        with patch("autonomous_runner.current_process_memory_kb", return_value={"rss_kb": 15_500_000, "peak_rss_kb": 16_000_000}):
+            batch_size, workers, memory_caps = _apply_runtime_memory_caps(24, 2, decision)
+        self.assertEqual(batch_size, 16)
+        self.assertEqual(workers, 1)
+        self.assertTrue(memory_caps["applied"])
+        self.assertEqual(memory_caps["reason"], "runtime_rss_pressure_elevated")
 
     def test_main_can_consume_planning_agent_proposal(self):
         with tempfile.TemporaryDirectory() as tmp:

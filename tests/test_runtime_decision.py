@@ -3,10 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pandas as pd
 
-from experiment_runtime_decision import _targeted_follow_up_plan, build_runtime_decision, save_runtime_decision
+from experiment_dashboard import BestResultsDashboard
+from experiment_runtime_decision import _confirmation_batch_plan, _targeted_follow_up_plan, build_runtime_decision, save_runtime_decision
 from experiment_memory import load_research_memory
 from experiment_store import init_store, save_experiment_result
 from experiment_types import RuntimeDecisionInput
@@ -119,11 +121,27 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertFalse(decision.confirmation_required)
         self.assertGreaterEqual(decision.winner_exploitation_cap, 0.55)
         self.assertIn("best_viable", decision.used_signals)
+        self.assertIn("idea_yield_summary", decision.used_signals)
+        self.assertGreater(decision.new_idea_quota or 0, 0)
+        self.assertGreater(decision.uncommon_idea_quota or 0, 0)
+        self.assertLessEqual(decision.uncommon_idea_quota or 0, decision.new_idea_quota or 0)
+        self.assertGreater(decision.repeat_branch_cap or 0, 0)
+        self.assertGreater(decision.max_same_template_per_cycle or 0, 0)
+        self.assertGreater(decision.max_same_lineage_per_cycle or 0, 0)
+        self.assertEqual(decision.structural_novelty_threshold, 0.55)
+        self.assertIn("novelty_policy", decision.used_signals)
+        self.assertEqual(decision.used_signals["novelty_policy"]["uncommon_idea_quota"], decision.uncommon_idea_quota)
         self.assertIn("family_budget_rationale", decision.rationale)
         self.assertIn("anti_overfitting", decision.rationale)
         self.assertIn("confirmation_plan", decision.rationale)
+        self.assertIn("novelty_policy", decision.rationale)
+        self.assertEqual(decision.rationale["novelty_policy"]["new_idea_quota"], decision.new_idea_quota)
+        self.assertEqual(decision.rationale["novelty_policy"]["uncommon_idea_quota"], decision.uncommon_idea_quota)
         self.assertIn("robustness_score", decision.rationale["family_budget_rationale"]["momentum"])
         self.assertIn("overfit_risk", decision.rationale["family_budget_rationale"]["momentum"])
+        self.assertEqual(decision.rationale["family_budget_rationale"]["momentum"]["overfit_risk_model"], "graded_v2")
+        self.assertIn(decision.rationale["family_budget_rationale"]["momentum"]["idea_state"], {"promising", "active", "untested"})
+        self.assertIn("idea_quality_score", decision.rationale["family_budget_rationale"]["momentum"])
         self.assertGreater(decision.rationale["family_budget_rationale"]["momentum"]["robustness_score"], decision.rationale["family_budget_rationale"]["superstock"]["robustness_score"])
         self.assertTrue(set(decision.winner_validation_horizon_tags or []) & {"strong_short_horizon", "stable_medium_horizon", "strong_long_horizon"})
         self.assertTrue(set(decision.winner_validation_regime_tags or []) & {"stable_in_trend", "strong_in_bear", "regime_mixed"})
@@ -202,16 +220,186 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertEqual(decision.family_budgets["momentum"], max(decision.family_budgets.values()))
         self.assertGreater(decision.family_budgets["momentum"], decision.family_budgets["superstock"])
         self.assertGreaterEqual(decision.family_budgets["superstock"], 1)
-        self.assertEqual(decision.family_budgets["rl_bandit"], 0)
-        self.assertEqual(decision.family_budgets["ml_ranker"], 0)
+        self.assertGreaterEqual(decision.family_budgets["rl_bandit"], 1)
+        self.assertGreaterEqual(decision.family_budgets["ml_ranker"], 1)
         self.assertEqual(decision.rationale["family_budget_rationale"]["momentum"]["budget_stance"], "primary")
         self.assertEqual(decision.rationale["family_budget_rationale"]["superstock"]["budget_stance"], "controlled")
-        self.assertEqual(decision.rationale["family_budget_rationale"]["rl_bandit"]["budget_stance"], "paused")
-        self.assertEqual(decision.rationale["family_budget_rationale"]["ml_ranker"]["budget_stance"], "paused")
+        self.assertEqual(decision.rationale["family_budget_rationale"]["rl_bandit"]["budget_stance"], "controlled")
+        self.assertEqual(decision.rationale["family_budget_rationale"]["ml_ranker"]["budget_stance"], "controlled")
         self.assertIn("promoted to primary runtime focus", decision.rationale["family_budget_rationale"]["momentum"]["reason"])
         self.assertIn("heavily reduced", decision.rationale["family_budget_rationale"]["superstock"]["reason"])
-        self.assertIn("temporarily paused", decision.rationale["family_budget_rationale"]["rl_bandit"]["reason"])
-        self.assertIn("temporarily paused", decision.rationale["family_budget_rationale"]["ml_ranker"]["reason"])
+        self.assertIn("ml_", decision.rationale["family_budget_rationale"]["ml_ranker"]["focus_mode"])
+        self.assertIn("rl_", decision.rationale["family_budget_rationale"]["rl_bandit"]["focus_mode"])
+
+    def test_runtime_decision_allows_small_ml_rl_probe_when_momentum_is_stalled(self):
+        fake_dashboard = BestResultsDashboard(
+            generated_at_utc="2026-04-13T12:00:00+00:00",
+            base_dir="/tmp/experiments",
+            ranking_policy="viable_first",
+            counts={"official_result_rows": 120},
+            top_overall=[
+                {
+                    "strategy_family": "momentum",
+                    "config_hash": "m1",
+                    "objective_score": 1.8,
+                    "viable": True,
+                    "sharpe": 1.05,
+                    "calmar": 2.4,
+                    "total_return": 13.2,
+                    "max_drawdown": -12.0,
+                    "trades_per_year": 28.0,
+                    "exposure": 0.55,
+                    "beats_baseline_objective": True,
+                    "beats_baseline_guardrails": True,
+                }
+            ],
+            top_viable=[
+                {
+                    "strategy_family": "momentum",
+                    "config_hash": "m1",
+                    "objective_score": 1.8,
+                    "viable": True,
+                    "sharpe": 1.05,
+                    "calmar": 2.4,
+                    "total_return": 13.2,
+                    "max_drawdown": -12.0,
+                    "trades_per_year": 28.0,
+                    "exposure": 0.55,
+                    "beats_baseline_objective": True,
+                    "beats_baseline_guardrails": True,
+                }
+            ],
+            top_baseline_beating=[
+                {
+                    "strategy_family": "momentum",
+                    "config_hash": "m1",
+                    "objective_score": 1.8,
+                    "viable": True,
+                    "sharpe": 1.05,
+                    "calmar": 2.4,
+                    "total_return": 13.2,
+                    "max_drawdown": -12.0,
+                    "trades_per_year": 28.0,
+                    "exposure": 0.55,
+                    "beats_baseline_objective": True,
+                    "beats_baseline_guardrails": True,
+                }
+            ],
+            top_per_family={
+                "momentum": [
+                    {
+                        "strategy_family": "momentum",
+                        "config_hash": "m1",
+                        "objective_score": 1.8,
+                        "viable": True,
+                        "sharpe": 1.05,
+                        "calmar": 2.4,
+                        "total_return": 13.2,
+                        "max_drawdown": -12.0,
+                        "trades_per_year": 28.0,
+                        "exposure": 0.55,
+                        "beats_baseline_objective": True,
+                        "beats_baseline_guardrails": True,
+                    }
+                ],
+                "superstock": [{"strategy_family": "superstock", "config_hash": "s1", "objective_score": 0.2, "viable": False}],
+                "ml_ranker": [{"strategy_family": "ml_ranker", "config_hash": "ml1", "objective_score": -0.4, "viable": False}],
+                "rl_bandit": [{"strategy_family": "rl_bandit", "config_hash": "rl1", "objective_score": -0.6, "viable": False}],
+            },
+            latest_non_empty_batch={"batch_id": "batch_recent", "executed_count": 24},
+            family_scorecards={
+                "momentum": {
+                    "stagnation_experiments": 18,
+                    "recent_viable_trend": 0.0,
+                    "recent_objective_trend": 0.0,
+                    "robustness_score": 0.89,
+                    "overfit_risk": 0.14,
+                    "viable_rate": 0.78,
+                    "win_rate_vs_baseline": 0.64,
+                    "validation_scope": "broad",
+                    "validation_confidence": 0.95,
+                    "validation_coverage": 0.95,
+                    "validation_horizon_tags": ["strong_short_horizon", "stable_medium_horizon", "strong_long_horizon"],
+                    "validation_regime_tags": ["stable_in_trend", "strong_in_bear"],
+                    "overfit_risk_model": "graded_v2",
+                    "promotion_state": "confirmed",
+                    "winner_promotion_status": "promoted",
+                    "holdout_check_type": "long_horizon_high_volatility_holdout",
+                    "holdout_check_status": "completed",
+                    "holdout_check_outcome": "confirmed",
+                    "holdout_check_scope": "long_horizon_high_volatility",
+                    "holdout_horizon_tags": ["holdout_long_confirmed"],
+                    "holdout_regime_tags": ["holdout_high_vol_confirmed"],
+                },
+                "superstock": {
+                    "stagnation_experiments": 4,
+                    "recent_viable_trend": -0.04,
+                    "recent_objective_trend": -0.03,
+                    "robustness_score": 0.22,
+                    "overfit_risk": 0.88,
+                    "viable_rate": 0.02,
+                    "win_rate_vs_baseline": 0.0,
+                    "validation_scope": "narrow",
+                    "validation_horizon_tags": ["weak_long_horizon"],
+                    "validation_regime_tags": ["weak_in_high_vol"],
+                    "overfit_risk_model": "graded_v2",
+                },
+                "ml_ranker": {
+                    "stagnation_experiments": 22,
+                    "recent_viable_trend": 0.0,
+                    "recent_objective_trend": -0.05,
+                    "robustness_score": 0.28,
+                    "overfit_risk": 0.69,
+                    "viable_rate": 0.0,
+                    "win_rate_vs_baseline": 0.0,
+                    "validation_scope": "partial",
+                    "validation_horizon_tags": ["weak_long_horizon"],
+                    "validation_regime_tags": ["weak_in_high_vol"],
+                    "overfit_risk_model": "graded_v2",
+                },
+                "rl_bandit": {
+                    "stagnation_experiments": 24,
+                    "recent_viable_trend": 0.0,
+                    "recent_objective_trend": -0.08,
+                    "robustness_score": 0.24,
+                    "overfit_risk": 0.72,
+                    "viable_rate": 0.0,
+                    "win_rate_vs_baseline": 0.0,
+                    "validation_scope": "partial",
+                    "validation_horizon_tags": ["weak_long_horizon"],
+                    "validation_regime_tags": ["weak_in_high_vol"],
+                    "overfit_risk_model": "graded_v2",
+                },
+            },
+            lineage_summary={"latest_batch_id": "batch_recent", "lineage_status_counts": {}, "family_summaries": {}},
+        )
+
+        with patch("experiment_runtime_decision.build_best_results_dashboard", return_value=fake_dashboard), patch(
+            "experiment_runtime_decision.load_research_memory", return_value={}
+        ):
+            decision = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root="/tmp",
+                    experiments_dir="/tmp/experiments",
+                    strategy_families=["momentum", "superstock", "ml_ranker", "rl_bandit"],
+                    max_experiments=24,
+                    exploration_fraction=0.75,
+                    exploitation_fraction=0.25,
+                    min_large_search_candidates=48,
+                )
+            )
+
+        self.assertEqual(decision.winner_family, "momentum")
+        self.assertEqual(decision.family_budgets["momentum"], max(decision.family_budgets.values()))
+        self.assertGreaterEqual(decision.family_budgets["ml_ranker"], 1)
+        self.assertGreaterEqual(decision.family_budgets["rl_bandit"], 1)
+        self.assertEqual(decision.rationale["family_budget_rationale"]["ml_ranker"]["budget_stance"], "controlled")
+        self.assertEqual(decision.rationale["family_budget_rationale"]["rl_bandit"]["budget_stance"], "controlled")
+        self.assertIn(decision.rationale["family_budget_rationale"]["ml_ranker"]["focus_mode"], {"ml_rethink_probe", "ml_small_exploration"})
+        self.assertIn(decision.rationale["family_budget_rationale"]["rl_bandit"]["focus_mode"], {"rl_rethink_probe", "rl_small_exploration"})
+        self.assertIn("ml_rl_probe_policy", decision.rationale)
+        self.assertTrue(decision.rationale["ml_rl_probe_policy"]["allowed"])
+        self.assertFalse(decision.rationale["ml_rl_probe_policy"]["non_momentum_viable_progress"])
 
     def test_runtime_decision_restricts_narrow_validation_winners(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -259,7 +447,10 @@ class RuntimeDecisionTests(unittest.TestCase):
 
         self.assertIn(decision.winner_validation_scope, {"narrow", "partial"})
         self.assertTrue(decision.winner_validation_needs_follow_up)
-        self.assertIn("weak_long_horizon", decision.winner_validation_horizon_tags)
+        self.assertTrue(
+            "weak_long_horizon" in decision.winner_validation_horizon_tags
+            or "horizon_mixed" in decision.winner_validation_horizon_tags
+        )
         self.assertTrue(decision.confirmation_required or decision.winner_promotion_status in {"hold_for_confirmation", "cautious_promotion"})
         self.assertLessEqual(decision.winner_exploitation_cap, 0.4)
         self.assertIn(decision.rationale["winner_promotion_policy"]["signals"]["validation_scope"], {"narrow", "partial"})
@@ -267,10 +458,28 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertIsNotNone(decision.targeted_follow_up_type)
         self.assertGreater(decision.targeted_follow_up_priority or 0.0, 0.0)
         self.assertTrue(decision.rationale["targeted_follow_up"]["required"])
-        self.assertIn(decision.rationale["targeted_follow_up"]["type"], {"long_horizon_confirmation", "coverage_expansion_confirmation", "mixed_regime_clarification", "targeted_follow_up_confirmation"})
+        self.assertIn(
+            decision.rationale["targeted_follow_up"]["type"],
+            {
+                "long_horizon_confirmation",
+                "coverage_expansion_confirmation",
+                "mixed_regime_clarification",
+                "long_horizon_high_volatility_confirmation",
+                "targeted_follow_up_confirmation",
+            },
+        )
         self.assertIn("reason", decision.rationale["targeted_follow_up"])
         self.assertTrue(decision.holdout_check_required)
-        self.assertIn(decision.holdout_check_type, {"long_horizon_holdout", "coverage_expansion_holdout", "mixed_regime_clarification_holdout", "generic_holdout"})
+        self.assertIn(
+            decision.holdout_check_type,
+            {
+                "long_horizon_holdout",
+                "coverage_expansion_holdout",
+                "mixed_regime_clarification_holdout",
+                "generic_holdout",
+                "long_horizon_high_volatility_holdout",
+            },
+        )
 
     def test_targeted_follow_up_plan_maps_mixed_regime_to_clarification(self):
         plan = _targeted_follow_up_plan(
@@ -294,6 +503,73 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertEqual(plan["targeted_follow_up_type"], "mixed_regime_clarification")
         self.assertGreater(plan["targeted_follow_up_priority"], 0.0)
         self.assertIn("regime evidence is mixed", plan["targeted_follow_up_reason"])
+
+    def test_targeted_follow_up_plan_prefers_combined_long_and_high_vol_holdout(self):
+        plan = _targeted_follow_up_plan(
+            family="momentum",
+            scorecard={
+                "validation_horizon_tags": ["weak_long_horizon"],
+                "validation_regime_tags": ["weak_in_high_vol"],
+                "validation_scope": "partial",
+                "validation_confidence": 0.61,
+                "validation_coverage": 0.64,
+                "robustness_score": 0.54,
+                "overfit_risk": 0.58,
+                "overfit_risk_model": "graded_v2",
+                "recent_robustness_trend": -0.03,
+                "viable_rate": 0.12,
+                "win_rate_vs_baseline": 0.41,
+                "lineage_status_summary": "leaf",
+                "lineage_trust_score": 0.20,
+            },
+            promotion_policy={"winner_promotion_status": "hold_for_confirmation"},
+        )
+
+        self.assertTrue(plan["targeted_follow_up_required"])
+        self.assertEqual(plan["targeted_follow_up_type"], "long_horizon_high_volatility_confirmation")
+        self.assertIn("both long-horizon and high-volatility validation are weak", plan["targeted_follow_up_reason"])
+        self.assertGreater(plan["targeted_follow_up_priority"], 0.0)
+
+    def test_confirmation_batch_plan_assigns_dedicated_combined_holdout_batch(self):
+        plan = _confirmation_batch_plan(
+            decision_id="runtime_20260413_123456",
+            request=RuntimeDecisionInput(
+                workspace_root="/tmp",
+                experiments_dir="/tmp/experiments",
+                strategy_families=["momentum"],
+                max_experiments=24,
+                exploration_fraction=0.65,
+                exploitation_fraction=0.35,
+                min_large_search_candidates=48,
+            ),
+            winner_family="momentum",
+            winner_scorecard={
+                "validation_horizon_tags": ["weak_long_horizon"],
+                "validation_regime_tags": ["weak_in_high_vol"],
+                "validation_scope": "partial",
+                "validation_confidence": 0.61,
+                "validation_coverage": 0.64,
+                "robustness_score": 0.54,
+                "overfit_risk": 0.58,
+                "overfit_risk_model": "graded_v2",
+                "recent_robustness_trend": -0.03,
+                "viable_rate": 0.12,
+                "win_rate_vs_baseline": 0.41,
+            },
+            promotion_policy={
+                "winner_family": "momentum",
+                "winner_promotion_status": "hold_for_confirmation",
+                "winner_exploitation_cap": 0.25,
+                "confirmation_batch_requested": True,
+            },
+            latest_batch_overview=None,
+        )
+
+        self.assertTrue(plan["holdout_check_required"])
+        self.assertEqual(plan["holdout_check_type"], "long_horizon_high_volatility_holdout")
+        self.assertEqual(plan["holdout_check_scope"], "long_horizon_high_volatility")
+        self.assertEqual(plan["holdout_check_batch_id"], "runtime_20260413_123456_holdout_momentum")
+        self.assertTrue(plan["confirmation_required"])
 
     def test_runtime_decision_downweights_suspicious_overfit_winner(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -417,6 +693,7 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertIn("planned_max_experiments", decision.rationale)
         self.assertGreater(decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["risk_score"], 0.45)
         self.assertGreater(decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["scorecard_overfit_risk"], 0.5)
+        self.assertEqual(decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["overfit_risk_model"], "graded_v2")
         self.assertIn("robustness_score", decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["signals"])
         self.assertIn("not_viable", decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["flags"])
         self.assertIn("high_objective_non_viable", decision.rationale["anti_overfitting"]["family_risk_reports"]["momentum"]["flags"])

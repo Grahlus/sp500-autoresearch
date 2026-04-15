@@ -9,25 +9,41 @@ from agents.schemas import AnalysisReport, IdeaRecord, save_analysis_report, sav
 from experiment_store import init_store, save_experiment_result
 
 
-def _save_result(tmp: str, experiment_id: str, family: str, objective_score: float, viable: bool = True) -> None:
+def _save_result(
+    tmp: str,
+    experiment_id: str,
+    family: str,
+    objective_score: float,
+    viable: bool = True,
+    *,
+    status: str = "success",
+    timestamp_utc: str = "2026-04-04T00:00:00+00:00",
+    beats_baseline: bool | None = None,
+) -> None:
+    params_by_family = {
+        "momentum": {"LOOKBACK_WEEKS": 26},
+        "superstock": {"max_positions": 5},
+        "ml_ranker": {"model_type": "ridge"},
+        "rl_bandit": {"policy_type": "ucb"},
+    }
     save_experiment_result(
         {
             "spec": {
                 "family": family,
-                "params": {"LOOKBACK_WEEKS": 26},
+                "params": params_by_family.get(family, {"LOOKBACK_WEEKS": 26}),
                 "search_method": "single",
                 "objective_name": "wf_v1_score",
                 "batch_id": "single",
                 "config_hash": f"{experiment_id}_hash",
                 "experiment_id": experiment_id,
-                "timestamp_utc": "2026-04-04T00:00:00+00:00",
+                "timestamp_utc": timestamp_utc,
                 "benchmark_source": "spy_symbol",
                 "dataset_id": "data123",
                 "data_start": "2014-01-01",
                 "data_end": "2026-04-03",
                 "split": "walk-forward",
             },
-            "status": "success",
+            "status": status,
             "objective_score": objective_score,
             "metrics": {
                 "sharpe": objective_score,
@@ -37,6 +53,12 @@ def _save_result(tmp: str, experiment_id: str, family: str, objective_score: flo
                 "trades_per_year": 10.0,
             },
             "robustness": {"negative_windows": 0, "viable": viable},
+            "baseline_comparison": {
+                "baseline_name": "momentum_champion_s10005",
+                "comparison_status": "partial_verified_current_engine",
+                "beats_baseline_objective": beats_baseline,
+                "beats_baseline_guardrails": beats_baseline,
+            },
             "artifacts": {},
             "runtime_seconds": 0.1,
         },
@@ -176,6 +198,146 @@ class PlanningAgentTests(unittest.TestCase):
             self.assertEqual(rationale["best_baseline_beating_result"]["experiment_id"], "m_base")
             self.assertEqual(rationale["family_budget_rationale"]["mode"], "analysis_scorecard_weighted")
             self.assertIn("momentum", rationale["family_budget_rationale"]["families"])
+            self.assertGreater(record.new_idea_budget or 0, 0)
+            self.assertGreater(record.repeat_branch_cap or 0, 0)
+            self.assertGreater(record.new_idea_quota or 0, 0)
+            self.assertEqual(rationale["new_idea_budget"], record.new_idea_budget)
+            self.assertEqual(rationale["repeat_branch_cap"], record.repeat_branch_cap)
+            self.assertTrue(any((spec.get("metadata") or {}).get("is_new_idea") for spec in record.candidate_specs))
+
+    def test_recent_winners_and_losers_are_scored_in_planning_rationale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            _save_result(
+                str(experiments_dir),
+                "m_recent_best",
+                "momentum",
+                1.4,
+                viable=True,
+                timestamp_utc="2026-04-10T00:00:00+00:00",
+                beats_baseline=True,
+            )
+            _save_result(
+                str(experiments_dir),
+                "s_recent_bad",
+                "superstock",
+                -0.4,
+                viable=False,
+                status="no_trades",
+                timestamp_utc="2026-04-10T00:00:00+00:00",
+            )
+            reports_dir = Path(tmp) / "reports" / "score_summaries"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "report_id": "analysis_recent",
+                        "score_summary": {
+                            "momentum": {
+                                "total_experiments": 10,
+                                "viable_rate": 0.20,
+                                "search_priority": 0.50,
+                                "confidence": 0.50,
+                                "dead_zone_density": 0.0,
+                                "duplicate_saturation": 0.0,
+                                "stagnation_experiments": 0,
+                            },
+                            "superstock": {
+                                "total_experiments": 10,
+                                "viable_rate": 0.20,
+                                "search_priority": 0.50,
+                                "confidence": 0.50,
+                                "dead_zone_density": 0.0,
+                                "duplicate_saturation": 0.0,
+                                "stagnation_experiments": 0,
+                            },
+                        },
+                        "next_focus": [
+                            {"family": "momentum", "focus": "refine"},
+                            {"family": "superstock", "focus": "explore"},
+                        ],
+                    }
+                )
+            )
+
+            record = planning_agent.build_planning_proposal(
+                workspace_root=tmp,
+                experiments_dir=str(experiments_dir),
+                families=["momentum", "superstock"],
+                max_experiments=8,
+                seed=7,
+            )
+
+            rationale = record.planning_rationale
+            recent = rationale["recent_evidence"]
+            self.assertEqual(recent["momentum"]["best_viable"]["experiment_id"], "m_recent_best")
+            self.assertEqual(recent["momentum"]["best_baseline_beating"]["experiment_id"], "m_recent_best")
+            self.assertEqual(recent["superstock"]["recent_invalid_or_no_trade_count"], 1)
+            self.assertGreater(record.family_budget.get("momentum", 0), record.family_budget.get("superstock", 0))
+            family_rationale = rationale["family_budget_rationale"]["families"]
+            self.assertEqual(family_rationale["momentum"]["recent_evidence"]["best_viable"]["experiment_id"], "m_recent_best")
+            self.assertEqual(family_rationale["superstock"]["recent_evidence"]["recent_loser_count"], 1)
+
+    def test_idea_yield_summary_shifts_novelty_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            score_summary_dir = Path(tmp) / "reports" / "score_summaries"
+            score_summary_dir.mkdir(parents=True, exist_ok=True)
+            (score_summary_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "report_id": "analysis_yield",
+                        "score_summary": {
+                            "momentum": {
+                                "total_experiments": 20,
+                                "viable_rate": 0.35,
+                                "search_priority": 0.70,
+                                "confidence": 0.90,
+                                "dead_zone_density": 0.10,
+                                "duplicate_saturation": 0.05,
+                                "stagnation_experiments": 12,
+                            }
+                        },
+                        "next_focus": [{"family": "momentum", "focus": "explore"}],
+                    }
+                )
+            )
+            idea_yield_dir = experiments_dir / "scorecards"
+            idea_yield_dir.mkdir(parents=True, exist_ok=True)
+            (idea_yield_dir / "idea_yield.json").write_text(
+                json.dumps(
+                    {
+                        "timestamp_utc": "2026-04-12T00:00:00+00:00",
+                        "families": {
+                            "momentum": {
+                                "idea_state": "promising",
+                                "idea_quality_score": 0.88,
+                                "idea_decay_score": 0.10,
+                                "idea_fresh_share": 0.20,
+                                "idea_promising_share": 0.70,
+                                "idea_retired_share": 0.0,
+                                "search_priority": 0.92,
+                            }
+                        },
+                    }
+                )
+            )
+
+            record = planning_agent.build_planning_proposal(
+                workspace_root=tmp,
+                experiments_dir=str(experiments_dir),
+                families=["momentum"],
+                max_experiments=8,
+                seed=7,
+            )
+
+            self.assertIn("idea_yield_snapshot", record.planning_rationale)
+            self.assertEqual(record.planning_rationale["analysis_report_ids_used"]["idea_yield_report_id"], "2026-04-12T00:00:00+00:00")
+            self.assertEqual(record.planning_rationale["idea_yield_snapshot"]["families"]["momentum"]["idea_state"], "promising")
+            self.assertEqual(record.planning_rationale["family_budget_rationale"]["families"]["momentum"]["idea_state"], "promising")
+            self.assertGreaterEqual(record.new_idea_budget or 0, 2)
 
     def test_stagnation_signal_widens_exploration(self):
         with tempfile.TemporaryDirectory() as tmp:

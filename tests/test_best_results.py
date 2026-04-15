@@ -12,6 +12,7 @@ from experiment_best_results import (
     top_results_overall,
     top_results_per_family,
 )
+from experiment_hot_index import upsert_experiment_summary
 from experiment_store import init_store, save_experiment_result
 
 
@@ -64,14 +65,24 @@ class BestResultsTests(unittest.TestCase):
             _save_result(tmp, "m2", "momentum", "m2", 2.0)
             _save_result(tmp, "m1", "momentum", "m1", 1.0)
             _save_result(tmp, "s1", "superstock", "s1", 1.5)
+            _save_result(tmp, "m0", "momentum", "m0", -0.2)
             _save_result(tmp, "d1", "momentum", "d1", 99.0, status="duplicate")
 
             overall = top_results_overall(base_dir=tmp)
             self.assertEqual(list(overall["experiment_id"][:3]), ["m2", "s1", "m1"])
             self.assertNotIn("d1", set(overall["experiment_id"]))
+            self.assertIn("validation_horizon_tags", overall.columns)
+            self.assertIn("validation_regime_tags", overall.columns)
+            self.assertIn("lineage_root_config_hash", overall.columns)
+            self.assertIn("lineage_status_summary", overall.columns)
+            self.assertIn("lineage_trust_score", overall.columns)
+            self.assertIn("targeted_follow_up_required", overall.columns)
+            self.assertIn("targeted_follow_up_type", overall.columns)
+            self.assertIn("holdout_check_required", overall.columns)
+            self.assertIn("holdout_check_type", overall.columns)
 
             per_family = top_results_per_family(base_dir=tmp)
-            self.assertEqual(list(per_family["momentum"]["experiment_id"]), ["m2", "m1"])
+            self.assertEqual(list(per_family["momentum"]["experiment_id"]), ["m2", "m1", "m0"])
             self.assertEqual(list(per_family["superstock"]["experiment_id"]), ["s1"])
 
     def test_best_results_rank_viable_before_non_viable_even_with_higher_objective(self):
@@ -85,6 +96,8 @@ class BestResultsTests(unittest.TestCase):
             index.loc[index["experiment_id"] == "weak", "viable"] = False
             index.loc[index["experiment_id"] == "robust", "viable"] = True
             index.to_csv(index_path, index=False)
+            for _, row in index.iterrows():
+                upsert_experiment_summary(str(tmp), row.to_dict())
 
             overall = top_results_overall(base_dir=tmp)
             self.assertEqual(overall.iloc[0]["experiment_id"], "robust")
@@ -98,6 +111,10 @@ class BestResultsTests(unittest.TestCase):
             overall = top_results_overall(base_dir=tmp)
             for column in ("strategy_type", "source_type", "template_id", "hypothesis", "reason_selected"):
                 self.assertEqual(overall.iloc[0][column], "")
+            self.assertEqual(overall.iloc[0]["targeted_follow_up_required"], False)
+            self.assertEqual(overall.iloc[0]["targeted_follow_up_reason"], "")
+            self.assertEqual(overall.iloc[0]["holdout_check_required"], False)
+            self.assertEqual(overall.iloc[0]["holdout_check_type"], "")
 
     def test_latest_non_empty_batch_skips_empty_batches(self):
         with tempfile.TemporaryDirectory() as tmp:

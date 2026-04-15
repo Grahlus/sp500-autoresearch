@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import random
 from dataclasses import asdict, replace
@@ -23,6 +24,7 @@ from experiment_spaces import (
     normalize_experiment_config,
     sample_random_candidates,
 )
+from experiment_search import smart_sample_candidates
 from experiment_store import compute_config_hash, load_prior_results, load_results_index, save_proposal_result
 from experiment_types import ProposalRequest, ProposalResult
 
@@ -48,10 +50,21 @@ def build_proposal_request(
     stagnation_escape_batches: int = 3,
     allow_external_seeds: bool = False,
     source_idea_ids: list[str] | None = None,
+    new_idea_budget: int | None = None,
+    refinement_budget: int | None = None,
+    confirmation_budget: int | None = None,
+    new_idea_quota: int | None = None,
+    uncommon_idea_quota: int | None = None,
+    repeat_branch_cap: int | None = None,
+    max_same_template_per_cycle: int | None = None,
+    max_same_lineage_per_cycle: int | None = None,
+    structural_novelty_threshold: float = 0.55,
+    uncommon_template_bonus: float = 0.10,
     branch_budgets: dict[str, list[dict[str, Any]]] | None = None,
     branch_budget_rationale: dict[str, Any] | None = None,
     use_idea_queue: bool = True,
     use_analysis_guidance: bool = True,
+    history_limit_per_family: int | None = None,
     confirmation_state: str | None = None,
     confirmation_required: bool = False,
     confirmation_reason: str | None = None,
@@ -118,10 +131,21 @@ def build_proposal_request(
         stagnation_escape_batches=int(stagnation_escape_batches),
         allow_external_seeds=bool(allow_external_seeds),
         source_idea_ids=list(source_idea_ids or []),
+        new_idea_budget=None if new_idea_budget is None else int(new_idea_budget),
+        refinement_budget=None if refinement_budget is None else int(refinement_budget),
+        confirmation_budget=None if confirmation_budget is None else int(confirmation_budget),
+        new_idea_quota=None if new_idea_quota is None else int(new_idea_quota),
+        uncommon_idea_quota=None if uncommon_idea_quota is None else int(uncommon_idea_quota),
+        repeat_branch_cap=None if repeat_branch_cap is None else int(repeat_branch_cap),
+        max_same_template_per_cycle=None if max_same_template_per_cycle is None else int(max_same_template_per_cycle),
+        max_same_lineage_per_cycle=None if max_same_lineage_per_cycle is None else int(max_same_lineage_per_cycle),
+        structural_novelty_threshold=float(structural_novelty_threshold),
+        uncommon_template_bonus=float(uncommon_template_bonus),
         branch_budgets=branch_budgets,
         branch_budget_rationale=branch_budget_rationale,
         use_idea_queue=bool(use_idea_queue),
         use_analysis_guidance=bool(use_analysis_guidance),
+        history_limit_per_family=None if history_limit_per_family is None else int(history_limit_per_family),
         confirmation_state=confirmation_state,
         confirmation_required=bool(confirmation_required),
         confirmation_reason=confirmation_reason,
@@ -178,6 +202,8 @@ def _load_helper_ideas(
         key=lambda record: (
             -float(record.get("priority") or 0.0),
             -float(record.get("novelty_score") or 0.0),
+            not bool(record.get("is_new_idea")),
+            bool(record.get("is_branch_repeat")),
             str(record.get("idea_id") or ""),
         )
     )
@@ -198,11 +224,17 @@ def _latest_analysis_guidance(
     return report
 
 
-def _load_detailed_history(family: str, base_dir: str) -> pd.DataFrame:
+def _load_detailed_history(family: str, base_dir: str, *, limit: int | None = None) -> pd.DataFrame:
     index = load_prior_results(family=family, base_dir=base_dir)
     rows: list[dict[str, Any]] = []
     if index.empty:
         return pd.DataFrame()
+
+    if limit is not None and limit > 0 and len(index) > limit:
+        if "timestamp_utc" in index.columns:
+            index = index.sort_values("timestamp_utc").tail(limit)
+        else:
+            index = index.tail(limit)
 
     for _, row in index.iterrows():
         result_dir = row.get("result_dir")
@@ -299,8 +331,24 @@ def _history_records(history: pd.DataFrame) -> list[dict[str, Any]]:
         config = record.get("config")
         if not isinstance(config, dict):
             config = {key.removeprefix("param__"): value for key, value in record.items() if key.startswith("param__")}
-        record["config"] = config
-        records.append(record)
+        records.append(
+            {
+                "experiment_id": record.get("experiment_id"),
+                "batch_id": record.get("batch_id"),
+                "config_hash": record.get("config_hash"),
+                "config": config,
+                "objective_score": record.get("objective_score"),
+                "status": record.get("status"),
+                "viable": record.get("viable"),
+                "comparison_status": record.get("comparison_status"),
+                "beats_baseline_objective": record.get("beats_baseline_objective"),
+                "delta_sharpe": record.get("delta_sharpe"),
+                "template_id": record.get("template_id"),
+                "strategy_type": record.get("strategy_type"),
+                "source_type": record.get("source_type"),
+                "family": record.get("family"),
+            }
+        )
     return records
 
 
@@ -333,6 +381,75 @@ def _family_strategy_type(family: str) -> str:
     if family in {"rl_bandit"}:
         return "rl"
     return "classical"
+
+
+def _template_cycle_key(template_id: str | None, source_type: str | None) -> str:
+    return str(template_id or source_type or "unspecified")
+
+
+def _structural_novelty_profile(
+    *,
+    family: str,
+    source_type: str,
+    strategy_type: str | None,
+    template_id: str | None,
+    template_tags: list[str] | None,
+    template_counts: dict[str, int] | None,
+    is_branch_repeat: bool,
+    structural_novelty_threshold: float,
+    uncommon_template_bonus: float,
+) -> dict[str, Any]:
+    template_key = _template_cycle_key(template_id, source_type)
+    template_count = int((template_counts or {}).get(template_key, 0) or 0)
+    source = str(source_type or "")
+    strategy = str(strategy_type or "")
+    tags = {str(tag) for tag in (template_tags or [])}
+    structural_score = 0.0
+    structural_reasons: list[str] = []
+
+    if source in {"cross_family_hybrid", "external_seed", "idea_seed", "model_based", "policy_learning"}:
+        structural_score += 0.55
+        structural_reasons.append(f"source_type={source}")
+    if source == "template_expansion" and template_key not in {"lineage_branch", "local_refinement"}:
+        structural_score += 0.40
+        structural_reasons.append("template_expansion")
+    if strategy in {"ml", "rl"} and source not in {"confirmation_reproduction", "confirmation_check", "holdout_check"}:
+        structural_score += 0.40
+        structural_reasons.append(f"strategy_type={strategy}")
+    if family != "momentum" and source in {"template_expansion", "cross_family_hybrid", "model_based", "policy_learning", "external_seed"}:
+        structural_score += 0.25
+        structural_reasons.append(f"non_primary_family={family}")
+    if template_id and template_count <= 1 and source not in {"local_refinement", "confirmation_reproduction", "confirmation_check", "holdout_check"}:
+        structural_score += 0.20 + max(0.0, uncommon_template_bonus)
+        structural_reasons.append("underused_template")
+    if tags & {"regime", "horizon", "sizing", "exit", "ranking", "ml", "rl"}:
+        structural_score += 0.15
+        structural_reasons.append(f"concept_tags={sorted(tags)}")
+    if is_branch_repeat:
+        structural_score = min(structural_score, 0.30)
+        structural_reasons.append("branch_repeat_cap")
+
+    structural_score = max(0.0, min(1.0, structural_score))
+    is_structural = bool(structural_score >= max(0.0, min(1.0, structural_novelty_threshold)))
+    is_uncommon = bool(
+        is_structural
+        and (
+            template_count <= 1
+            or strategy in {"ml", "rl"}
+            or family != "momentum"
+            or source in {"cross_family_hybrid", "external_seed", "model_based", "policy_learning"}
+        )
+    )
+    uncommon_reason = None
+    if is_uncommon:
+        uncommon_reason = "; ".join(structural_reasons or ["underused structural idea"])
+    return {
+        "is_structurally_novel": is_structural,
+        "is_uncommon_idea": is_uncommon,
+        "structural_novelty_score": round(structural_score, 6),
+        "structural_novelty_reason": "; ".join(structural_reasons) if structural_reasons else "parameter-level variation",
+        "uncommon_idea_reason": uncommon_reason,
+    }
 
 
 def _stagnation_batches(history: pd.DataFrame, lookback: int) -> int:
@@ -408,6 +525,17 @@ def _neighbor_choices(values: list[Any], current: Any) -> list[Any]:
     return ordered
 
 
+def _repair_local_neighbor_candidate(family: str, candidate: dict[str, Any]) -> dict[str, Any]:
+    repaired = dict(candidate)
+    if family == "momentum":
+        stop_type = repaired.get("STOP_TYPE")
+        if stop_type in {"fixed", "adaptive"} and repaired.get("STOP_LOSS_PCT") is None:
+            repaired["STOP_LOSS_PCT"] = get_family_search_space(family)["STOP_LOSS_PCT"]["default"]
+        if stop_type == "adaptive" and repaired.get("STOP_PARABOLIC") is None:
+            repaired["STOP_PARABOLIC"] = get_family_search_space(family)["STOP_PARABOLIC"]["default"]
+    return repaired
+
+
 def build_local_neighbors(
     family: str,
     config: dict[str, Any],
@@ -427,6 +555,7 @@ def build_local_neighbors(
     seen: set[str] = set()
 
     def add_candidate(candidate: dict[str, Any]) -> None:
+        candidate = _repair_local_neighbor_candidate(family, candidate)
         normalized = normalize_experiment_config(family, candidate)
         config_hash = compute_config_hash(family, normalized)
         if config_hash in explored_hashes or config_hash in seen:
@@ -475,19 +604,31 @@ def sample_exploration_configs(
     *,
     dead_zones: dict[str, set[Any]] | None = None,
     sample_multiplier: int = 8,
+    cycle_mode: str = "normal_exploration",
+    history_count: int = 0,
+    stagnation_batches: int = 0,
+    top_configs: list[dict[str, Any]] | None = None,
+    out_metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """
+    Sample exploration candidate configs using smart, non-exhaustive search.
+
+    Automatically selects coarse_grid / latin_hypercube / local_refinement / hybrid
+    based on cycle context. Pass out_metadata={} to receive search diagnostics.
+    """
     dead_zones = dead_zones or {}
-    samples = sample_random_candidates(family, n=max(limit * sample_multiplier, limit * 2, 16), seed=seed)
-    candidates: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for candidate in samples:
-        config_hash = compute_config_hash(family, candidate)
-        if config_hash in explored_hashes or config_hash in seen:
-            continue
-        seen.add(config_hash)
-        candidates.append(candidate)
-        if len(candidates) >= limit:
-            break
+    candidates, search_meta = smart_sample_candidates(
+        family,
+        n=limit,
+        seed=seed,
+        cycle_mode=cycle_mode,
+        history_count=history_count,
+        stagnation_batches=stagnation_batches,
+        top_configs=top_configs,
+        explored_hashes=explored_hashes,
+    )
+    if out_metadata is not None:
+        out_metadata.update(search_meta)
     return candidates
 
 
@@ -496,14 +637,15 @@ def analyze_experiment_history(
     families: list[str],
     base_dir: str = "experiments",
     baseline_by_family: dict[str, str | None] | None = None,
+    history_limit_per_family: int | None = None,
 ) -> dict[str, Any]:
     baseline_by_family = {**DEFAULT_BASELINES, **(baseline_by_family or {})}
     memory = load_research_memory(base_dir)
-    scorecards = build_family_scorecards(families=families, base_dir=base_dir)
+    scorecards = build_family_scorecards(families=families, base_dir=base_dir, include_idea_yield=False)
     scorecard_records = scorecards_to_records(scorecards)
     summary: dict[str, Any] = {"families": {}}
     for family in families:
-        history = _load_detailed_history(family, base_dir)
+        history = _load_detailed_history(family, base_dir, limit=history_limit_per_family)
         dead_zones = identify_dead_zones(history, family)
         median_score = float(history["objective_score"].fillna(float("-inf")).median()) if not history.empty else float("-inf")
         top = select_top_configs(history, family, limit=5)
@@ -791,6 +933,10 @@ def score_proposal_quality(
     dead_zone_heavy_count = 0
     local_refinement_count = 0
     exploration_count = 0
+    new_idea_count = 0
+    structurally_novel_count = 0
+    uncommon_idea_count = 0
+    repeat_branch_count = 0
 
     for family in request.strategy_families:
         configs = candidate_configs.get(family, [])
@@ -814,6 +960,10 @@ def score_proposal_quality(
         dead_zone_heavy_count += sum(1 for item in metadata if _safe_float(item.get("dead_zone_risk"), 0.0) >= 0.5)
         local_refinement_count += sum(1 for item in metadata if item.get("proposal_role") == "exploit")
         exploration_count += sum(1 for item in metadata if item.get("proposal_role") == "explore")
+        new_idea_count += sum(1 for item in metadata if item.get("is_new_idea"))
+        structurally_novel_count += sum(1 for item in metadata if item.get("is_structurally_novel"))
+        uncommon_idea_count += sum(1 for item in metadata if item.get("is_uncommon_idea"))
+        repeat_branch_count += sum(1 for item in metadata if item.get("is_branch_repeat") or item.get("repeat_branch_flag"))
         family_reports[family] = {
             "budget": budget,
             "selected": len(configs),
@@ -822,6 +972,10 @@ def score_proposal_quality(
             "explored_count": len(family_analysis.get("explored_hashes") or []),
             "source_types": family_source_types,
             "strategy_types": family_strategy_types,
+            "idea_kinds": sorted({str(item.get("idea_kind")) for item in metadata if item.get("idea_kind")}),
+            "new_idea_budget_buckets": sorted({str(item.get("new_idea_budget_bucket")) for item in metadata if item.get("new_idea_budget_bucket")}),
+            "structurally_novel_count": sum(1 for item in metadata if item.get("is_structurally_novel")),
+            "uncommon_idea_count": sum(1 for item in metadata if item.get("is_uncommon_idea")),
             "shortfall_reasons": reasons,
         }
 
@@ -871,6 +1025,12 @@ def score_proposal_quality(
         quality_flags.append("holdout_check_underfilled")
     if candidate_count > 0 and len(source_types) <= 1 and len(strategy_types) <= 1 and len(request.strategy_families) > 1:
         quality_flags.append("too_narrow")
+    if request.new_idea_quota and new_idea_count < int(request.new_idea_quota) and not request.confirmation_required:
+        quality_flags.append("new_idea_quota_underfilled")
+    if request.uncommon_idea_quota and uncommon_idea_count < int(request.uncommon_idea_quota) and not request.confirmation_required:
+        quality_flags.append("uncommon_idea_quota_underfilled")
+    if request.repeat_branch_cap and repeat_branch_count > int(request.repeat_branch_cap) * max(1, len(request.strategy_families)):
+        quality_flags.append("repeat_branch_cap_exceeded")
     if duplicate_risk_count / max(1, candidate_count) >= 0.25:
         quality_flags.append("duplicate_heavy")
     if dead_zone_heavy_count / max(1, candidate_count) >= 0.25:
@@ -907,6 +1067,10 @@ def score_proposal_quality(
         "dead_zone_heavy_count": dead_zone_heavy_count,
         "local_refinement_count": local_refinement_count,
         "exploration_count": exploration_count,
+        "new_idea_count": new_idea_count,
+        "structurally_novel_count": structurally_novel_count,
+        "uncommon_idea_count": uncommon_idea_count,
+        "repeat_branch_count": repeat_branch_count,
         "source_type_count": len(source_types),
         "strategy_type_count": len(strategy_types),
         "execution_allowed": bool((not request.quality_gate) or pass_minimum),
@@ -931,6 +1095,7 @@ def _candidate_metadata(
     source_proposal_id: str | None,
     source_idea_ids: list[str] | None = None,
     template_tags: list[str] | None = None,
+    template_counts: dict[str, int] | None = None,
     lineage_root_config_hash: str | None = None,
     branch_budget: int | None = None,
     branch_budget_share: float | None = None,
@@ -954,19 +1119,76 @@ def _candidate_metadata(
     holdout_check_batch_id: str | None = None,
     holdout_horizon_tags: list[str] | None = None,
     holdout_regime_tags: list[str] | None = None,
+    structural_novelty_threshold: float = 0.55,
+    uncommon_template_bonus: float = 0.10,
 ) -> dict[str, Any]:
     from experiment_store import compute_config_hash
 
     normalized = normalize_experiment_config(family, candidate)
     config_hash = compute_config_hash(family, normalized)
+    idea_source = str(source_type or "").strip() or "unknown"
+    if source_type in {"confirmation_reproduction", "confirmation_check", "holdout_check"}:
+        idea_kind = "holdout_confirmation"
+    elif source_type in {"local_refinement"}:
+        idea_kind = "branch_refinement"
+    elif source_type in {"idea_seed"}:
+        idea_kind = "helper_idea"
+    elif source_type in {"cross_family_hybrid"}:
+        idea_kind = "cross_family_hybrid"
+    elif source_type in {"model_based"}:
+        idea_kind = "ml_architecture_probe"
+    elif source_type in {"policy_learning"}:
+        idea_kind = "rl_policy_probe"
+    elif source_type in {"template_expansion"} and (template_tags or []):
+        idea_kind = "template_variation"
+    elif source_type in {"broad_exploration", "saturation_escape", "external_seed"}:
+        idea_kind = "new_idea_probe"
+    else:
+        idea_kind = "exploration_variant"
+    is_branch_repeat = source_type in {"local_refinement", "confirmation_reproduction", "confirmation_check", "holdout_check"} or bool(branch_budget)
+    novelty_profile = _structural_novelty_profile(
+        family=family,
+        source_type=source_type,
+        strategy_type=strategy_type,
+        template_id=template_id,
+        template_tags=template_tags,
+        template_counts=template_counts,
+        is_branch_repeat=is_branch_repeat,
+        structural_novelty_threshold=structural_novelty_threshold,
+        uncommon_template_bonus=uncommon_template_bonus,
+    )
+    is_new_idea = bool(novelty_profile["is_structurally_novel"])
+    novelty_reason = (
+        branch_budget_reason
+        or reason_selected
+        or (
+            "branch repeat / local refinement"
+            if is_branch_repeat
+            else novelty_profile["structural_novelty_reason"]
+        )
+    )
+    budget_bucket = (
+        "confirmation"
+        if source_type in {"confirmation_reproduction", "confirmation_check", "holdout_check"}
+        else "uncommon_idea"
+        if novelty_profile["is_uncommon_idea"]
+        else "new_idea"
+        if is_new_idea
+        else "branch_refinement"
+        if is_branch_repeat
+        else "parameter_exploration"
+    )
     return {
         "config": normalized,
         "config_hash": config_hash,
         "strategy_type": strategy_type,
         "source_type": source_type,
+        "idea_source": idea_source,
+        "idea_kind": idea_kind,
         "template_id": template_id,
         "hypothesis": hypothesis,
         "reason_selected": reason_selected,
+        "novelty_reason": novelty_reason,
         "novelty_score": getattr(novelty, "novelty_score", None),
         "selection_score": getattr(novelty, "selection_score", None),
         "objective_proxy": getattr(novelty, "objective_proxy", None),
@@ -981,6 +1203,16 @@ def _candidate_metadata(
         "source_proposal_id": source_proposal_id,
         "source_batch_id": ",".join(source_batch_ids) if source_batch_ids else None,
         "source_idea_ids": list(source_idea_ids or []),
+        "is_new_idea": is_new_idea,
+        "is_structurally_novel": bool(novelty_profile["is_structurally_novel"]),
+        "is_uncommon_idea": bool(novelty_profile["is_uncommon_idea"]),
+        "structural_novelty_score": novelty_profile["structural_novelty_score"],
+        "structural_novelty_reason": novelty_profile["structural_novelty_reason"],
+        "is_branch_repeat": is_branch_repeat,
+        "repeat_branch_flag": is_branch_repeat,
+        "repeat_branch_depth": 0,
+        "new_idea_budget_bucket": budget_bucket,
+        "uncommon_idea_reason": novelty_profile["uncommon_idea_reason"],
         "template_tags": template_tags or [],
         "lineage_root_config_hash": lineage_root_config_hash,
         "branch_budget": branch_budget,
@@ -1037,10 +1269,20 @@ def generate_next_round_proposal(
     request_source_idea_ids = list(dict.fromkeys((request.source_idea_ids or []) + [record.get("idea_id") for record in helper_ideas]))
     if request_source_idea_ids != list(request.source_idea_ids or []):
         request = replace(request, source_idea_ids=request_source_idea_ids)
+    history_limit_per_family = getattr(request, "history_limit_per_family", None)
+    if history_limit_per_family is None:
+        history_limit_per_family = max(8, min(16, int(request.max_experiments)))
+        if request.confirmation_required or bool(getattr(request, "holdout_check_required", False)) or bool(
+            getattr(request, "targeted_follow_up_required", False)
+        ):
+            history_limit_per_family = min(history_limit_per_family, 8)
+        elif int(request.max_experiments) >= request.large_search_threshold:
+            history_limit_per_family = min(history_limit_per_family, 12)
     analysis = analyze_experiment_history(
         families=request.strategy_families,
         base_dir=base_dir,
         baseline_by_family=baseline_by_family,
+        history_limit_per_family=history_limit_per_family,
     )
     all_source_batch_ids = sorted(
         {
@@ -1076,10 +1318,17 @@ def generate_next_round_proposal(
     if not confirmation_focus_family and len(request.strategy_families) == 1:
         confirmation_focus_family = request.strategy_families[0]
     official_index = load_results_index(base_dir)
+    official_hashes_by_family: dict[str, set[str]] = {}
+    if not official_index.empty and {"strategy_family", "config_hash"}.issubset(official_index.columns):
+        hash_frame = official_index[["strategy_family", "config_hash"]].dropna()
+        for hash_family, hash_group in hash_frame.groupby(hash_frame["strategy_family"].astype(str)):
+            official_hashes_by_family[str(hash_family)] = set(hash_group["config_hash"].astype(str))
     lineage_summary = build_lineage_summary(
         official_index,
         persisted_records=load_lineage_state_records(base_dir),
         latest_batch=None,
+        include_histories=False,
+        include_records=False,
     )
     lineage_cycle_mode = (
         "confirmation"
@@ -1100,6 +1349,7 @@ def generate_next_round_proposal(
             targeted_follow_up_required=targeted_follow_up_mode,
             holdout_check_required=holdout_check_required,
         )
+    repeat_branch_cap = max(1, int(request.repeat_branch_cap or max(1, int(round(request.max_experiments * 0.25)))))
 
     def _branch_seed_row(family_history: pd.DataFrame, branch_entry: dict[str, Any]) -> pd.Series | None:
         branch_hash = str(
@@ -1123,6 +1373,7 @@ def generate_next_round_proposal(
         "branch_budget_rationale": branch_budget_rationale,
         "family_scorecards": scorecard_records,
         "analysis_guidance": analysis_guidance.get("next_focus") if analysis_guidance else [],
+        "history_limit_per_family": history_limit_per_family,
         "novelty_policy": {
             "exploration_fraction": request.exploration_fraction,
             "exploitation_fraction": request.exploitation_fraction,
@@ -1132,6 +1383,16 @@ def generate_next_round_proposal(
             "max_near_duplicate_distance": request.max_near_duplicate_distance,
             "stagnation_escape_batches": request.stagnation_escape_batches,
             "allow_external_seeds": request.allow_external_seeds,
+            "new_idea_budget": request.new_idea_budget,
+            "refinement_budget": request.refinement_budget,
+            "confirmation_budget": request.confirmation_budget,
+            "new_idea_quota": request.new_idea_quota,
+            "uncommon_idea_quota": request.uncommon_idea_quota,
+            "repeat_branch_cap": request.repeat_branch_cap,
+            "max_same_template_per_cycle": request.max_same_template_per_cycle,
+            "max_same_lineage_per_cycle": request.max_same_lineage_per_cycle,
+            "structural_novelty_threshold": request.structural_novelty_threshold,
+            "uncommon_template_bonus": request.uncommon_template_bonus,
         },
         "confirmation": {
             "state": request.confirmation_state,
@@ -1169,6 +1430,27 @@ def generate_next_round_proposal(
         "families": {},
     }
     memory = load_research_memory(base_dir)
+    proposal_seed_offset = sum((idx + 1) * ord(ch) for idx, ch in enumerate(request.proposal_id)) % 100_000
+    reasoning["novelty_policy"]["proposal_seed_offset"] = proposal_seed_offset
+
+    cycle_new_idea_budget = max(
+        1,
+        int(
+            request.new_idea_budget
+            if request.new_idea_budget is not None
+            else max(1, int(round(request.max_experiments * 0.20)))
+        ),
+    )
+    cycle_new_idea_floor = max(1, int(round(cycle_new_idea_budget / max(1, len(request.strategy_families)))))
+    cycle_uncommon_idea_budget = max(
+        1,
+        int(
+            request.uncommon_idea_quota
+            if request.uncommon_idea_quota is not None
+            else max(1, int(round(cycle_new_idea_budget * 0.35)))
+        ),
+    )
+    cycle_uncommon_idea_floor = max(1, int(round(cycle_uncommon_idea_budget / max(1, len(request.strategy_families)))))
 
     for idx, family in enumerate(request.strategy_families):
         family_analysis = analysis["families"][family]
@@ -1191,7 +1473,16 @@ def generate_next_round_proposal(
         confirmation_trial_budget = max(0, budget)
         confirmation_focus_only = family_confirmation_mode
         if family_confirmation_mode:
-            confirmation_trial_budget = max(1, min(budget, max(4, int(round(max(1, budget) * 0.25)))))
+            explicit_confirmation_budget = int(request.confirmation_budget or request.confirmation_batch_experiments or 0)
+            if explicit_confirmation_budget > 0:
+                confirmation_trial_budget = max(1, min(budget, explicit_confirmation_budget))
+            else:
+                confirmation_trial_budget = max(1, min(budget, max(4, int(round(max(1, budget) * 0.25)))))
+        new_idea_floor = 0 if family_confirmation_mode and budget <= 4 else max(1, int(round(max(1, budget) * 0.25)))
+        new_idea_floor = max(new_idea_floor, min(budget, cycle_new_idea_floor))
+        if request.new_idea_quota is not None and request.new_idea_quota > 0:
+            per_family_quota_floor = max(1, int(round(float(request.new_idea_quota) / max(1, len(request.strategy_families)))))
+            new_idea_floor = max(new_idea_floor, min(budget, per_family_quota_floor))
         stagnation_batches = max(int(family_analysis.get("stagnation_batches") or 0), int(family_memory.get("stagnation_batches") or 0))
         exploration_fraction = request.exploration_fraction
         exploitation_fraction = request.exploitation_fraction
@@ -1203,6 +1494,8 @@ def generate_next_round_proposal(
             budget = min(max(1, int(round(budget * 1.25))), request.max_experiments)
 
         exploit_n = max(1, min(budget, int(round(budget * exploitation_fraction)))) if budget > 0 else 0
+        if budget > new_idea_floor:
+            exploit_n = min(exploit_n, max(1, budget - new_idea_floor))
         explore_n = max(0, budget - exploit_n)
         template_n = max(1, int(round(explore_n * request.template_fraction))) if explore_n else 0
         cross_family_n = 0
@@ -1211,16 +1504,41 @@ def generate_next_round_proposal(
             cross_family_n = min(cross_family_n, explore_n)
         local_explore_n = max(0, explore_n - template_n - cross_family_n)
         if family_confirmation_mode:
-            exploit_n = max(1, min(budget, max(1, int(round(max(1, budget) * 0.25)))))
+            exploit_n = max(1, min(budget, max(1, min(confirmation_trial_budget, int(round(max(1, budget) * 0.25))))))
             explore_n = max(0, budget - exploit_n)
-            template_n = 0
-            cross_family_n = 0
-            local_explore_n = explore_n
+            template_n = max(1, int(round(explore_n * request.template_fraction))) if explore_n else 0
+            cross_family_n = max(1, int(round(explore_n * request.cross_family_fraction))) if len(request.strategy_families) > 1 and explore_n else 0
+            cross_family_n = min(cross_family_n, explore_n)
+            local_explore_n = max(0, explore_n - template_n - cross_family_n)
 
         top = select_top_configs(history, family, limit=max(1, min(8, exploit_n or 1)))
         seen_hashes = set(explored_hashes)
+        if family_confirmation_mode or targeted_follow_up_mode or holdout_check_required:
+            # Confirmation may intentionally rerun the exact seed, but local neighborhoods
+            # should not waste execution slots on older already-seen configs outside the hot window.
+            seen_hashes.update(official_hashes_by_family.get(family, set()))
         seen_signatures = set(explored_signatures.values())
         selection_pool: list[dict[str, Any]] = []
+        branch_repeat_counts: dict[str, int] = {}
+        template_cycle_counts: dict[str, int] = {}
+        lineage_cycle_counts: dict[str, int] = {}
+        branch_repeat_total = 0
+        max_same_template = max(
+            1,
+            int(
+                request.max_same_template_per_cycle
+                if request.max_same_template_per_cycle is not None
+                else max(2, int(round(max(1, budget) * 0.35)))
+            ),
+        )
+        max_same_lineage = max(
+            1,
+            int(
+                request.max_same_lineage_per_cycle
+                if request.max_same_lineage_per_cycle is not None
+                else max(2, int(round(max(1, budget) * 0.35)))
+            ),
+        )
         family_ideas = [record for record in helper_ideas if record.get("family") in {None, family}]
         family_branch_budget_entries = [
             dict(entry)
@@ -1240,6 +1558,68 @@ def generate_next_round_proposal(
                 if item.get("family") == family:
                     guidance_focus = item
                     break
+
+        def _repeat_branch_key(metadata: dict[str, Any]) -> str:
+            return str(
+                metadata.get("lineage_root_config_hash")
+                or metadata.get("parent_config_hash")
+                or metadata.get("template_id")
+                or metadata.get("region_label")
+                or ""
+            )
+
+        def _lineage_cycle_key(metadata: dict[str, Any]) -> str:
+            return str(metadata.get("lineage_root_config_hash") or metadata.get("parent_config_hash") or metadata.get("config_hash") or "")
+
+        def _cycle_caps_exhausted(metadata: dict[str, Any]) -> bool:
+            source_type = str(metadata.get("source_type") or "")
+            protected = source_type in {"confirmation_reproduction", "confirmation_check", "holdout_check"}
+            if protected and int(metadata.get("confirmation_slot_index") or 0) <= 1:
+                return False
+            template_key = _template_cycle_key(metadata.get("template_id"), source_type)
+            if template_key and template_cycle_counts.get(template_key, 0) >= max_same_template and not metadata.get("is_uncommon_idea"):
+                return True
+            lineage_key = _lineage_cycle_key(metadata)
+            if lineage_key and lineage_cycle_counts.get(lineage_key, 0) >= max_same_lineage and not metadata.get("is_structurally_novel"):
+                return True
+            return False
+
+        def _record_cycle_caps(metadata: dict[str, Any]) -> None:
+            source_type = str(metadata.get("source_type") or "")
+            template_key = _template_cycle_key(metadata.get("template_id"), source_type)
+            if template_key:
+                template_cycle_counts[template_key] = template_cycle_counts.get(template_key, 0) + 1
+            lineage_key = _lineage_cycle_key(metadata)
+            if lineage_key:
+                lineage_cycle_counts[lineage_key] = lineage_cycle_counts.get(lineage_key, 0) + 1
+
+        def _repeat_branch_exhausted(metadata: dict[str, Any]) -> bool:
+            if family_confirmation_mode and metadata.get("source_type") in {
+                "confirmation_reproduction",
+                "confirmation_check",
+                "holdout_check",
+            }:
+                return False
+            if not metadata.get("is_branch_repeat"):
+                return False
+            if branch_repeat_total >= max(0, budget - new_idea_floor):
+                return True
+            key = _repeat_branch_key(metadata)
+            if not key:
+                return False
+            return branch_repeat_counts.get(key, 0) >= repeat_branch_cap
+
+        def _record_repeat_branch(metadata: dict[str, Any]) -> None:
+            nonlocal branch_repeat_total
+            metadata["repeat_branch_depth"] = branch_repeat_counts.get(_repeat_branch_key(metadata), 0)
+            if not metadata.get("is_branch_repeat"):
+                return
+            key = _repeat_branch_key(metadata)
+            if not key:
+                return
+            branch_repeat_counts[key] = branch_repeat_counts.get(key, 0) + 1
+            branch_repeat_total += 1
+
         def _append_confirmation_reproduction(seed_row: pd.Series) -> None:
             if not family_confirmation_mode or len(selection_pool) >= confirmation_trial_budget:
                 return
@@ -1261,28 +1641,96 @@ def generate_next_round_proposal(
                 dead_zone_risk=0.0,
                 dead_zone_flags=[],
             )
-            selection_pool.append(
-                _candidate_metadata(
-                    family=family,
-                    candidate=normalized,
-                    novelty=novelty,
+            metadata = _candidate_metadata(
+                family=family,
+                candidate=normalized,
+                novelty=novelty,
+                strategy_type=_family_strategy_type(family),
+                source_type="confirmation_reproduction",
+                template_id=seed_row.get("template_id") or "confirmation_reproduce",
+                hypothesis=seed_row.get("hypothesis") or family_analysis.get("baseline_name"),
+                reason_selected="exact reproduction to confirm a promoted winner",
+                exploration_mode="confirmation",
+                proposal_role="confirm",
+                region_label="confirmation_exact",
+                parent_config_hash=seed_row.get("config_hash"),
+                source_batch_ids=request.source_batch_ids or all_source_batch_ids,
+                source_proposal_id=request.proposal_id,
+                source_idea_ids=[],
+                template_counts=family_analysis.get("template_counts", {}),
+                confirmation_state=request.confirmation_state,
+                confirmation_required=request.confirmation_required,
+                confirmation_reason=request.confirmation_reason,
+                confirmation_batch_id=request.confirmation_batch_id,
+                confirmation_trial_kind="reproduce",
+                targeted_follow_up_required=targeted_follow_up_mode,
+                targeted_follow_up_reason=targeted_follow_up_reason,
+                targeted_follow_up_type=targeted_follow_up_type,
+                targeted_follow_up_priority=targeted_follow_up_priority,
+                targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+                holdout_check_required=holdout_check_required,
+                holdout_check_type=holdout_check_type,
+                holdout_check_status=holdout_check_status,
+                holdout_check_outcome=holdout_check_outcome,
+                holdout_check_scope=holdout_check_scope,
+                holdout_check_batch_id=holdout_check_batch_id,
+                holdout_horizon_tags=holdout_horizon_tags,
+                holdout_regime_tags=holdout_regime_tags,
+                structural_novelty_threshold=request.structural_novelty_threshold,
+                uncommon_template_bonus=request.uncommon_template_bonus,
+            )
+            metadata["confirmation_slot_index"] = len(selection_pool) + 1
+            selection_pool.append(metadata)
+            _record_cycle_caps(metadata)
+            seen_hashes.add(config_hash)
+            seen_signatures.add(coarse_signature_key(family, normalized))
+
+        def _append_confirmation_neighborhood(seed_row: pd.Series, *, holdout: bool = False) -> None:
+            if not (family_confirmation_mode or holdout_check_required):
+                return
+            remaining = confirmation_trial_budget - len(selection_pool)
+            if remaining <= 0:
+                return
+            exact_config = dict(seed_row.get("config") or {})
+            if not exact_config:
+                return
+            neighbor_limit = max(1, remaining - 1)
+            if family_confirmation_mode:
+                neighbor_limit = max(1, min(neighbor_limit, int(round(max(1, confirmation_trial_budget) * 0.25))))
+            neighbors = build_local_neighbors(
+                family,
+                exact_config,
+                limit=neighbor_limit,
+                seed=request.seed + proposal_seed_offset + idx + len(selection_pool) + 17,
+                dead_zones=dead_zones,
+                explored_hashes=seen_hashes,
+            )
+            if not neighbors:
+                return
+            source_type = "confirmation_check" if not holdout else "holdout_check"
+            region_label = "confirmation_local_neighborhood" if not holdout else "holdout_local_neighborhood"
+            trial_kind = "neighborhood" if not holdout else "holdout_neighborhood"
+            for neighbor in neighbors:
+                if len(selection_pool) >= confirmation_trial_budget:
+                    break
+                _try_add_candidate(
+                    neighbor,
+                    source_type=source_type,
                     strategy_type=_family_strategy_type(family),
-                    source_type="confirmation_reproduction",
-                    template_id=seed_row.get("template_id") or "confirmation_reproduce",
-                    hypothesis=seed_row.get("hypothesis") or family_analysis.get("baseline_name"),
-                    reason_selected="exact reproduction to confirm a promoted winner",
-                    exploration_mode="confirmation",
+                    template_id=region_label,
+                    hypothesis="Robustness check around the promoted winner.",
+                    reason_selected="confirmation batch local neighborhood check" if not holdout else "holdout batch local neighborhood check",
+                    exploration_mode="confirmation" if not holdout else "holdout",
                     proposal_role="confirm",
-                    region_label="confirmation_exact",
+                    region_label=region_label,
                     parent_config_hash=seed_row.get("config_hash"),
-                    source_batch_ids=request.source_batch_ids or all_source_batch_ids,
-                    source_proposal_id=request.proposal_id,
                     source_idea_ids=[],
+                    template_counts=family_analysis.get("template_counts", {}),
                     confirmation_state=request.confirmation_state,
                     confirmation_required=request.confirmation_required,
                     confirmation_reason=request.confirmation_reason,
                     confirmation_batch_id=request.confirmation_batch_id,
-                    confirmation_trial_kind="reproduce",
+                    confirmation_trial_kind=trial_kind,
                     targeted_follow_up_required=targeted_follow_up_mode,
                     targeted_follow_up_reason=targeted_follow_up_reason,
                     targeted_follow_up_type=targeted_follow_up_type,
@@ -1296,10 +1744,9 @@ def generate_next_round_proposal(
                     holdout_check_batch_id=holdout_check_batch_id,
                     holdout_horizon_tags=holdout_horizon_tags,
                     holdout_regime_tags=holdout_regime_tags,
+                    novelty_floor_override=0.0,
+                    allow_near_duplicate=True,
                 )
-            )
-            seen_hashes.add(config_hash)
-            seen_signatures.add(coarse_signature_key(family, normalized))
 
         def _try_add_candidate(
             candidate: dict[str, Any],
@@ -1315,11 +1762,17 @@ def generate_next_round_proposal(
             parent_config_hash: str | None = None,
             source_idea_ids: list[str] | None = None,
             template_tags: list[str] | None = None,
+            template_counts: dict[str, int] | None = None,
             lineage_root_config_hash: str | None = None,
             branch_budget: int | None = None,
             branch_budget_share: float | None = None,
             branch_budget_stance: str | None = None,
             branch_budget_reason: str | None = None,
+            confirmation_state: str | None = request.confirmation_state,
+            confirmation_required: bool = bool(request.confirmation_required),
+            confirmation_reason: str | None = request.confirmation_reason,
+            confirmation_batch_id: str | None = request.confirmation_batch_id,
+            confirmation_trial_kind: str | None = None,
             novelty_floor_override: float | None = None,
             allow_near_duplicate: bool = False,
             targeted_follow_up_required: bool = targeted_follow_up_mode,
@@ -1327,6 +1780,14 @@ def generate_next_round_proposal(
             targeted_follow_up_type: str | None = targeted_follow_up_type,
             targeted_follow_up_priority: float | None = targeted_follow_up_priority,
             targeted_follow_up_batch_id: str | None = targeted_follow_up_batch_id,
+            holdout_check_required: bool = holdout_check_required,
+            holdout_check_type: str | None = holdout_check_type,
+            holdout_check_status: str | None = holdout_check_status,
+            holdout_check_outcome: str | None = holdout_check_outcome,
+            holdout_check_scope: str | None = holdout_check_scope,
+            holdout_check_batch_id: str | None = holdout_check_batch_id,
+            holdout_horizon_tags: list[str] | None = None,
+            holdout_regime_tags: list[str] | None = None,
         ) -> None:
             novelty = score_candidate(
                 family,
@@ -1360,49 +1821,72 @@ def generate_next_round_proposal(
                 return
             seen_hashes.add(config_hash)
             seen_signatures.add(signature)
-            selection_pool.append(
-                _candidate_metadata(
-                    family=family,
-                    candidate=normalized,
-                    novelty=novelty,
-                    strategy_type=strategy_type,
-                    source_type=source_type,
-                    template_id=template_id,
-                    hypothesis=hypothesis,
-                    reason_selected=reason_selected,
-                    exploration_mode=exploration_mode,
-                    proposal_role=proposal_role,
-                    region_label=region_label,
-                    parent_config_hash=parent_config_hash,
-                    source_batch_ids=request.source_batch_ids or all_source_batch_ids,
-                    source_proposal_id=request.proposal_id,
-                    source_idea_ids=source_idea_ids,
-                    template_tags=template_tags,
-                    lineage_root_config_hash=lineage_root_config_hash,
-                    branch_budget=branch_budget,
-                    branch_budget_share=branch_budget_share,
-                    branch_budget_stance=branch_budget_stance,
-                    branch_budget_reason=branch_budget_reason,
-                    targeted_follow_up_required=targeted_follow_up_required,
-                    targeted_follow_up_reason=targeted_follow_up_reason,
-                    targeted_follow_up_type=targeted_follow_up_type,
-                    targeted_follow_up_priority=targeted_follow_up_priority,
-                    targeted_follow_up_batch_id=targeted_follow_up_batch_id,
-                    holdout_check_required=holdout_check_required,
-                    holdout_check_type=holdout_check_type,
-                    holdout_check_status=holdout_check_status,
-                    holdout_check_outcome=holdout_check_outcome,
-                    holdout_check_scope=holdout_check_scope,
-                    holdout_check_batch_id=holdout_check_batch_id,
-                    holdout_horizon_tags=holdout_horizon_tags,
-                    holdout_regime_tags=holdout_regime_tags,
-                )
+            candidate_metadata = _candidate_metadata(
+                family=family,
+                candidate=normalized,
+                novelty=novelty,
+                strategy_type=strategy_type,
+                source_type=source_type,
+                template_id=template_id,
+                hypothesis=hypothesis,
+                reason_selected=reason_selected,
+                exploration_mode=exploration_mode,
+                proposal_role=proposal_role,
+                region_label=region_label,
+                parent_config_hash=parent_config_hash,
+                source_batch_ids=request.source_batch_ids or all_source_batch_ids,
+                source_proposal_id=request.proposal_id,
+                source_idea_ids=source_idea_ids,
+                template_tags=template_tags,
+                template_counts=template_counts or family_analysis.get("template_counts", {}),
+                lineage_root_config_hash=lineage_root_config_hash,
+                branch_budget=branch_budget,
+                branch_budget_share=branch_budget_share,
+                branch_budget_stance=branch_budget_stance,
+                branch_budget_reason=branch_budget_reason,
+                targeted_follow_up_required=targeted_follow_up_required,
+                targeted_follow_up_reason=targeted_follow_up_reason,
+                targeted_follow_up_type=targeted_follow_up_type,
+                targeted_follow_up_priority=targeted_follow_up_priority,
+                targeted_follow_up_batch_id=targeted_follow_up_batch_id,
+                confirmation_state=confirmation_state,
+                confirmation_required=confirmation_required,
+                confirmation_reason=confirmation_reason,
+                confirmation_batch_id=confirmation_batch_id,
+                confirmation_trial_kind=confirmation_trial_kind,
+                holdout_check_required=holdout_check_required,
+                holdout_check_type=holdout_check_type,
+                holdout_check_status=holdout_check_status,
+                holdout_check_outcome=holdout_check_outcome,
+                holdout_check_scope=holdout_check_scope,
+                holdout_check_batch_id=holdout_check_batch_id,
+                holdout_horizon_tags=holdout_horizon_tags,
+                holdout_regime_tags=holdout_regime_tags,
+                structural_novelty_threshold=request.structural_novelty_threshold,
+                uncommon_template_bonus=request.uncommon_template_bonus,
             )
+            candidate_metadata["confirmation_slot_index"] = len(selection_pool) + 1
+            if _cycle_caps_exhausted(candidate_metadata):
+                return
+            if _repeat_branch_exhausted(candidate_metadata):
+                return
+            selection_pool.append(candidate_metadata)
+            _record_repeat_branch(candidate_metadata)
+            _record_cycle_caps(candidate_metadata)
 
         if family_confirmation_mode and not history.empty:
             _append_confirmation_reproduction(top.iloc[0])
+            _append_confirmation_neighborhood(top.iloc[0])
+            confirmation_diversity_floor = min(
+                confirmation_trial_budget,
+                max(4, int(round(max(1, confirmation_trial_budget) * 0.40))),
+            )
+            if len(selection_pool) < confirmation_diversity_floor:
+                # Keep the targeted confirmation candidate, but do not let an
+                # exhausted local neighborhood starve the rest of the cycle.
+                confirmation_focus_only = False
 
-        if family_branch_budget_entries and not family_confirmation_mode:
+        if family_branch_budget_entries and not confirmation_mode:
             for branch_entry in family_branch_budget_entries:
                 if len(selection_pool) >= budget:
                     break
@@ -1414,7 +1898,7 @@ def generate_next_round_proposal(
                     family,
                     dict(branch_seed_row.get("config") or {}),
                     limit=branch_limit,
-                    seed=request.seed + idx + len(selection_pool) + branch_limit,
+                    seed=request.seed + proposal_seed_offset + idx + len(selection_pool) + branch_limit,
                     dead_zones=dead_zones,
                     explored_hashes=seen_hashes,
                 )
@@ -1464,7 +1948,7 @@ def generate_next_round_proposal(
                     family,
                     seed_config,
                     limit=2,
-                    seed=request.seed + idx + len(selection_pool),
+                    seed=request.seed + proposal_seed_offset + idx + len(selection_pool),
                     dead_zones=dead_zones,
                     explored_hashes=seen_hashes,
                 )
@@ -1494,7 +1978,7 @@ def generate_next_round_proposal(
                 family,
                 config,
                 limit=max(1, exploit_n - len(selection_pool)),
-                seed=request.seed + idx + top_idx,
+                seed=request.seed + proposal_seed_offset + idx + top_idx,
                 dead_zones=dead_zones,
                 explored_hashes=seen_hashes,
             )
@@ -1572,7 +2056,7 @@ def generate_next_round_proposal(
             template_payloads = _template_payloads_for_family(
                 family,
                 limit=max(template_n + cross_family_n + 4, 8),
-                seed=request.seed + 1000 + idx,
+                seed=request.seed + proposal_seed_offset + 1000 + idx,
                 allow_cross_family=True,
             )
             template_payloads.sort(key=lambda item: item["metadata"].get("source_type") != "cross_family_hybrid")
@@ -1606,13 +2090,25 @@ def generate_next_round_proposal(
                     allow_near_duplicate=False,
                 )
 
+            _top_configs_for_smart_search = [
+                dict(row.get("config") or {})
+                for _, row in top.iterrows()
+                if row.get("config")
+            ] if not top.empty else []
+            _smart_search_meta: dict[str, Any] = {}
             exploration_candidates = sample_exploration_configs(
                 family,
                 limit=max(local_explore_n * 4, local_explore_n, 4),
-                seed=request.seed + 2000 + idx,
+                seed=request.seed + proposal_seed_offset + 2000 + idx,
                 explored_hashes=seen_hashes,
                 dead_zones=dead_zones,
+                cycle_mode=lineage_cycle_mode,
+                history_count=len(history),
+                stagnation_batches=stagnation_batches,
+                top_configs=_top_configs_for_smart_search,
+                out_metadata=_smart_search_meta,
             )
+            reasoning["families"].setdefault(family, {}).setdefault("search_meta", {}).update(_smart_search_meta)
             for candidate in exploration_candidates:
                 if len(selection_pool) >= budget:
                     break
@@ -1653,9 +2149,13 @@ def generate_next_round_proposal(
                 fallback = sample_exploration_configs(
                     family,
                     limit=budget - len(selection_pool),
-                    seed=request.seed + 3000 + idx,
+                    seed=request.seed + proposal_seed_offset + 3000 + idx,
                     explored_hashes=seen_hashes,
                     dead_zones={},
+                    cycle_mode=lineage_cycle_mode,
+                    history_count=len(history),
+                    stagnation_batches=stagnation_batches,
+                    top_configs=_top_configs_for_smart_search,
                 )
                 for candidate in fallback:
                     if len(selection_pool) >= budget:
@@ -1678,10 +2178,14 @@ def generate_next_round_proposal(
                 saturation_escape = sample_exploration_configs(
                     family,
                     limit=budget - len(selection_pool),
-                    seed=request.seed + 4000 + idx,
+                    seed=request.seed + proposal_seed_offset + 4000 + idx,
                     explored_hashes=seen_hashes,
                     dead_zones={},
                     sample_multiplier=64,
+                    cycle_mode="saturation_escape",
+                    history_count=len(history),
+                    stagnation_batches=stagnation_batches,
+                    top_configs=_top_configs_for_smart_search,
                 )
                 for candidate in saturation_escape:
                     if len(selection_pool) >= budget:
@@ -1700,12 +2204,22 @@ def generate_next_round_proposal(
                         allow_near_duplicate=True,
                     )
         else:
+            if holdout_check_required and not history.empty:
+                _append_confirmation_neighborhood(top.iloc[0], holdout=True)
             exploration_candidates = sample_exploration_configs(
                 family,
                 limit=max(confirmation_trial_budget - len(selection_pool), 1),
-                seed=request.seed + 2000 + idx,
+                seed=request.seed + proposal_seed_offset + 2000 + idx,
                 explored_hashes=seen_hashes,
                 dead_zones=dead_zones,
+                cycle_mode="confirmation",
+                history_count=len(history),
+                stagnation_batches=stagnation_batches,
+                top_configs=[
+                    dict(row.get("config") or {})
+                    for _, row in top.iterrows()
+                    if row.get("config")
+                ] if not top.empty else [],
             )
             for candidate in exploration_candidates:
                 if len(selection_pool) >= confirmation_trial_budget:
@@ -1729,6 +2243,9 @@ def generate_next_round_proposal(
             key=lambda item: (
                 -int(bool(item.get("branch_budget_stance"))),
                 -float(item.get("branch_budget") or 0.0),
+                -int(bool(item.get("is_uncommon_idea"))),
+                -int(bool(item.get("is_structurally_novel"))),
+                -int(bool(item.get("is_new_idea"))),
                 -int(bool(item.get("source_idea_ids"))),
                 -float(item.get("selection_score") or 0.0),
                 -float(item.get("novelty_score") or 0.0),
@@ -1747,6 +2264,7 @@ def generate_next_round_proposal(
         reasoning["families"][family] = {
             "baseline_name": family_analysis.get("baseline_name"),
             "history_count": family_analysis["history_count"],
+            "history_limit_per_family": history_limit_per_family,
             "top_performers": family_analysis["top_performers"][:3],
             "robust_performers": family_analysis["robust_performers"][:3],
             "overfit_or_unstable": family_analysis["overfit_or_unstable"][:3],
@@ -1759,6 +2277,17 @@ def generate_next_round_proposal(
             "stagnation_batches": stagnation_batches,
             "branch_budgets": branch_budgets.get(family) or [],
             "branch_budget_rationale": (branch_budget_rationale.get("families") or {}).get(family, {}),
+            "new_idea_budget": request.new_idea_budget,
+            "refinement_budget": request.refinement_budget,
+            "confirmation_budget": request.confirmation_budget,
+            "new_idea_quota": request.new_idea_quota,
+            "uncommon_idea_quota": request.uncommon_idea_quota,
+            "repeat_branch_cap": request.repeat_branch_cap,
+            "max_same_template_per_cycle": request.max_same_template_per_cycle,
+            "max_same_lineage_per_cycle": request.max_same_lineage_per_cycle,
+            "structural_novelty_threshold": request.structural_novelty_threshold,
+            "uncommon_template_bonus": request.uncommon_template_bonus,
+            "uncommon_idea_floor": cycle_uncommon_idea_floor,
             "exploit_count": min(len(candidate_configs[family]), exploit_n),
             "explore_count": max(0, len(candidate_configs[family]) - min(len(candidate_configs[family]), exploit_n)),
             "exploration_fraction": exploration_fraction,
@@ -1787,14 +2316,40 @@ def generate_next_round_proposal(
             "holdout_horizon_tags": holdout_horizon_tags,
             "holdout_regime_tags": holdout_regime_tags,
         }
+        if isinstance(family_analysis.get("history_frame"), pd.DataFrame):
+            family_analysis["history_frame"] = pd.DataFrame()
+        try:
+            del history
+        except NameError:
+            pass
+        try:
+            del history_records
+        except NameError:
+            pass
+        try:
+            del top
+        except NameError:
+            pass
+        try:
+            del robust
+        except NameError:
+            pass
+        try:
+            del unstable
+        except NameError:
+            pass
+        try:
+            del exact_baseline
+        except NameError:
+            pass
+        gc.collect()
 
     proposal_memory = load_research_memory(base_dir)
     for family in request.strategy_families:
         family_analysis = analysis["families"][family]
-        history = family_analysis["history_frame"]
         exact_hashes = set(family_analysis["explored_hashes"])
         signatures = set(family_analysis["explored_signatures"].values())
-        dead_zones = identify_dead_zones(history, family)
+        dead_zones = {key: set(values) for key, values in (family_analysis.get("dead_zones") or {}).items()}
         family_memory = (proposal_memory.get("families", {}) or {}).get(family, {})
         template_counts = family_analysis.get("template_counts", {})
         stagnation_batches = max(int(family_analysis.get("stagnation_batches") or 0), int(family_memory.get("stagnation_batches") or 0))
@@ -1811,10 +2366,13 @@ def generate_next_round_proposal(
             best_config_hash=family_analysis.get("top_performers", [{}])[0].get("config_hash") if family_analysis.get("top_performers") else None,
             stagnation_batches=stagnation_batches,
         )
+        if isinstance(family_analysis.get("history_frame"), pd.DataFrame):
+            family_analysis["history_frame"] = pd.DataFrame()
+        gc.collect()
     if request.persist_memory:
         save_research_memory(proposal_memory, base_dir)
     if request.persist_scorecards:
-        scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir)
+        scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir, include_idea_yield=True)
         scorecard_path = save_family_scorecards(scorecards, base_dir=base_dir, timestamp_utc=request.timestamp_utc)
         reasoning["family_scorecard_path"] = str(scorecard_path)
 

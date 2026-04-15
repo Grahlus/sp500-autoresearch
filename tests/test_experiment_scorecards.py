@@ -116,18 +116,54 @@ class ExperimentScorecardTests(unittest.TestCase):
         self.assertEqual(scorecard.viable_rate, 0.5)
         self.assertEqual(scorecard.win_rate_vs_baseline, 0.5)
         self.assertGreater(scorecard.robustness_score, 0.5)
-        self.assertGreater(scorecard.overfit_risk, 0.5)
+        self.assertGreater(scorecard.overfit_risk, 0.25)
+        self.assertEqual(scorecard.overfit_risk_model, "graded_v2")
         self.assertIn("robustness_score", scorecard.__dict__)
         self.assertIn("overfit_risk", scorecard.__dict__)
+        self.assertIn("overfit_risk_model", scorecard.__dict__)
         self.assertIn("recent_robustness_trend", scorecard.__dict__)
         self.assertIn("lineage_status_summary", scorecard.__dict__)
         self.assertIn("lineage_trust_score", scorecard.__dict__)
         self.assertIn("validation_horizon_tags", scorecard.__dict__)
         self.assertIn("validation_regime_tags", scorecard.__dict__)
         self.assertIn("validation_scope", scorecard.__dict__)
+        self.assertIn("idea_yield_summary", scorecard.__dict__)
+        self.assertTrue(scorecard.idea_yield_summary)
         self.assertEqual(scorecard.best_objective_score, 1.0)
         self.assertEqual(scorecard.median_objective_score, 1.5)
         self.assertGreater(scorecard.dead_zone_density, 0.0)
+
+    def test_overfit_risk_is_graded_not_saturated_for_viable_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for idx in range(5):
+                _save_result(
+                    tmp,
+                    family="momentum",
+                    experiment_id=f"momentum_strong_{idx}",
+                    config_hash=f"momentum_strong_{idx}",
+                    objective_score=1.4 + idx * 0.1,
+                    viable=True,
+                    timestamp_utc=f"2026-04-0{idx+1}T00:00:00+00:00",
+                    beats_baseline=True,
+                )
+            for idx in range(5):
+                _save_result(
+                    tmp,
+                    family="superstock",
+                    experiment_id=f"superstock_fragile_{idx}",
+                    config_hash=f"superstock_fragile_{idx}",
+                    objective_score=0.2 + idx * 0.05,
+                    viable=False,
+                    timestamp_utc=f"2026-04-0{idx+1}T00:00:00+00:00",
+                    beats_baseline=False,
+                    dead_zone_risk=0.9,
+                )
+
+            scorecards = build_family_scorecards(families=["momentum", "superstock"], base_dir=tmp)
+
+        self.assertLess(scorecards["momentum"].overfit_risk, scorecards["superstock"].overfit_risk)
+        self.assertLess(scorecards["momentum"].overfit_risk, 1.0)
+        self.assertLess(scorecards["superstock"].overfit_risk, 1.0)
 
     def test_scorecards_surface_validation_tags_from_history(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -175,6 +211,7 @@ class ExperimentScorecardTests(unittest.TestCase):
         self.assertTrue(
             {"stable_in_trend", "strong_in_bear", "weak_in_high_vol"} & set(scorecard.validation_regime_tags)
         )
+        self.assertIn("idea_yield_summary", scorecard.__dict__)
 
     def test_scorecard_persistence_writes_report_file(self):
         with tempfile.TemporaryDirectory() as tmp:

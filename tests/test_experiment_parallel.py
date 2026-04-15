@@ -11,9 +11,12 @@ from experiment_types import ExperimentResult, ExperimentSpec
 
 
 class _FakeExecutor:
+    last_initargs = None
+
     def __init__(self, *args, **kwargs):
         self.initializer = kwargs.get("initializer")
         self.initargs = kwargs.get("initargs", ())
+        _FakeExecutor.last_initargs = self.initargs
 
     def __enter__(self):
         if self.initializer is not None:
@@ -63,6 +66,7 @@ class ExperimentParallelTests(unittest.TestCase):
 
         self.assertEqual(worker_failures, 0)
         self.assertEqual([result.spec.experiment_id for result in results], ["a", "b", "c"])
+        self.assertEqual(len(_FakeExecutor.last_initargs), 2)
 
     def test_concurrent_result_persistence_is_atomic(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -96,6 +96,15 @@ class ExperimentDashboardTests(unittest.TestCase):
             )
             _save_result(
                 tmp,
+                experiment_id="momentum_old_weak",
+                family="momentum",
+                objective_score=-0.5,
+                viable=False,
+                beats_baseline=False,
+                timestamp_utc="2026-04-11T00:00:00+00:00",
+            )
+            _save_result(
+                tmp,
                 experiment_id="rl_non_viable",
                 family="rl_bandit",
                 objective_score=9.0,
@@ -116,12 +125,109 @@ class ExperimentDashboardTests(unittest.TestCase):
             dashboard = build_best_results_dashboard(base_dir=tmp, overall_limit=20, viable_limit=20, per_family_limit=10)
 
         self.assertEqual(dashboard.top_overall[0]["experiment_id"], "momentum_best")
+        self.assertIn("robustness_score", dashboard.top_overall[0])
+        self.assertIn("overfit_risk", dashboard.top_overall[0])
+        self.assertIn("overfit_risk_model", dashboard.top_overall[0])
         self.assertNotIn("duplicate_skip", {row["experiment_id"] for row in dashboard.top_overall})
         self.assertEqual([row["experiment_id"] for row in dashboard.top_viable], ["momentum_best", "momentum_weaker"])
         self.assertEqual([row["experiment_id"] for row in dashboard.top_baseline_beating], ["momentum_best"])
         self.assertEqual(dashboard.top_per_family["momentum"][0]["experiment_id"], "momentum_best")
+        self.assertGreater(dashboard.top_per_family["momentum"][0]["robustness_score"], 0.0)
+        self.assertLess(dashboard.top_per_family["momentum"][0]["overfit_risk"], 1.0)
+        self.assertIn("validation_horizon_tags", dashboard.top_overall[0])
+        self.assertIn("validation_regime_tags", dashboard.top_overall[0])
+        self.assertIn("validation_scope", dashboard.top_overall[0])
+        self.assertIn("lineage_root_config_hash", dashboard.top_overall[0])
+        self.assertIn("lineage_status_summary", dashboard.top_overall[0])
+        self.assertIn("lineage_trust_score", dashboard.top_overall[0])
+        self.assertIn("targeted_follow_up_required", dashboard.top_overall[0])
+        self.assertIn("targeted_follow_up_type", dashboard.top_overall[0])
+        self.assertIn("holdout_check_required", dashboard.top_overall[0])
+        self.assertIn("holdout_check_type", dashboard.top_overall[0])
+        self.assertNotEqual(dashboard.top_overall[0]["validation_horizon_tags"], ["horizon_unknown"])
+        self.assertNotEqual(dashboard.top_overall[0]["validation_regime_tags"], ["regime_unknown"])
         self.assertIn("momentum", dashboard.family_scorecards)
-        self.assertEqual(dashboard.family_scorecards["momentum"]["total_experiments"], 3)
+        self.assertEqual(dashboard.family_scorecards["momentum"]["total_experiments"], 4)
+        self.assertIn("robustness_score", dashboard.family_scorecards["momentum"])
+        self.assertIn("overfit_risk", dashboard.family_scorecards["momentum"])
+        self.assertEqual(dashboard.family_scorecards["momentum"]["overfit_risk_model"], "graded_v2")
+        self.assertIn("idea_yield_summary", dashboard.family_scorecards["momentum"])
+        self.assertIn("idea_quality_score", dashboard.family_scorecards["momentum"])
+        self.assertIn("idea_state", dashboard.family_scorecards["momentum"])
+        self.assertIn("lineage_status_summary", dashboard.family_scorecards["momentum"])
+        self.assertIn("lineage_trust_score", dashboard.family_scorecards["momentum"])
+        self.assertIn("recent_robustness_trend", dashboard.family_scorecards["momentum"])
+        self.assertIn("validation_horizon_tags", dashboard.family_scorecards["momentum"])
+        self.assertIn("validation_regime_tags", dashboard.family_scorecards["momentum"])
+        self.assertIn("validation_scope", dashboard.family_scorecards["momentum"])
+        self.assertTrue(dashboard.idea_yield_summary is not None)
+        self.assertIn("families", dashboard.idea_yield_summary)
+        markdown = format_dashboard_markdown(dashboard)
+        self.assertIn("## Idea Yield", markdown)
+
+    def test_dashboard_surfaces_confirmation_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            init_store(tmp)
+            save_experiment_result(
+                {
+                    "spec": {
+                        "family": "momentum",
+                        "params": {"X": 1.0},
+                        "search_method": "proposal",
+                        "objective_name": "wf_v1_score",
+                        "batch_id": "confirm_batch",
+                        "config_hash": "confirm_hash",
+                        "experiment_id": "confirm_1",
+                        "timestamp_utc": "2026-04-12T00:00:01+00:00",
+                        "benchmark_source": "spy_symbol",
+                        "dataset_id": "data123",
+                        "data_start": "2020-01-01",
+                        "data_end": "2026-04-12",
+                        "split": "walk-forward",
+                        "strategy_type": "classical",
+                        "confirmation_state": "unconfirmed",
+                        "confirmation_required": True,
+                        "confirmation_reason": "reproduce promoted winner",
+                        "confirmation_batch_id": "runtime_confirm_momentum",
+                        "confirmation_trial_kind": "reproduce",
+                    },
+                    "status": "success",
+                    "objective_score": 1.0,
+                    "metrics": {
+                        "sharpe": 1.0,
+                        "calmar": 0.5,
+                        "total_return": 10.0,
+                        "max_drawdown": -10.0,
+                        "trades_per_year": 10.0,
+                    },
+                    "robustness": {"negative_windows": 0, "viable": True},
+                    "baseline_comparison": {
+                        "baseline_name": "momentum_champion_s10005",
+                        "comparison_status": "partial_verified_current_engine",
+                        "baseline_verified": True,
+                        "baseline_metric_source": "verified_current_engine",
+                        "comparison_kind": "partial",
+                        "delta_sharpe": 0.1,
+                        "delta_calmar": 0.1,
+                        "delta_return": 1.0,
+                        "beats_baseline_objective": True,
+                        "beats_baseline_guardrails": True,
+                    },
+                    "artifacts": {},
+                    "runtime_seconds": 0.1,
+                },
+                base_dir=tmp,
+            )
+
+            dashboard = build_best_results_dashboard(base_dir=tmp, overall_limit=20, viable_limit=20, per_family_limit=10)
+
+        self.assertEqual(dashboard.top_overall[0]["confirmation_state"], "unconfirmed")
+        self.assertTrue(dashboard.top_overall[0]["confirmation_required"])
+        self.assertEqual(dashboard.top_overall[0]["confirmation_batch_id"], "runtime_confirm_momentum")
+        self.assertIn("targeted_follow_up_required", dashboard.top_overall[0])
+        self.assertIn("targeted_follow_up_reason", dashboard.top_overall[0])
+        self.assertTrue(dashboard.top_overall[0]["holdout_check_required"])
+        self.assertEqual(dashboard.top_overall[0]["holdout_check_outcome"], "pending")
 
     def test_dashboard_latest_non_empty_batch_excludes_empty_batches(self):
         with tempfile.TemporaryDirectory() as tmp:
