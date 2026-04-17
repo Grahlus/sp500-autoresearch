@@ -14,7 +14,8 @@ import pandas as pd
 from agents.schemas import load_idea_records, load_latest_analysis_report
 from experiment_batch import DEFAULT_BASELINES
 from experiment_lineage import build_branch_budget_plan, build_lineage_summary
-from experiment_idea_library import expand_template_candidates, load_external_idea_seeds
+from experiment_idea_library import build_template_payload, expand_template_candidates, list_idea_templates, load_external_idea_seeds
+from experiment_idea_yield import build_idea_yield_summary, load_latest_idea_yield_summary, save_idea_yield_summary
 from experiment_memory import load_lineage_state_records, load_research_memory, save_research_memory, update_family_memory
 from experiment_novelty import coarse_signature_key, score_candidate, signature_distance
 from experiment_scorecards import build_family_scorecards, save_family_scorecards, scorecards_to_records
@@ -224,7 +225,13 @@ def _latest_analysis_guidance(
     return report
 
 
-def _load_detailed_history(family: str, base_dir: str, *, limit: int | None = None) -> pd.DataFrame:
+def _load_detailed_history(
+    family: str,
+    base_dir: str,
+    *,
+    limit: int | None = None,
+    top_n_by_score: int = 20,
+) -> pd.DataFrame:
     index = load_prior_results(family=family, base_dir=base_dir)
     rows: list[dict[str, Any]] = []
     if index.empty:
@@ -232,9 +239,24 @@ def _load_detailed_history(family: str, base_dir: str, *, limit: int | None = No
 
     if limit is not None and limit > 0 and len(index) > limit:
         if "timestamp_utc" in index.columns:
-            index = index.sort_values("timestamp_utc").tail(limit)
+            recent = index.sort_values("timestamp_utc", na_position="first").tail(limit)
         else:
-            index = index.tail(limit)
+            recent = index.tail(limit)
+        # Also include the top-scored rows so confirmation can target the best config,
+        # not just the most recently run one (which may be a stale repeated run).
+        if top_n_by_score > 0 and "objective_score" in index.columns:
+            _score_col = pd.to_numeric(index["objective_score"], errors="coerce")
+            top_scored = (
+                index.assign(_score_sort=_score_col)
+                .sort_values("_score_sort", ascending=False, na_position="last")
+                .drop(columns=["_score_sort"])
+                .head(top_n_by_score)
+            )
+            index = pd.concat([recent, top_scored]).drop_duplicates(
+                subset=["experiment_id"]
+            )
+        else:
+            index = recent
 
     for _, row in index.iterrows():
         result_dir = row.get("result_dir")
@@ -255,6 +277,7 @@ def _load_detailed_history(family: str, base_dir: str, *, limit: int | None = No
             "family": spec.get("strategy_family", spec.get("family")),
             "config_hash": spec.get("config_hash"),
             "config": config,
+            "template_id": spec.get("template_id"),
             "status": payload.get("status"),
             "objective_score": payload.get("objective_score"),
             "sharpe": metrics.get("sharpe"),
@@ -1451,6 +1474,9 @@ def generate_next_round_proposal(
         ),
     )
     cycle_uncommon_idea_floor = max(1, int(round(cycle_uncommon_idea_budget / max(1, len(request.strategy_families)))))
+    # Load the latest persisted idea-yield summary for per-family floor adjustments.
+    # Falls back to empty dict gracefully when no report exists yet.
+    _idea_yield_cache = load_latest_idea_yield_summary(base_dir) or {}
 
     for idx, family in enumerate(request.strategy_families):
         family_analysis = analysis["families"][family]
@@ -1483,6 +1509,26 @@ def generate_next_round_proposal(
         if request.new_idea_quota is not None and request.new_idea_quota > 0:
             per_family_quota_floor = max(1, int(round(float(request.new_idea_quota) / max(1, len(request.strategy_families)))))
             new_idea_floor = max(new_idea_floor, min(budget, per_family_quota_floor))
+        # --- Idea-yield feedback: adjust new_idea_floor based on historical yield quality ---
+        _fam_yield = (_idea_yield_cache.get("families") or {}).get(family, {})
+        _fam_idea_state = str(_fam_yield.get("idea_state") or "untested").strip().lower()
+        _fam_idea_quality = float(_fam_yield.get("idea_quality_score") or 0.0)
+        _fam_retired_share = float(_fam_yield.get("idea_retired_share") or 0.0)
+        _fam_promising_share = float(_fam_yield.get("idea_promising_share") or 0.0)
+        _yield_floor_action = "default"
+        if not family_confirmation_mode and budget > 1:
+            if _fam_idea_state == "retired" or _fam_retired_share >= 0.70:
+                # Nearly all idea kinds exhausted — shrink floor, save budget for refinement
+                new_idea_floor = min(new_idea_floor, max(1, int(round(cycle_new_idea_floor * 0.50))))
+                _yield_floor_action = "reduced_retired"
+            elif _fam_idea_state == "stale" or (_fam_retired_share >= 0.45 and _fam_idea_quality < 0.30):
+                # Portfolio is stale — moderate floor reduction
+                new_idea_floor = min(new_idea_floor, max(1, int(round(cycle_new_idea_floor * 0.75))))
+                _yield_floor_action = "reduced_stale"
+            elif _fam_idea_state == "promising" and _fam_idea_quality >= 0.55:
+                # High-yield ideas available — keep floor high to sustain momentum
+                new_idea_floor = max(new_idea_floor, cycle_new_idea_floor)
+                _yield_floor_action = "maintained_promising"
         stagnation_batches = max(int(family_analysis.get("stagnation_batches") or 0), int(family_memory.get("stagnation_batches") or 0))
         exploration_fraction = request.exploration_fraction
         exploitation_fraction = request.exploitation_fraction
@@ -1523,6 +1569,28 @@ def generate_next_round_proposal(
         template_cycle_counts: dict[str, int] = {}
         lineage_cycle_counts: dict[str, int] = {}
         branch_repeat_total = 0
+        # Structural-template balancing: guarantee fair early exploration across all 4
+        # protected momentum templates.  Templates below _STRUCTURAL_EVIDENCE_THRESHOLD
+        # receive guaranteed floor slots; templates above it are capped to
+        # _STRUCTURAL_REPEAT_CAP per cycle while any others remain below threshold.
+        _STRUCTURAL_MOMENTUM_TEMPLATES: frozenset[str] = frozenset({
+            "momentum_vol_scaling_v1",
+            "momentum_vol_scaling_downside_v1",
+            "momentum_drift_regime_v1",
+            "momentum_drift_regime_strict_v1",
+        })
+        _STRUCTURAL_EVIDENCE_THRESHOLD = 8  # experiments needed before yield-based favoritism
+        _STRUCTURAL_REPEAT_CAP = 2          # max per-cycle slots for "ahead" template when others behind
+        _structural_tc = (family_analysis.get("template_counts") or {}) if family == "momentum" else {}
+        _structural_behind: frozenset[str] = frozenset(
+            t for t in _STRUCTURAL_MOMENTUM_TEMPLATES
+            if int(_structural_tc.get(t, 0)) < _STRUCTURAL_EVIDENCE_THRESHOLD
+        ) if family == "momentum" else frozenset()
+        _structural_ahead: frozenset[str] = frozenset(
+            t for t in _STRUCTURAL_MOMENTUM_TEMPLATES
+            if int(_structural_tc.get(t, 0)) >= _STRUCTURAL_EVIDENCE_THRESHOLD
+        ) if family == "momentum" else frozenset()
+        _has_structural_behind = bool(_structural_behind)
         max_same_template = max(
             1,
             int(
@@ -1578,6 +1646,15 @@ def generate_next_round_proposal(
                 return False
             template_key = _template_cycle_key(metadata.get("template_id"), source_type)
             if template_key and template_cycle_counts.get(template_key, 0) >= max_same_template and not metadata.get("is_uncommon_idea"):
+                return True
+            # Anti-monopoly: if this structural template is "ahead" (past evidence threshold)
+            # and other structural templates are still "behind", cap its per-cycle slots so
+            # untested templates get a fair share before yield-based favoritism kicks in.
+            if (
+                _has_structural_behind
+                and template_key in _structural_ahead
+                and template_cycle_counts.get(template_key, 0) >= _STRUCTURAL_REPEAT_CAP
+            ):
                 return True
             lineage_key = _lineage_cycle_key(metadata)
             if lineage_key and lineage_cycle_counts.get(lineage_key, 0) >= max_same_lineage and not metadata.get("is_structurally_novel"):
@@ -1873,6 +1950,55 @@ def generate_next_round_proposal(
             selection_pool.append(candidate_metadata)
             _record_repeat_branch(candidate_metadata)
             _record_cycle_caps(candidate_metadata)
+
+        # Structural novelty floor: inject one guaranteed slot per protected momentum
+        # template that is below _STRUCTURAL_EVIDENCE_THRESHOLD.  These slots are added
+        # FIRST so that branch-budget / confirmation candidates cannot crowd them out.
+        # One slot per behind-template per cycle; least-tested template gets priority.
+        if family == "momentum" and _structural_behind:
+            _struct_floor_payloads = [
+                build_template_payload(t, family)
+                for t in list_idea_templates(family)
+                if t.template_id in _structural_behind and t.source_type != "cross_family_hybrid"
+            ]
+            _struct_floor_payloads.sort(
+                key=lambda p: int(_structural_tc.get(p["metadata"]["template_id"], 0))
+            )
+            # Cap floor at at most 1/3 of budget so normal template slots remain available.
+            _floor_cap = max(1, budget // 3)
+            _seen_floor_tids: set[str] = set()
+            for _sp in _struct_floor_payloads:
+                if len(selection_pool) >= budget or len(_seen_floor_tids) >= _floor_cap:
+                    break
+                _sp_tid = _sp["metadata"].get("template_id") or ""
+                if _sp_tid in _seen_floor_tids:
+                    continue
+                _seen_floor_tids.add(_sp_tid)
+                _sp_execs = int(_structural_tc.get(_sp_tid, 0))
+                _sm = _sp["metadata"]
+                _structural_budget_share = round(
+                    1.0 / max(1, len(_structural_behind)), 3
+                )
+                _try_add_candidate(
+                    _sp["config"],
+                    source_type=_sm.get("source_type") or "structural_novelty",
+                    strategy_type=_sm.get("strategy_type") or _family_strategy_type(family),
+                    template_id=_sp_tid,
+                    hypothesis=_sm.get("hypothesis"),
+                    reason_selected=(
+                        f"structural floor: {_sp_tid} has {_sp_execs} execs "
+                        f"(below evidence threshold {_STRUCTURAL_EVIDENCE_THRESHOLD}); "
+                        f"structural_budget_share={_structural_budget_share}; "
+                        f"behind_count={len(_structural_behind)}"
+                    ),
+                    exploration_mode=_sm.get("exploration_mode") or "structural_exploration",
+                    proposal_role="explore",
+                    region_label=_sp_tid,
+                    source_idea_ids=[],
+                    template_tags=_sm.get("tags"),
+                    allow_near_duplicate=True,
+                    novelty_floor_override=0.0,
+                )
 
         if family_confirmation_mode and not history.empty:
             _append_confirmation_reproduction(top.iloc[0])
@@ -2315,6 +2441,12 @@ def generate_next_round_proposal(
             "holdout_check_batch_id": holdout_check_batch_id,
             "holdout_horizon_tags": holdout_horizon_tags,
             "holdout_regime_tags": holdout_regime_tags,
+            "idea_yield_state": _fam_idea_state,
+            "idea_yield_quality": round(_fam_idea_quality, 4),
+            "idea_yield_retired_share": round(_fam_retired_share, 4),
+            "idea_yield_promising_share": round(_fam_promising_share, 4),
+            "idea_yield_floor_action": _yield_floor_action,
+            "idea_yield_top_kinds": [r.get("idea_kind") for r in (_fam_yield.get("top_idea_kinds") or [])[:3] if r.get("idea_kind")],
         }
         if isinstance(family_analysis.get("history_frame"), pd.DataFrame):
             family_analysis["history_frame"] = pd.DataFrame()
@@ -2375,6 +2507,16 @@ def generate_next_round_proposal(
         scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir, include_idea_yield=True)
         scorecard_path = save_family_scorecards(scorecards, base_dir=base_dir, timestamp_utc=request.timestamp_utc)
         reasoning["family_scorecard_path"] = str(scorecard_path)
+
+    # Persist a fresh idea-yield summary so future cycles can load it via load_latest_idea_yield_summary().
+    try:
+        _fresh_yield_summary = build_idea_yield_summary(
+            families=request.strategy_families, base_dir=base_dir
+        )
+        _yield_report_path = save_idea_yield_summary(_fresh_yield_summary, base_dir=base_dir)
+        reasoning["idea_yield_report_path"] = str(_yield_report_path)
+    except Exception:
+        pass  # Non-fatal: yield tracking is advisory only
 
     reasoning["proposal_quality"] = score_proposal_quality(
         request,
