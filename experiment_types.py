@@ -39,6 +39,37 @@ class ExperimentSpec:
     source_proposal_id: str | None = None
     source_batch_id: str | None = None
     source_idea_ids: list[str] | None = None
+    idea_source: str | None = None
+    idea_kind: str | None = None
+    novelty_reason: str | None = None
+    is_new_idea: bool = False
+    is_structurally_novel: bool = False
+    is_uncommon_idea: bool = False
+    is_branch_repeat: bool = False
+    repeat_branch_flag: bool = False
+    repeat_branch_depth: int | None = None
+    new_idea_budget_bucket: str | None = None
+    uncommon_idea_reason: str | None = None
+    confirmation_state: str | None = None
+    confirmation_required: bool = False
+    confirmation_reason: str | None = None
+    confirmation_batch_id: str | None = None
+    confirmation_trial_kind: str | None = None
+    targeted_follow_up_required: bool = False
+    targeted_follow_up_reason: str | None = None
+    targeted_follow_up_type: str | None = None
+    targeted_follow_up_priority: float | None = None
+    targeted_follow_up_batch_id: str | None = None
+    holdout_check_required: bool = False
+    holdout_check_type: str | None = None
+    holdout_check_status: str | None = None
+    holdout_check_outcome: str | None = None
+    holdout_check_scope: str | None = None
+    holdout_check_batch_id: str | None = None
+    holdout_horizon_tags: list[str] | None = None
+    holdout_regime_tags: list[str] | None = None
+    branch_budgets: dict[str, list[dict[str, Any]]] | None = None
+    branch_budget_rationale: dict[str, Any] | None = None
 
     @property
     def strategy_family(self) -> str:
@@ -131,8 +162,41 @@ class ProposalRequest:
     stagnation_escape_batches: int = 3
     allow_external_seeds: bool = False
     source_idea_ids: list[str] | None = None
+    new_idea_budget: int | None = None
+    refinement_budget: int | None = None
+    confirmation_budget: int | None = None
+    new_idea_quota: int | None = None
+    uncommon_idea_quota: int | None = None
+    repeat_branch_cap: int | None = None
+    max_same_template_per_cycle: int | None = None
+    max_same_lineage_per_cycle: int | None = None
+    structural_novelty_threshold: float = 0.55
+    uncommon_template_bonus: float = 0.10
+    branch_budgets: dict[str, list[dict[str, Any]]] | None = None
+    branch_budget_rationale: dict[str, Any] | None = None
     use_idea_queue: bool = True
     use_analysis_guidance: bool = True
+    history_limit_per_family: int | None = None
+    confirmation_state: str | None = None
+    confirmation_required: bool = False
+    confirmation_reason: str | None = None
+    confirmation_batch_id: str | None = None
+    confirmation_focus_family: str | None = None
+    confirmation_batch_experiments: int | None = None
+    confirmation_outcome: str | None = None
+    targeted_follow_up_required: bool = False
+    targeted_follow_up_reason: str | None = None
+    targeted_follow_up_type: str | None = None
+    targeted_follow_up_priority: float = 0.0
+    targeted_follow_up_batch_id: str | None = None
+    holdout_check_required: bool = False
+    holdout_check_type: str | None = None
+    holdout_check_status: str | None = None
+    holdout_check_outcome: str | None = None
+    holdout_check_scope: str | None = None
+    holdout_check_batch_id: str | None = None
+    holdout_horizon_tags: list[str] | None = None
+    holdout_regime_tags: list[str] | None = None
     min_viable_fill_rate: float = 0.50
     min_viable_candidates: int | None = None
     large_search_threshold: int = 50
@@ -152,3 +216,166 @@ class ProposalResult:
     candidate_metadata: dict[str, list[dict[str, Any]]] | None = None
     proposal_path: str | None = None
     summary_path: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeDecisionInput:
+    workspace_root: str = "."
+    experiments_dir: str = "experiments"
+    strategy_families: list[str] | None = None
+    max_experiments: int = 24
+    seed: int = 42
+    exploration_fraction: float = 0.65
+    exploitation_fraction: float = 0.35
+    large_search_threshold: int = 50
+    min_large_search_candidates: int = 48
+    stagnation_escape_batches: int = 3
+
+
+@dataclass(frozen=True)
+class RuntimeDecision:
+    decision_id: str
+    timestamp_utc: str
+    status: str
+    selected_families: list[str]
+    cycle_mode: str
+    max_experiments: int
+    exploration_fraction: float
+    exploitation_fraction: float
+    family_budgets: dict[str, int] | None
+    large_search_mode: bool
+    min_large_search_candidates: int
+    dashboard_report_id: str | None
+    latest_batch_overview: dict[str, Any] | None
+    latest_non_empty_batch: dict[str, Any] | None
+    best_overall: dict[str, Any] | None
+    best_viable: dict[str, Any] | None
+    best_baseline_beating: dict[str, Any] | None
+    family_scorecards: dict[str, dict[str, Any]]
+    lineage_summary: dict[str, Any] | None
+    used_signals: dict[str, Any]
+    rationale: dict[str, Any]
+    branch_budgets: dict[str, list[dict[str, Any]]] | None = None
+    branch_budget_rationale: dict[str, Any] | None = None
+    new_idea_budget: int | None = None
+    refinement_budget: int | None = None
+    confirmation_budget: int | None = None
+    new_idea_quota: int | None = None
+    uncommon_idea_quota: int | None = None
+    repeat_branch_cap: int | None = None
+    max_same_template_per_cycle: int | None = None
+    max_same_lineage_per_cycle: int | None = None
+    structural_novelty_threshold: float = 0.55
+    uncommon_template_bonus: float = 0.10
+    promotion_state: str = "unconfirmed"
+    winner_family: str | None = None
+    winner_config_hash: str | None = None
+    winner_experiment_id: str | None = None
+    winner_promotion_status: str = "not_promoted"
+    winner_exploitation_cap: float | None = None
+    winner_validation_horizon_tags: list[str] | None = None
+    winner_validation_regime_tags: list[str] | None = None
+    winner_validation_scope: str | None = None
+    winner_validation_confidence: float | None = None
+    winner_validation_coverage: float | None = None
+    winner_validation_needs_follow_up: bool = False
+    targeted_follow_up_required: bool = False
+    targeted_follow_up_reason: str | None = None
+    targeted_follow_up_type: str | None = None
+    targeted_follow_up_priority: float | None = None
+    targeted_follow_up_batch_id: str | None = None
+    holdout_check_required: bool = False
+    holdout_check_type: str | None = None
+    holdout_check_status: str | None = None
+    holdout_check_outcome: str | None = None
+    holdout_check_scope: str | None = None
+    holdout_check_batch_id: str | None = None
+    holdout_horizon_tags: list[str] | None = None
+    holdout_regime_tags: list[str] | None = None
+    confirmation_batch_requested: bool = False
+    confirmation_required: bool = False
+    confirmation_reason: str | None = None
+    confirmation_batch_id: str | None = None
+    confirmation_outcome: str | None = None
+    planned_max_experiments: int | None = None
+    confirmation_family_budgets: dict[str, int] | None = None
+    promotion_state_record: dict[str, Any] | None = None
+    promotion_state_blocked_pending_new_evidence: bool = False
+    promotion_state_changed_this_cycle: bool = False
+    fallback_used: bool = False
+    # Explicit holdout gate state — one of:
+    #   no_winner | holdout_pending_long_horizon | holdout_pending_high_volatility
+    #   | holdout_pending_combined | holdout_passed | holdout_failed
+    #   | promotion_blocked | promotion_can_advance | generic_confirmation_pending
+    holdout_rationale: str = "no_winner"
+    holdout_rationale_detail: str | None = None
+    structural_novelty_budget: int | None = None
+
+
+@dataclass(frozen=True)
+class PromotionStateRecord:
+    family: str
+    config_hash: str
+    experiment_id: str | None = None
+    promotion_state: str = "unconfirmed"
+    winner_promotion_status: str = "not_promoted"
+    confirmation_required: bool = False
+    confirmation_reason: str | None = None
+    confirmation_batch_id: str | None = None
+    confirmation_outcome: str | None = None
+    holdout_check_required: bool = False
+    holdout_check_type: str | None = None
+    holdout_check_status: str | None = None
+    holdout_check_outcome: str | None = None
+    holdout_check_scope: str | None = None
+    holdout_check_batch_id: str | None = None
+    confirmation_history: list[dict[str, Any]] | None = None
+    holdout_history: list[dict[str, Any]] | None = None
+    history: list[dict[str, Any]] | None = None
+    last_confirmation_timestamp_utc: str | None = None
+    last_confirmation_cycle_id: str | None = None
+    last_failed_confirmation_timestamp_utc: str | None = None
+    last_failed_confirmation_cycle_id: str | None = None
+    last_holdout_timestamp_utc: str | None = None
+    last_holdout_cycle_id: str | None = None
+    blocked_pending_new_evidence: bool = False
+    block_reason: str | None = None
+    last_seen_timestamp_utc: str | None = None
+    last_seen_cycle_id: str | None = None
+    source_batch_ids: list[str] | None = None
+    source_proposal_id: str | None = None
+    winner_family: str | None = None
+    validation_horizon_tags: list[str] | None = None
+    validation_regime_tags: list[str] | None = None
+    validation_scope: str | None = None
+    validation_confidence: float | None = None
+    validation_coverage: float | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class LineageRecord:
+    family: str
+    config_hash: str
+    experiment_id: str | None = None
+    parent_config_hash: str | None = None
+    lineage_root_config_hash: str | None = None
+    lineage_depth: int = 0
+    lineage_type: str = "seed"
+    descendant_count: int = 0
+    confirmation_descendant_count: int = 0
+    holdout_descendant_count: int = 0
+    rejected_descendant_count: int = 0
+    best_descendant_config_hash: str | None = None
+    best_descendant_experiment_id: str | None = None
+    best_descendant_objective_score: float | None = None
+    best_descendant_status: str | None = None
+    lineage_status_summary: str = "seed"
+    lineage_trust_score: float = 0.0
+    branch_balance: float = 0.0
+    source_batch_ids: list[str] | None = None
+    source_proposal_id: str | None = None
+    history: list[dict[str, Any]] | None = None
+    last_seen_timestamp_utc: str | None = None
+    last_seen_cycle_id: str | None = None
+    updated_at: str | None = None

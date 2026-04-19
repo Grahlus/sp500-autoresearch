@@ -683,7 +683,10 @@ def analyze_experiment_history(
         family_memory = (memory.get("families", {}) or {}).get(family, {})
         dead_zone_signatures = set(family_memory.get("dead_zone_signatures", []))
         poor_region_signatures = _poor_region_signatures(history, family, median_score)
-        template_counts = _template_counts(history)
+        # Template counts need the full index (not the window-limited history) so
+        # structural-template handoff thresholds are based on total evidence, not recency.
+        _full_index_for_tc = load_prior_results(family=family, base_dir=base_dir)
+        template_counts = _template_counts(_full_index_for_tc)
         stagnation = _stagnation_batches(history, lookback=10)
         summary["families"][family] = {
             "baseline_name": baseline_by_family.get(family),
@@ -1591,6 +1594,79 @@ def generate_next_round_proposal(
             if int(_structural_tc.get(t, 0)) >= _STRUCTURAL_EVIDENCE_THRESHOLD
         ) if family == "momentum" else frozenset()
         _has_structural_behind = bool(_structural_behind)
+
+        # ── Yield-driven handoff state ──────────────────────────────────────
+        # Three states:
+        #   floor_protected      – all templates below evidence threshold
+        #   mixed_floor_and_yield – some graduated, some still behind
+        #   yield_driven          – all templates above threshold
+        if not _structural_ahead:
+            _handoff_state = "floor_protected"
+        elif _structural_behind:
+            _handoff_state = "mixed_floor_and_yield"
+        else:
+            _handoff_state = "yield_driven"
+
+        # Per-template yield scores (only meaningful for graduated templates).
+        # Score = viable_rate * 0.5 + beat_rate * 0.3 + clamped_mean_score * 0.2
+        # All inputs clipped to [0, 1]; minimum floor of 0.01 avoids zero allocation.
+        _structural_yield_scores: dict[str, float] = {}
+        if family == "momentum" and _structural_ahead and not history.empty and "template_id" in history.columns:
+            _tid_col = history["template_id"].astype(str)
+            for _ytid in _structural_ahead:
+                _ysub = history[_tid_col == _ytid]
+                if _ysub.empty:
+                    _structural_yield_scores[_ytid] = 0.01
+                    continue
+                _viable_rate = float(
+                    _ysub["viable"].map(lambda v: bool(v) if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}).mean()
+                ) if "viable" in _ysub.columns else 0.0
+                _beat_col = _ysub.get("beats_baseline_objective") if hasattr(_ysub, "get") else None
+                _beat_rate = float(
+                    _ysub["beats_baseline_objective"].map(lambda v: bool(v) if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}).mean()
+                ) if "beats_baseline_objective" in _ysub.columns else 0.0
+                _mean_score = float(
+                    pd.to_numeric(_ysub["objective_score"], errors="coerce").fillna(0.0).mean()
+                ) if "objective_score" in _ysub.columns else 0.0
+                _structural_yield_scores[_ytid] = max(
+                    0.01,
+                    min(1.0, _viable_rate) * 0.5
+                    + min(1.0, _beat_rate) * 0.3
+                    + min(1.0, max(0.0, _mean_score)) * 0.2,
+                )
+
+        # Per-template slot cap used in _cycle_caps_exhausted.
+        # mixed_floor_and_yield → flat REPEAT_CAP for ahead templates (anti-monopoly)
+        # yield_driven           → proportional to yield score, bounded by monopoly cap
+        _structural_budget_slots = max(len(_STRUCTURAL_MOMENTUM_TEMPLATES), int(round(budget * 0.33)))
+        _structural_monopoly_limit = max(1, int(_structural_budget_slots // 2))
+        _structural_per_template_cap: dict[str, int] = {}
+        if _handoff_state == "mixed_floor_and_yield":
+            _structural_per_template_cap = {tid: _STRUCTURAL_REPEAT_CAP for tid in _structural_ahead}
+            _handoff_rationale = (
+                f"handoff_state=mixed_floor_and_yield; "
+                f"{len(_structural_behind)} behind / {len(_structural_ahead)} ahead; "
+                f"ahead templates capped at repeat_cap={_STRUCTURAL_REPEAT_CAP}"
+            )
+        elif _handoff_state == "yield_driven":
+            _total_yield = sum(_structural_yield_scores.values()) or 1.0
+            for _ytid in _structural_ahead:
+                _frac = _structural_yield_scores.get(_ytid, 0.01) / _total_yield
+                _structural_per_template_cap[_ytid] = min(
+                    _structural_monopoly_limit,
+                    max(1, int(round(_frac * _structural_budget_slots))),
+                )
+            _handoff_rationale = (
+                f"handoff_state=yield_driven; all {len(_STRUCTURAL_MOMENTUM_TEMPLATES)} templates graduated; "
+                f"yield_scores={{{', '.join(f'{k}:{v:.3f}' for k, v in sorted(_structural_yield_scores.items()))}}}; "
+                f"caps={_structural_per_template_cap}"
+            )
+        else:
+            _handoff_rationale = (
+                f"handoff_state=floor_protected; "
+                f"all {len(_structural_behind)} templates below threshold={_STRUCTURAL_EVIDENCE_THRESHOLD}"
+            )
+
         max_same_template = max(
             1,
             int(
@@ -1647,13 +1723,12 @@ def generate_next_round_proposal(
             template_key = _template_cycle_key(metadata.get("template_id"), source_type)
             if template_key and template_cycle_counts.get(template_key, 0) >= max_same_template and not metadata.get("is_uncommon_idea"):
                 return True
-            # Anti-monopoly: if this structural template is "ahead" (past evidence threshold)
-            # and other structural templates are still "behind", cap its per-cycle slots so
-            # untested templates get a fair share before yield-based favoritism kicks in.
+            # Structural template per-cycle cap, graduated by handoff state:
+            #   mixed_floor_and_yield → flat REPEAT_CAP (anti-monopoly while others behind)
+            #   yield_driven           → yield-proportional cap (with monopoly ceiling)
             if (
-                _has_structural_behind
-                and template_key in _structural_ahead
-                and template_cycle_counts.get(template_key, 0) >= _STRUCTURAL_REPEAT_CAP
+                template_key in _structural_per_template_cap
+                and template_cycle_counts.get(template_key, 0) >= _structural_per_template_cap[template_key]
             ):
                 return True
             lineage_key = _lineage_cycle_key(metadata)
@@ -1989,7 +2064,8 @@ def generate_next_round_proposal(
                         f"structural floor: {_sp_tid} has {_sp_execs} execs "
                         f"(below evidence threshold {_STRUCTURAL_EVIDENCE_THRESHOLD}); "
                         f"structural_budget_share={_structural_budget_share}; "
-                        f"behind_count={len(_structural_behind)}"
+                        f"behind_count={len(_structural_behind)}; "
+                        f"handoff_state={_handoff_state}"
                     ),
                     exploration_mode=_sm.get("exploration_mode") or "structural_exploration",
                     proposal_role="explore",
@@ -2447,6 +2523,10 @@ def generate_next_round_proposal(
             "idea_yield_promising_share": round(_fam_promising_share, 4),
             "idea_yield_floor_action": _yield_floor_action,
             "idea_yield_top_kinds": [r.get("idea_kind") for r in (_fam_yield.get("top_idea_kinds") or [])[:3] if r.get("idea_kind")],
+            "structural_handoff_state": _handoff_state if family == "momentum" else None,
+            "structural_handoff_rationale": _handoff_rationale if family == "momentum" else None,
+            "structural_yield_scores": {k: round(v, 4) for k, v in _structural_yield_scores.items()} if family == "momentum" else {},
+            "structural_per_template_cap": dict(_structural_per_template_cap) if family == "momentum" else {},
         }
         if isinstance(family_analysis.get("history_frame"), pd.DataFrame):
             family_analysis["history_frame"] = pd.DataFrame()

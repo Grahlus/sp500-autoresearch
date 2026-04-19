@@ -153,13 +153,6 @@ def score_candidate(
     config_hash = compute_config_hash(family, normalized)
     if config_hash in explored_hashes or (dead_zone_hashes and config_hash in dead_zone_hashes):
         return None
-    if dead_zone_signatures and json.dumps(discrete_signature(family, normalized), sort_keys=True, separators=(",", ":")) in dead_zone_signatures:
-        return None
-
-    if dead_zone_values:
-        for param, bad_values in dead_zone_values.items():
-            if str(normalized.get(param)) in {str(value) for value in bad_values}:
-                return None
 
     exact = is_exact_duplicate(family, normalized, explored_hashes, config_hash=config_hash)
     near, near_of = is_near_duplicate(family, normalized, explored_signatures, max_distance=near_duplicate_distance)
@@ -173,6 +166,8 @@ def score_candidate(
     novelty_score = 0.0
     if source_type == "local_refinement":
         novelty_score += 0.20
+    elif source_type == "idea_seed":
+        novelty_score += 0.28
     elif source_type == "cross_family_hybrid":
         novelty_score += 0.45
     elif source_type == "template_expansion":
@@ -183,10 +178,16 @@ def score_candidate(
         novelty_score += 0.60
     elif source_type == "external_seed":
         novelty_score += 0.55
+    elif source_type == "saturation_escape":
+        novelty_score += 0.35
     if exploration_mode == "local_refinement":
         novelty_score += 0.10
+    elif exploration_mode == "idea_seed":
+        novelty_score += 0.15
     elif exploration_mode == "broader_exploration":
         novelty_score += 0.20
+    elif exploration_mode == "saturation_escape":
+        novelty_score += 0.25
     if near:
         novelty_score -= 0.40
     if exact:
@@ -208,7 +209,7 @@ def score_candidate(
         dead_zone_risk = 1.0
 
     selection_score = (0.55 * objective_proxy) + (0.45 * novelty_score) - (0.35 * dead_zone_risk)
-    if source_type in {"cross_family_hybrid", "external_seed", "model_based", "policy_learning"}:
+    if source_type in {"idea_seed", "cross_family_hybrid", "external_seed", "model_based", "policy_learning"}:
         selection_score += 0.05
     if near:
         selection_score -= 0.20
