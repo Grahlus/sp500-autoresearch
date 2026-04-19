@@ -1,0 +1,93 @@
+{
+  "topic": {
+    "slug": "residual_momentum",
+    "focus": "residual or industry-adjusted momentum signals",
+    "angle": "orthogonalise returns to market/industry before ranking"
+  },
+  "papers": [
+    {
+      "title": "What Does Residual Momentum Tell Us About Firm-Specific Momentum?",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4059632",
+      "positive_result": true,
+      "hypothesis": "Regress each stock's monthly returns on a broad factor set (FF5 or equivalent), extract residuals, remove the embedded beta-bet component via a 4-step orthogonalization, normalize by residual volatility, then rank cross-sectionally on cumulative normalized residuals over the past 12 months skipping the last month.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "FF5 residual extraction",
+        "beta-bet removal",
+        "volatility normalization",
+        "firm-specific momentum"
+      ],
+      "rationale": "Ehsani & Linnainmaa (SSRN 4059632, AEA 2023) show standard residual momentum conflates true firm-specific momentum with omitted factor bets and beta bets. Purging those contaminants yields a UMD-like factor earning 63 bps/month alpha (t=9.20) and Sharpe ~1.23, roughly 110% higher than standard residual momentum. The 4-step procedure is implementable daily using rolling 36-month OLS betas and is directly applicable as a ranking signal."
+    },
+    {
+      "title": "The Idiosyncratic Momentum Anomaly",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2947044",
+      "positive_result": true,
+      "hypothesis": "Estimate each stock's rolling Fama-French 3-factor betas on a 36-month window, extract monthly residuals, then rank cross-sectionally on the sum of residuals over months t-12 to t-2 divided by the standard deviation of those same residuals.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "FF3 residual",
+        "volatility-scaled ranking",
+        "idiosyncratic momentum",
+        "rolling OLS betas"
+      ],
+      "rationale": "Blitz, Hanauer, Vidojevic find idiosyncratic momentum achieves a gross monthly Sharpe of 0.48 vs 0.25 for conventional momentum (factor), with half the volatility and no long-term reversals. It behaves as a complement to raw momentum rather than a substitute, suggesting a blend signal could further improve ranking quality for a cross-sectional strategy."
+    },
+    {
+      "title": "Cross-Stock Momentum and Factor Momentum",
+      "source": "https://www.sciencedirect.com/science/article/abs/pii/S0304405X23001563",
+      "positive_result": true,
+      "hypothesis": "Demean each stock's return by its Fama-French 48-industry mean return before computing momentum ranks, then add a separate industry-level momentum overlay (rank industries by past 12-1 month return, tilt stock weights by the industry rank).",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "industry demeaning",
+        "within-industry cross-sectional rank",
+        "industry overlay tilt",
+        "factor momentum"
+      ],
+      "rationale": "Arnott et al. (JFE 2023) establish that industry momentum largely reflects factor momentum, but within-industry cross-sectional dispersion survives after controlling for factor structure. A two-layer signal \u2014 within-industry rank plus industry-level tilt \u2014 captures both layers, reduces market-beta concentration, and avoids the sector crowding that hurts raw momentum during crash episodes."
+    },
+    {
+      "title": "Firm-Specific Versus Systematic Momentum",
+      "source": "https://www.sciencedirect.com/science/article/pii/S1544612325002272",
+      "positive_result": true,
+      "hypothesis": "Decompose each stock's momentum return into a systematic component (market + industry beta exposure) and a firm-specific residual, then rank solely on the firm-specific component; suppress stocks where systematic momentum and firm-specific momentum conflict in sign.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "systematic vs idiosyncratic decomposition",
+        "sign-agreement filter",
+        "market-beta orthogonalization"
+      ],
+      "rationale": "This 2025 paper (Finance Research Letters) finds that firm-specific momentum is the durable component: stocks with both systematic and firm-specific momentum aligned outperform, while disagreement predicts crashes. The sign-agreement filter is directly implementable as a position mask on top of a standard residual momentum ranking and requires no additional data beyond prices and industry codes."
+    },
+    {
+      "title": "Enhanced Momentum Strategies: International Evidence",
+      "source": "https://www.sciencedirect.com/science/article/abs/pii/S0378426622002928",
+      "positive_result": false,
+      "hypothesis": "Apply volatility-scaled residual momentum (rank on past FF3-residual / trailing residual volatility) using a 6-month rather than 12-month lookback to reduce crash exposure, tested across 48 countries.",
+      "lookback_days": 126,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "FF3 residual",
+        "dynamic volatility scaling",
+        "intermediate formation period",
+        "crash reduction"
+      ],
+      "rationale": "Hanauer et al. (Journal of Banking & Finance 2023) survey 12 momentum enhancements across 48 country universes and find no single strategy consistently dominates in multiple factor spanning tests \u2014 residual and vol-scaled variants improve Sharpe domestically but the edge erodes in international/out-of-sample settings. Worth testing with a shorter 126-day lookback (avoids the well-documented 12-month reversal zone) but the null result across countries is an important risk flag for the US-only Russell-1000 application."
+    }
+  ]
+}

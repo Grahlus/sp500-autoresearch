@@ -1,0 +1,93 @@
+{
+  "topic": {
+    "slug": "earnings_momentum_drift",
+    "focus": "post-earnings announcement drift (PEAD) combined with price momentum",
+    "angle": "SUE scores, analyst revision momentum, earnings surprise persistence"
+  },
+  "papers": [
+    {
+      "title": "PEAD.txt: Post-Earnings-Announcement Drift Using Text",
+      "source": "https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/peadtxt-postearningsannouncement-drift-using-text/5EB217BB68B5FB054FE38541BAAC4679",
+      "positive_result": true,
+      "hypothesis": "Construct a text-based earnings surprise score (SUE.txt) from earnings call transcript sentiment and add it as a composite ranking factor alongside 12-1 price momentum, holding for one quarter after each announcement.",
+      "lookback_days": null,
+      "skip_days": 2,
+      "hold_days": 63,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "NLP earnings surprise",
+        "call transcript sentiment",
+        "SUE.txt",
+        "composite factor blend"
+      ],
+      "rationale": "Published JFQA 2023; SUE.txt generates larger drift than classic SUE and remains significant in recent years when classic PEAD has decayed near zero. Because it does not rely on reported EPS figures it is less subject to accrual manipulation. The 2-day skip avoids the announcement-day spike and captures the slow-moving drift component most relevant to a daily-rebalanced cross-sectional ranker."
+    },
+    {
+      "title": "Earnings Autocorrelation and the Post-Earnings-Announcement Drift: Experimental Evidence",
+      "source": "https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/earnings-autocorrelation-and-the-postearningsannouncement-drift-experimental-evidence/61CD6A2065A4686418A3C47DEF3AC24B",
+      "positive_result": true,
+      "hypothesis": "Condition the PEAD long signal on two consecutive same-direction earnings surprises (sequential SUE filter): rank on current-quarter SUE only for stocks whose prior-quarter SUE had the same sign, to select the persistent-drift subset.",
+      "lookback_days": null,
+      "skip_days": 1,
+      "hold_days": 63,
+      "top_n_pct": 0.08,
+      "techniques": [
+        "sequential earnings surprise",
+        "SUE autocorrelation filter",
+        "earnings persistence screen"
+      ],
+      "rationale": "Published JFQA September 2024; drift is significantly more pronounced when consecutive earnings surprises share the same sign, implying a two-quarter confirmation gate sharply reduces noise. Layering this as a binary qualifying screen on top of existing price momentum narrows the universe to stocks where both fundamental and price momentum are reinforcing, improving hit rate without changing the core ranking."
+    },
+    {
+      "title": "Fundamentally, Momentum is Fundamental Momentum",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2572143",
+      "positive_result": true,
+      "hypothesis": "Replace or supplement the 12-1 price momentum rank with a composite of 12-1 price momentum and a 2-quarter SUE earnings momentum rank, weighted 50/50, to create a factor that retains momentum returns but eliminates crash exposure.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 63,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "fundamental momentum",
+        "earnings momentum",
+        "composite rank",
+        "momentum crash mitigation"
+      ],
+      "rationale": "Novy-Marx (NBER 2015, updated via SSRN) shows earnings momentum fully explains price momentum returns while dramatically reducing crash risk; controlling for earnings surprise when building price momentum portfolios reduces performance but also volatility, resulting in higher risk-adjusted returns. For the walk-forward harness this matters because the 14-window mean Sharpe penalises crash windows heavily \u2014 replacing pure price momentum with the composite directly attacks the worst-window constraint."
+    },
+    {
+      "title": "Enhancing the Profitability of Earnings Momentum Strategies: The Role of Price Momentum, Information Diffusion and Earnings Uncertainty",
+      "source": "https://papers.ssrn.com/sol3/Delivery.cfm/SSRN_ID2249169_code1606720.pdf?abstractid=1812980",
+      "positive_result": true,
+      "hypothesis": "Weight the SUE rank by inverse analyst-coverage count as a proxy for slow information diffusion, concentrating the long book in low-coverage stocks where PEAD persists longest.",
+      "lookback_days": null,
+      "skip_days": 2,
+      "hold_days": 63,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "information diffusion weighting",
+        "analyst coverage filter",
+        "earnings momentum",
+        "PEAD persistence proxy"
+      ],
+      "rationale": "Czaja et al. (SSRN) find that information diffusion rate is the single strongest moderator of earnings momentum, with gross Carhart alphas reaching 22% p.a. in the slow-diffusion quintile. In the IWB universe (~841 names) analyst coverage varies widely; multiplying SUE z-score by 1/(analyst count) before ranking creates a naturally size-tilted composite that outperforms pure SUE without requiring any macro regime conditioning."
+    },
+    {
+      "title": "Post Earnings Announcement Drift: Earnings Surprise Measuring, Investor Attention, and Investing Strategy",
+      "source": "https://papers.ssrn.com/sol3/Delivery.cfm/9412a06f-c6aa-4df1-bf29-370fe1bd0399-MECA.pdf?abstractid=4589824",
+      "positive_result": true,
+      "hypothesis": "Use a simple ORJ earnings surprise measure (operating revenue jump) rather than consensus-based SUE, and apply an investor-attention multiplier (abnormal search volume or media mentions in [-5, 0] window) to amplify the signal for high-attention positive surprises.",
+      "lookback_days": null,
+      "skip_days": 3,
+      "hold_days": 42,
+      "top_n_pct": 0.12,
+      "techniques": [
+        "ORJ surprise measure",
+        "investor attention filter",
+        "asymmetric PEAD",
+        "abnormal search volume"
+      ],
+      "rationale": "Published in International Review of Financial Analysis 2024; finds positive surprises have stronger and more persistent drift than negative ones under high attention conditions, suggesting a long-only or asymmetrically weighted strategy. The shorter 42-day hold captures the steepest portion of the drift curve before plateau (~day 9 per FMP analysis), and using ORJ avoids analyst-forecast data licensing issues since it derives from reported revenue figures directly available in price/fundamental data feeds."
+    }
+  ]
+}

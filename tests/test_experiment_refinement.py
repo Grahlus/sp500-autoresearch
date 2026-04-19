@@ -80,7 +80,7 @@ def _save_fake_result(
 
 class ExperimentRefinementTests(unittest.TestCase):
     def test_proposal_generation_is_deterministic(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        def _make_proposal(tmp: str):
             _save_fake_result(
                 tmp,
                 family="momentum",
@@ -92,9 +92,19 @@ class ExperimentRefinementTests(unittest.TestCase):
                 baseline_status="exact_verified_current_engine",
                 beats_baseline_objective=True,
             )
-            request = build_proposal_request(strategy_families=["momentum"], seed=7, max_experiments=4)
-            a = generate_next_round_proposal(request, base_dir=tmp)
-            b = generate_next_round_proposal(request, base_dir=tmp)
+            request = build_proposal_request(
+                strategy_families=["momentum"],
+                seed=7,
+                max_experiments=4,
+                persist_memory=False,
+                persist_proposal=False,
+                persist_scorecards=False,
+            )
+            return generate_next_round_proposal(request, base_dir=tmp)
+
+        with tempfile.TemporaryDirectory() as tmp_a, tempfile.TemporaryDirectory() as tmp_b:
+            a = _make_proposal(tmp_a)
+            b = _make_proposal(tmp_b)
         self.assertEqual(a.candidate_configs, b.candidate_configs)
 
     def test_proposal_never_emits_invalid_configs_and_avoids_duplicates(self):
@@ -347,6 +357,255 @@ class ExperimentRefinementTests(unittest.TestCase):
             for spec in batch_request.precomputed_specs["momentum"]
         ]
         self.assertIn(("idea_momentum_seed",), propagated)
+
+    def test_structural_ideas_synthesize_into_concrete_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                        "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                        "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None},
+                experiment_id="m_structural_anchor",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            save_idea_record(
+                IdeaRecord(
+                    idea_id="idea_momentum_portfolio_overlay",
+                    family="momentum",
+                    strategy_type="classical",
+                    hypothesis="Momentum portfolio overlay with realized-vol scaling.",
+                    source="structural_extension",
+                    priority=1.0,
+                    estimated_cost="medium_cpu",
+                    timestamp_utc="2026-04-19T00:00:00+00:00",
+                    rationale="Structural idea should synthesize into a concrete family.",
+                    suggested_config={"TOP_PCT": 0.025},
+                    idea_kind="new_portfolio_exposure_control",
+                    is_structurally_novel=True,
+                    is_out_of_box=True,
+                    is_uncommon_idea=True,
+                    structural_distance=0.92,
+                    template_similarity_class="portfolio_overlay",
+                    uncommon_idea_reason="Adds a portfolio-level control layer.",
+                ),
+                workspace_root=tmp,
+            )
+            request = build_proposal_request(
+                strategy_families=["momentum"],
+                seed=9,
+                max_experiments=6,
+                structural_idea_budget=2,
+                out_of_box_budget=1,
+                max_routine_template_budget=1,
+            )
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        metadata = proposal.candidate_metadata["momentum"]
+        structural_rows = [row for row in metadata if row.get("source_type") == "structural_synthesis"]
+        self.assertTrue(structural_rows)
+        self.assertTrue(any(row.get("idea_id") == "idea_momentum_portfolio_overlay" for row in structural_rows))
+        row = structural_rows[0]
+        self.assertEqual(row["synthesized_template_family"], "portfolio_overlay")
+        self.assertIn("synthesis_rationale", row)
+        self.assertTrue(row["is_structurally_novel"])
+        self.assertTrue(row["is_out_of_box"])
+        self.assertEqual(proposal.reasoning_summary["families"]["momentum"]["selected_structural_synthesis_count"], len(structural_rows))
+        self.assertLessEqual(
+            proposal.reasoning_summary["families"]["momentum"]["selected_routine_candidate_count"],
+            1,
+        )
+
+    def test_structural_lane_survives_confirmation_pressure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                        "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                        "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None},
+                experiment_id="m_structural_anchor",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            save_idea_record(
+                IdeaRecord(
+                    idea_id="idea_momentum_portfolio_overlay",
+                    family="momentum",
+                    strategy_type="classical",
+                    hypothesis="Momentum portfolio overlay with realized-vol scaling.",
+                    source="structural_extension",
+                    priority=1.0,
+                    estimated_cost="medium_cpu",
+                    timestamp_utc="2026-04-19T00:00:00+00:00",
+                    rationale="Structural idea should survive confirmation pressure.",
+                    suggested_config={"TOP_PCT": 0.025},
+                    idea_kind="new_portfolio_exposure_control",
+                    is_structurally_novel=True,
+                    is_out_of_box=True,
+                    is_uncommon_idea=True,
+                    structural_distance=0.92,
+                    template_similarity_class="portfolio_overlay",
+                    uncommon_idea_reason="Adds a portfolio-level control layer.",
+                ),
+                workspace_root=tmp,
+            )
+            request = build_proposal_request(
+                strategy_families=["momentum"],
+                seed=9,
+                max_experiments=6,
+                confirmation_required=True,
+                confirmation_batch_experiments=6,
+                confirmation_focus_family="momentum",
+                structural_execution_lane_budget=2,
+                structural_execution_lane_min_candidates=1,
+                structural_execution_lane_repeat_cap=1,
+                max_routine_template_budget=1,
+            )
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        family_summary = proposal.reasoning_summary["families"]["momentum"]
+        structural_lane = family_summary["structural_execution_lane"]
+        structural_rows = [row for row in proposal.candidate_metadata["momentum"] if row.get("source_type") == "structural_synthesis"]
+        confirmation_rows = [
+            row for row in proposal.candidate_metadata["momentum"]
+            if row.get("source_type") in {"confirmation_reproduction", "confirmation_check"}
+        ]
+        self.assertTrue(structural_rows)
+        self.assertTrue(confirmation_rows)
+        self.assertTrue(structural_lane["active"])
+        self.assertFalse(structural_lane["skipped"])
+        self.assertGreaterEqual(structural_lane["executed_count"], 1)
+        self.assertEqual(family_summary["selected_structural_synthesis_count"], len(structural_rows))
+
+    def test_structural_lane_skips_when_all_structural_candidates_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base_config = {
+                "LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None,
+            }
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config=base_config,
+                experiment_id="m_duplicate",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            save_idea_record(
+                IdeaRecord(
+                    idea_id="idea_momentum_duplicate",
+                    family="momentum",
+                    strategy_type="classical",
+                    hypothesis="Duplicate structural idea should be blocked by deterministic safety.",
+                    source="structural_extension",
+                    priority=1.0,
+                    estimated_cost="medium_cpu",
+                    timestamp_utc="2026-04-19T00:00:00+00:00",
+                    rationale="Deterministic duplicate blocking should override the lane.",
+                    suggested_config={"TOP_PCT": 0.025},
+                    idea_kind="new_portfolio_exposure_control",
+                    is_structurally_novel=True,
+                    is_out_of_box=True,
+                    is_uncommon_idea=True,
+                    structural_distance=0.92,
+                    template_similarity_class="portfolio_overlay",
+                    uncommon_idea_reason="Adds a portfolio-level control layer.",
+                ),
+                workspace_root=tmp,
+            )
+            with patch(
+                "experiment_refinement._synthesized_structural_candidates",
+                return_value=[
+                    {
+                        "config": base_config,
+                        "metadata": {
+                            "template_id": "synth_structural_momentum_portfolio_overlay",
+                            "idea_id": "idea_momentum_duplicate",
+                            "idea_source": "structural_extension",
+                            "idea_kind": "new_portfolio_exposure_control",
+                            "synthesized_template_family": "portfolio_overlay",
+                            "synthesis_rationale": "duplicate structural candidate",
+                            "source_idea_ids": ["idea_momentum_duplicate"],
+                            "is_out_of_box": True,
+                            "is_uncommon_idea": True,
+                            "reason_selected": "duplicate structural candidate",
+                        },
+                    }
+                ],
+            ):
+                request = build_proposal_request(
+                    strategy_families=["momentum"],
+                    seed=9,
+                    max_experiments=6,
+                    structural_execution_lane_budget=1,
+                    structural_execution_lane_min_candidates=1,
+                    structural_execution_lane_repeat_cap=1,
+                )
+                proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        family_summary = proposal.reasoning_summary["families"]["momentum"]
+        structural_lane = family_summary["structural_execution_lane"]
+        self.assertTrue(structural_lane["skipped"])
+        self.assertEqual(structural_lane["skip_reason"], "no_safe_structural_candidate")
+        self.assertEqual(structural_lane["executed_count"], 0)
+        self.assertEqual(family_summary["selected_structural_synthesis_count"], 0)
+
+    def test_structural_lane_budget_remains_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _save_fake_result(
+                tmp,
+                family="momentum",
+                config={"LOOKBACK_WEEKS": 26, "SKIP_WEEKS": 3, "REBAL_WEEKS": 4, "TOP_PCT": 0.025, "MA_WEEKS": 20,
+                        "STOP_TYPE": "adaptive", "STOP_LOSS_PCT": 0.2, "STOP_PARABOLIC": 0.3, "INV_VOL_DAYS": 15,
+                        "MIN_HOLD_DAYS": 5, "FG_MIN": 10.0, "EXIT_PCT_RANK": 0.97, "RANK_EXIT_CONFIRM": None},
+                experiment_id="m_bound_anchor",
+                objective_score=1.0,
+                baseline_status="exact_verified_current_engine",
+                beats_baseline_objective=True,
+            )
+            save_idea_record(
+                IdeaRecord(
+                    idea_id="idea_momentum_bound",
+                    family="momentum",
+                    strategy_type="classical",
+                    hypothesis="Bounded structural lane should not monopolize the cycle.",
+                    source="structural_extension",
+                    priority=1.0,
+                    estimated_cost="medium_cpu",
+                    timestamp_utc="2026-04-19T00:00:00+00:00",
+                    rationale="Lane budget should stay capped deterministically.",
+                    suggested_config={"TOP_PCT": 0.025},
+                    idea_kind="new_portfolio_exposure_control",
+                    is_structurally_novel=True,
+                    is_out_of_box=True,
+                    is_uncommon_idea=True,
+                    structural_distance=0.92,
+                    template_similarity_class="portfolio_overlay",
+                    uncommon_idea_reason="Adds a portfolio-level control layer.",
+                ),
+                workspace_root=tmp,
+            )
+            request = build_proposal_request(
+                strategy_families=["momentum"],
+                seed=9,
+                max_experiments=9,
+                structural_execution_lane_budget=9,
+                structural_execution_lane_min_candidates=1,
+                structural_execution_lane_repeat_cap=3,
+            )
+            proposal = generate_next_round_proposal(request, base_dir=tmp)
+
+        family_summary = proposal.reasoning_summary["families"]["momentum"]
+        structural_lane = family_summary["structural_execution_lane"]
+        self.assertLessEqual(structural_lane["effective_budget"], 3)
+        self.assertLessEqual(family_summary["selected_structural_synthesis_count"], 3)
+        self.assertTrue(family_summary["selected_structural_synthesis_count"] <= family_summary["routine_template_budget_used"] + 3)
 
     def test_analysis_guidance_can_bias_family_budget(self):
         with tempfile.TemporaryDirectory() as tmp:

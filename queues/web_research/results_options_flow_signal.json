@@ -1,0 +1,94 @@
+{
+  "topic": {
+    "slug": "options_flow_signal",
+    "focus": "options market signals predicting equity returns",
+    "angle": "put-call ratio, implied volatility skew, unusual options activity as equity filter"
+  },
+  "papers": [
+    {
+      "title": "Do Option Characteristics Predict the Underlying Stock Returns in the Cross-Section?",
+      "source": "https://pubsonline.informs.org/doi/10.1287/mnsc.2024.04720 (SSRN 3795486, Management Science 2025)",
+      "positive_result": true,
+      "hypothesis": "Rank stocks by call-minus-put implied volatility spread (ATM 30-day call IV minus ATM 30-day put IV), going long high-spread stocks; this signal is the strongest single-month predictor among 30+ option characteristics.",
+      "lookback_days": 5,
+      "skip_days": null,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "IV spread",
+        "call-put vol spread",
+        "option characteristics factor zoo",
+        "cross-sectional ranking"
+      ],
+      "rationale": "Neuhierl et al. run a comprehensive horse-race of option-implied predictors and find IV spread dominates at 1-month horizon. Construction is straightforward: average (call_IV_atm - put_IV_atm) over the last 5 trading days using 30-day maturity options. The signal captures both informed demand and short-sale pressure, making it robust to many confounds."
+    },
+    {
+      "title": "Why Does Options Market Information Predict Stock Returns?",
+      "source": "https://www.sciencedirect.com/science/article/pii/S0304405X25001618 (Journal of Financial Economics 2025, Muravyev, Pearson, Pollet)",
+      "positive_result": false,
+      "hypothesis": "IV spread and IV skew signals lose two-thirds of their alpha once high-stock-borrow-fee stocks are excluded, suggesting the options signal mostly proxies for short-sale constraints rather than private information.",
+      "lookback_days": 21,
+      "skip_days": null,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "IV spread",
+        "IV skew",
+        "short-sale constraints",
+        "borrow fee proxy"
+      ],
+      "rationale": "This is an important negative result for implementation: the raw IV spread signal survives only in hard-to-borrow stocks that are costly or impossible to short in practice. For a long-only cross-sectional momentum strategy, this suggests filtering on the long side using IV spread (avoid high IV-spread stocks rather than shorting them) is the actionable modification. The signal retains modest predictive power even in liquid, easy-to-borrow names."
+    },
+    {
+      "title": "Cross-Sectional Variation of Option-Implied Volatility Skew",
+      "source": "https://pubsonline.informs.org/doi/10.1287/mnsc.2023.4872 (SSRN 3707006, Management Science 2024, Wu & Tian)",
+      "positive_result": true,
+      "hypothesis": "Decompose IV skew into a structural (slow-moving, risk-based) component and a transient (fast-moving, information-based) component; rank stocks on the transient skew residual, going long stocks with the lowest transient skew (least negative sentiment).",
+      "lookback_days": 63,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "IV skew decomposition",
+        "structural vs transient skew",
+        "OTM put minus ATM call IV",
+        "cross-sectional residual"
+      ],
+      "rationale": "Standard IV skew (delta=-0.25 OTM put IV minus delta=-0.50 ATM call IV, 30-day expiry) mixes two signals: structural firm risk and transient informed flow. Wu & Tian show the transient residual \u2014 computed by cross-sectionally regressing current skew on lagged structural proxies \u2014 carries the incremental predictive content. Using a 63-day lookback to estimate the structural baseline and a 5-day skip avoids short-term reversal. This is directly implementable as a secondary ranking layer on top of price momentum."
+    },
+    {
+      "title": "Unusual Option Activity: Is it Smart to Follow 'Smart Money'?",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3618427 (SSRN 3618427, Jiang & Strong, revised 2024)",
+      "positive_result": true,
+      "hypothesis": "Identify stocks with unusually large increases in OTM put open interest relative to their 63-day baseline and use this as a negative filter (downweight or exclude these stocks from the long book).",
+      "lookback_days": 63,
+      "skip_days": 1,
+      "hold_days": 21,
+      "top_n_pct": 0.05,
+      "techniques": [
+        "unusual options activity",
+        "put open interest spike",
+        "informed trading proxy",
+        "negative filter"
+      ],
+      "rationale": "Jiang and Strong define unusual activity as OI changes exceeding 2 standard deviations of recent history, weighted by option moneyness (OTM puts carry the strongest signal). Stocks with unusual put OI spikes underperform the next month by ~60 bps risk-adjusted. As a negative filter on a momentum long book it is low-cost to implement: compute (put_OI_today - MA63_put_OI) / std63_put_OI per stock and exclude the top 5% spike decile from longs."
+    },
+    {
+      "title": "Stock Return Predictability of the Realized-Implied Volatility Spread",
+      "source": "http://www.efmaefm.org/0EFMAMEETINGS/EFMA%20ANNUAL%20MEETINGS/2024-Lisbon/papers/ATR_RVolIVOl_Complete.pdf (EFMA 2024 conference paper)",
+      "positive_result": true,
+      "hypothesis": "Rank stocks by RVol-IVol spread (22-day realized vol minus 30-day ATM implied vol); stocks where realized vol exceeds implied vol (positive spread) predict higher future returns, consistent with priced volatility risk.",
+      "lookback_days": 22,
+      "skip_days": null,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "realized-implied vol spread",
+        "volatility risk premium",
+        "cross-sectional ranking",
+        "variance risk premium proxy"
+      ],
+      "rationale": "The RVol-IVol spread proxies the individual stock variance risk premium: a positive spread means the market is overpricing vol protection relative to realized, implying the stock has been less risky than feared. Sorted portfolios long top-decile (positive spread) minus bottom-decile earn ~5% annualized alpha in US equities 2000-2023. The signal is computed purely from OHLC prices and a single ATM IV observation per stock, making it feasible even with partial options coverage in the Russell 1000 universe."
+    }
+  ]
+}

@@ -56,6 +56,8 @@ This shows:
 - whether the lock file exists
 - the main log path
 - the latest lines from the main log
+- the current retention policy
+- the retained `autonomous_research.log.N` files and their sizes
 
 ## Resume After Disconnect Or Reboot
 
@@ -87,8 +89,26 @@ This does not run experiments directly. It only ensures the tmux session exists.
 - Tmux watchdog: `ensure_research_tmux.sh`
 - Status command: `research_status.sh`
 - Main log: `logs/autonomous_research.log`
+- Rotated archives: `logs/autonomous_research.log.1`, `logs/autonomous_research.log.2`, ...
 - Watchdog log: `logs/tmux_watchdog.log`
 - Cron log: `logs/cron_watchdog.log`
 - Runtime lock: `run/autonomous_research.lock`
 - Heartbeat: `run/last_heartbeat.txt`
 - Status snapshot: `run/research_status.txt`
+
+## Log Retention Policy
+
+The autonomous logs are rotated by `storage_maintenance.py` when a log exceeds the configured threshold.
+
+- Active log threshold: `LOG_MAX_BYTES` / `--log-max-bytes` (default: `50_000_000`)
+- Retained archives per log: `LOG_RETAIN_COUNT` / `--log-retain-count` (default: `4`)
+- Total per-log bound: about `(retain_count + 1) * max_bytes`
+
+Rotation keeps the active file path in place for easy `tail -f` usage and preserves older snapshots as numbered archives.
+
+To inspect the current state quickly:
+
+```bash
+bash ./research_status.sh
+ls -lh logs/autonomous_research.log*
+```

@@ -1,0 +1,180 @@
+{
+  "batch_ids": [
+    "proposal_20260403_184131_batch"
+  ],
+  "metrics_summary": {
+    "per_family_top_counts": {
+      "ml_ranker": 3,
+      "momentum": 3,
+      "rl_bandit": 3,
+      "superstock": 3
+    },
+    "top_overall_count": 5
+  },
+  "next_focus": [
+    {
+      "best_experiment_id": "ml_ranker_776fbbbcc0484aff_proposal_20260403_183526",
+      "best_objective_score": -5.97755,
+      "family": "ml_ranker",
+      "focus": "explore",
+      "reason": "no viable leader yet; collect more evidence before narrowing"
+    },
+    {
+      "best_experiment_id": "momentum_e59f68426635b89e_20260403165628",
+      "best_objective_score": 1.5763,
+      "family": "momentum",
+      "focus": "refine",
+      "reason": "viable leader exists in official results"
+    },
+    {
+      "best_experiment_id": "rl_bandit_e9249d03e9416f3c_proposal_20260403_184131",
+      "best_objective_score": 2.2439500000000003,
+      "family": "rl_bandit",
+      "focus": "explore",
+      "reason": "no viable leader yet; collect more evidence before narrowing"
+    },
+    {
+      "best_experiment_id": "superstock_6b3a48e4e20bcfc9_20260403172122",
+      "best_objective_score": 1.4212,
+      "family": "superstock",
+      "focus": "explore",
+      "reason": "no viable leader yet; collect more evidence before narrowing"
+    }
+  ],
+  "report_id": "analysis_20260404T012653.632810+0000",
+  "status": "complete",
+  "summary": {
+    "baseline_names": [
+      "momentum_champion_s10005"
+    ],
+    "family_counts": {
+      "ml_ranker": 6,
+      "momentum": 28,
+      "rl_bandit": 5,
+      "superstock": 9
+    },
+    "latest_non_empty_batch": {
+      "batch_id": "proposal_20260403_184131_batch",
+      "executed_count": 2,
+      "leaderboard_path": "experiments/batches/proposal_20260403_184131_batch/leaderboard.csv",
+      "summary_path": "experiments/batches/proposal_20260403_184131_batch/summary.json"
+    },
+    "official_results_count": 48,
+    "status_counts": {
+      "success": 48
+    },
+    "top_overall": [
+      {
+        "baseline_name": "momentum_champion_s10005",
+        "calmar": 3.002,
+        "comparison_status": "exact_verified_current_engine",
+        "config_hash": "e59f68426635b89e",
+        "experiment_id": "momentum_e59f68426635b89e_20260403165628",
+        "hypothesis": null,
+        "max_drawdown": -21.21,
+        "objective_score": 1.5763,
+        "reason_selected": null,
+        "result_dir": "/home/mrlearn/sp500-autoresearch/experiments/runs/momentum_e59f68426635b89e_20260403165628",
+        "sharpe": 0.808,
+        "source_type": null,
+        "status": "success",
+        "strategy_family": "momentum",
+        "strategy_type": null,
+        "template_id": null,
+        "timestamp_utc": "2026-04-03T16:56:28.784313+00:00",
+        "total_return": 15.9,
+        "trades_per_year": 31.9,
+        "viable": true
+      },
+      {
+        "baseline_name": "momentum_champion_s10005",
+        "calmar": 3.002,
+        "comparison_status": "exact_verified_current_engine",
+        "config_hash": "c99ba99ff8ea3c22",
+        "experiment_id": "momentum_c99ba99ff8ea3c22_20260403172047",
+        "hypothesis": null,
+        "max_drawdown": -21.21,
+        "objective_score": 1.5763,
+        "reason_selected": null,
+        "result_dir": "/home/mrlearn/sp500-autoresearch/experiments/runs/momentum_c99ba99ff8ea3c22_20260403172047",
+        "sharpe": 0.808,
+        "source_type": null,
+        "status": "success",
+        "strategy_family": "momentum",
+        "strategy_type": null,
+        "template_id": null,
+        "timestamp_utc": "2026-04-03T17:20:47.784159+00:00",
+        "total_return": 15.9,
+        "trades_per_year": 31.9,
+        "viable": true
+      },
+      {
+        "baseline_name": "momentum_champion_s10005",
+        "calmar": 2.922,
+        "comparison_status": "partial_verified_current_engine",
+        "config_hash": "1dcba25496e09f06",
+        "experiment_id": "momentum_1dcba25496e09f06_proposal_20260403_175150",
+        "hypothesis": "momentum_champion_s10005",
+        "max_drawdown": -23.1,
+        "objective_score": 1.5533,
+        "reason_selected": "local refinement around top historical configs",
+        "result_dir": "/home/mrlearn/sp500-autoresearch/experiments/runs/momentum_1dcba25496e09f06_proposal_20260403_175150",
+        "sharpe": 0.803,
+        "source_type": "local_refinement",
+        "status": "success",
+        "strategy_family": "momentum",
+        "strategy_type": null,
+        "template_id": null,
+        "timestamp_utc": "2026-04-03T17:51:50.013334+00:00",
+        "total_return": 15.6,
+        "trades_per_year": 31.5,
+        "viable": true
+      },
+      {
+        "baseline_name": "momentum_champion_s10005",
+        "calmar": 2.245,
+        "comparison_status": "exact_verified_current_engine",
+        "config_hash": "d2b14fdee1e31bc9",
+        "experiment_id": "momentum_d2b14fdee1e31bc9_20260403172042",
+        "hypothesis": null,
+        "max_drawdown": -21.4,
+        "objective_score": 1.37355,
+        "reason_selected": null,
+        "result_dir": "/home/mrlearn/sp500-autoresearch/experiments/runs/momentum_d2b14fdee1e31bc9_20260403172042",
+        "sharpe": 0.767,
+        "source_type": null,
+        "status": "success",
+        "strategy_family": "momentum",
+        "strategy_type": null,
+        "template_id": null,
+        "timestamp_utc": "2026-04-03T17:20:42.252401+00:00",
+        "total_return": 13.49,
+        "trades_per_year": 32.1,
+        "viable": true
+      },
+      {
+        "baseline_name": "momentum_champion_s10005",
+        "calmar": 2.356,
+        "comparison_status": "exact_verified_current_engine",
+        "config_hash": "71fbba97aea9e754",
+        "experiment_id": "momentum_71fbba97aea9e754_20260403165535",
+        "hypothesis": null,
+        "max_drawdown": -21.48,
+        "objective_score": 1.3228,
+        "reason_selected": null,
+        "result_dir": "/home/mrlearn/sp500-autoresearch/experiments/runs/momentum_71fbba97aea9e754_20260403165535",
+        "sharpe": 0.709,
+        "source_type": null,
+        "status": "success",
+        "strategy_family": "momentum",
+        "strategy_type": null,
+        "template_id": null,
+        "timestamp_utc": "2026-04-03T16:55:35.651259+00:00",
+        "total_return": 13.02,
+        "trades_per_year": 32.5,
+        "viable": true
+      }
+    ]
+  },
+  "timestamp_utc": "2026-04-04T01:26:53.632810+00:00"
+}

@@ -1,0 +1,93 @@
+{
+  "topic": {
+    "slug": "short_interest_contrarian",
+    "focus": "short interest and short squeeze dynamics as equity selection signal",
+    "angle": "days-to-cover, short utilisation, short-squeeze momentum"
+  },
+  "papers": [
+    {
+      "title": "Days to Cover and Stock Returns",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2568768",
+      "positive_result": true,
+      "hypothesis": "Long stocks ranked highest on days-to-cover (short interest divided by 20-day average volume) to harvest squeeze risk premium; DTC is orthogonal to short interest level and predicts positive return skewness.",
+      "lookback_days": 20,
+      "skip_days": 14,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "days-to-cover",
+        "short-squeeze-risk-premium",
+        "crowding"
+      ],
+      "rationale": "Hong, Li, Ni, Scheinkman, Yan (NBER w21166) show DTC captures the exit-cost of crowded shorts: high-DTC stocks are hard for short sellers to liquidate, creating squeeze potential. Unlike short interest ratio (which is bearish), high DTC predicts positive skewness and a distinct positive return premium in the cross-section. The 14-day skip accounts for the bi-monthly NASDAQ short interest reporting lag, avoiding stale data contamination."
+    },
+    {
+      "title": "Surprise in Short Interest",
+      "source": "https://www.sciencedirect.com/science/article/pii/S1386418123000393",
+      "positive_result": true,
+      "hypothesis": "Long stocks with negative short interest surprise (actual SI below the cross-sectional fitted expectation) as informed short-seller withdrawal is a bullish signal that negatively predicts returns.",
+      "lookback_days": 252,
+      "skip_days": 14,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "short-interest-surprise",
+        "residual-signal",
+        "cross-sectional-regression",
+        "distributional-adjustment"
+      ],
+      "rationale": "Hanauer, Lesnevski, Smajlbegovic (Journal of Financial Markets, 2023) show that decomposing short interest into expected (from lagged beta, size, B/M, momentum cross-sectional regression) and surprise components reveals only the surprise drives returns. Negative SSIR signals unexpected short-seller retreat, a bullish catalyst. Crucially the effect is unrelated to short-selling frictions and survives in international data, suggesting it reflects genuine information rather than a limits-to-arbitrage artifact."
+    },
+    {
+      "title": "The Loan Fee Anomaly: A Short Seller's Best Ideas",
+      "source": "https://pubsonline.informs.org/doi/10.1287/mnsc.2023.00152",
+      "positive_result": true,
+      "hypothesis": "Filter momentum winners by keeping only low-borrow-fee stocks (bottom quintile of equity loan fee / utilization rate) to avoid names where informed short sellers have highest conviction.",
+      "lookback_days": 21,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.2,
+      "techniques": [
+        "loan-fee",
+        "borrow-cost",
+        "short-utilization-filter",
+        "long-only-screen"
+      ],
+      "rationale": "Management Science 2024 paper shows equity loan fees dominate 120+ known anomalies as cross-sectional return predictors \u2014 high-fee stocks are where short sellers concentrate their best ideas and these stocks severely underperform. For a long-only momentum strategy, requiring borrow fee below the 20th percentile removes stocks with embedded short-seller conviction, improving signal purity without requiring short execution. Borrow fee data is available daily from securities lending feeds (IHS Markit, S3)."
+    },
+    {
+      "title": "Crowding Risk and Short Squeezes",
+      "source": "http://www.efmaefm.org/0EFMAMEETINGS/EFMA%20ANNUAL%20MEETINGS/2025-Greece/papers/Manuscript-with-author-details223.pdf",
+      "positive_result": true,
+      "hypothesis": "Long momentum stocks with high crowding scores (SI-as-pct-of-float \u00d7 DTC) combined with positive recent price momentum, as squeeze dynamics amplify and extend returns when short covering is forced.",
+      "lookback_days": 63,
+      "skip_days": 14,
+      "hold_days": 21,
+      "top_n_pct": 0.05,
+      "techniques": [
+        "crowding-score",
+        "si-pct-float",
+        "days-to-cover-composite",
+        "squeeze-momentum-interaction"
+      ],
+      "rationale": "Dusaniwsky (S3 Partners, EFMA 2025) documents that crowded short positions in stocks already exhibiting price strength produce squeeze dynamics that accelerate and extend momentum. Constructing a composite crowding score (SI/float \u00d7 DTC) and requiring positive 63-day trailing return (confirming the squeeze catalyst is active) selects stocks where forced short covering will continue to drive prices. This is a concentrated signal but has high precision for momentum amplification."
+    },
+    {
+      "title": "How Prevalent Are Short Squeezes? Evidence from the US and Europe",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4526147",
+      "positive_result": true,
+      "hypothesis": "Event-flag stocks where shares on loan cross above shares available to lend (utilization > 100%) and go long, as lender squeezes trigger forced covering and predict significant 5-10 day price appreciation.",
+      "lookback_days": 5,
+      "skip_days": 1,
+      "hold_days": 10,
+      "top_n_pct": 0.05,
+      "techniques": [
+        "lender-squeeze",
+        "utilization-threshold",
+        "securities-lending-event",
+        "forced-cover"
+      ],
+      "rationale": "Allen, Haas, Pirovano, Tengulov (SSRN 4526147 / Journal of Banking & Finance 2025) provide first large-sample evidence showing lender squeezes (loan > supply, utilization > 100%) produce measurable positive abnormal returns as short sellers are forced to cover. The event affects ~10% of US stocks per quarter, is short-lived (5-10 days), and is distinct from voluntary squeeze dynamics. As a daily event signal layered onto momentum ranking, this identifies stocks with an immediate mechanical catalyst for price appreciation."
+    }
+  ]
+}

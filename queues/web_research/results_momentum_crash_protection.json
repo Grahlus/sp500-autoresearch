@@ -1,0 +1,92 @@
+{
+  "topic": {
+    "slug": "momentum_crash_protection",
+    "focus": "momentum crash risk management and drawdown protection",
+    "angle": "bear-market filters, VIX gating, short-term reversal overlay"
+  },
+  "papers": [
+    {
+      "title": "Momentum Crashes and the 52-Week High",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2900073 | Financial Analysts Journal 79(2):120-139, 2023",
+      "positive_result": true,
+      "hypothesis": "Construct crash-neutral momentum by making the cross-sectional ranking orthogonal to each stock's price-to-52-week-high ratio (PTH), removing the speculative rebound component that drives momentum crashes.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "52-week-high neutralization",
+        "residual momentum",
+        "crash-risk attenuation"
+      ],
+      "rationale": "Published in FAJ 2023, Byun & Jeon show that stocks far from their 52-week highs disproportionately drive momentum crashes during market rebounds. Constructing residual momentum (regress 12-1mo returns on PTH, rank on residuals) achieves higher Sharpe and lower crash frequency in US and international markets. This is a signal-construction change, not a macro gate, so it is compatible with the existing walk-forward framework and costs no additional lookback data beyond what is already available."
+    },
+    {
+      "title": "Short-term momentum and reversals, turnover, and a stock's price-to-52-week-high ratio",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4122300 | Journal of Empirical Finance 79, 2024",
+      "positive_result": true,
+      "hypothesis": "Condition the standard skip-last-month rule on each stock's PTH and turnover: suppress the skip for high-PTH, high-turnover stocks (where short-term momentum dominates), and apply a stronger skip for low-PTH, low-turnover stocks (where reversal dominates).",
+      "lookback_days": 21,
+      "skip_days": null,
+      "hold_days": 21,
+      "top_n_pct": 0.2,
+      "techniques": [
+        "PTH conditioning",
+        "turnover filter",
+        "adaptive skip-last-month",
+        "reversal avoidance"
+      ],
+      "rationale": "Chen, Stivers & Sun (2024, JEF) demonstrate that the well-known 1-month reversal switches to continuation for stocks with simultaneously high price-to-52-week-high and high share turnover. This means the blanket skip-21-day rule throws away real signal for a subset of winners. Segmenting the universe on these two dimensions before applying the skip can recover alpha and reduce crash exposure by avoiding the most reversal-prone names during rebounds."
+    },
+    {
+      "title": "Avoid Equity Bear Markets with a Market Timing Strategy",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4397638 | SSRN Working Paper, \u010eurian & Vojtko, March 2023",
+      "positive_result": true,
+      "hypothesis": "Apply a 200-day SMA bear-market gate on the broad index (SPY/IWB): when index price is below its 200-day SMA, scale down or fully flatten the long side of the momentum portfolio rather than holding through the drawdown.",
+      "lookback_days": 200,
+      "skip_days": null,
+      "hold_days": null,
+      "top_n_pct": null,
+      "techniques": [
+        "200-day SMA filter",
+        "bear market gate",
+        "long-side scaling",
+        "market timing overlay"
+      ],
+      "rationale": "\u010eurian & Vojtko (SSRN 2023) test a composite bear-market timing model whose core signal is a 200-day SMA on the broad equity index; applied from 1927-2023, it more than doubles the market Sharpe ratio and cuts maximum drawdown by two-thirds. As an overlay on a cross-sectional strategy, this gate is easy to implement as a binary or proportional position scalar applied daily to the long leg, adding minimal complexity and no additional signal contamination of the OOS period."
+    },
+    {
+      "title": "Smoothing Out Momentum and Reversal",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4955388 | Swiss Finance Institute Research Paper No. 24-47, Chitsiripanich, Paolella, Polak & Walker, 2024",
+      "positive_result": true,
+      "hypothesis": "Introduce a path-dependent hold constraint that prevents rebalancing a position unless the new signal rank changes by more than a threshold delta, reducing turnover by ~95% and capping maximum drawdown to 22-49% versus 76-99% for unconstrained momentum.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "path-dependent hold constraint",
+        "turnover regularization",
+        "signal persistence filter",
+        "drawdown capping"
+      ],
+      "rationale": "Chitsiripanich et al. (SFI 2024) show that a sequential portfolio optimizer with path-dependent constraints that classify assets by signal strength versus rebalancing cost reduces portfolio turnover by 95-99% relative to daily rebalancing, while improving net Sharpe by 38-149% under realistic costs. For a walk-forward strategy already incurring $20/trade commissions, a persistence constraint that holds positions through small rank fluctuations directly reduces the cost drag that penalizes high-frequency rebalancing."
+    },
+    {
+      "title": "Momentum, Market Volatility, and Reversal",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4342008 | SSRN Working Paper, Butt, Kolari & Sadaqat, 2023",
+      "positive_result": false,
+      "hypothesis": "Scale cross-sectional momentum exposure inversely with realized market volatility (e.g., 21-day rolling SPX volatility), reducing position size when vol is elevated and increasing it when vol is suppressed.",
+      "lookback_days": 21,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "volatility scaling",
+        "realized vol conditioning",
+        "inverse-vol sizing"
+      ],
+      "rationale": "Butt et al. (SSRN 2023) find that while time-series vol scaling improves time-series momentum, its benefit for cross-sectional momentum is mixed and regime-dependent \u2014 high-volatility periods that trigger scale-down often precede the strongest subsequent cross-sectional momentum, not reversals, so the gate fires at precisely the wrong time. This aligns with prior failed vol-targeting experiments in this research codebase (Session 9), confirming the result is likely negative for cross-sectional settings and suggesting volatility conditioning should be approached as a secondary signal layer rather than a direct position scalar."
+    }
+  ]
+}

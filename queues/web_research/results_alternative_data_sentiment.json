@@ -1,0 +1,92 @@
+{
+  "topic": {
+    "slug": "alternative_data_sentiment",
+    "focus": "alternative data sentiment signals: news, social media, web traffic",
+    "angle": "RavenPack sentiment, Reddit/Twitter mentions, Google Trends as momentum overlay"
+  },
+  "papers": [
+    {
+      "title": "News Momentum",
+      "source": "https://www.ravenpack.com/research/news-momentum",
+      "positive_result": true,
+      "hypothesis": "Rank stocks cross-sectionally by a 63-day rolling news-sentiment momentum score (RavenPack ESS/CSS aggregated to firm-level) with a 5-day skip, going long top decile; hard news releases drive 0.948%/month abnormal return (FF5-adjusted, 11.4% p.a.).",
+      "lookback_days": 63,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "RavenPack ESS",
+        "buzz-weighted sentiment score",
+        "cross-sectional z-score ranking"
+      ],
+      "rationale": "RavenPack entity-level news sentiment aggregated over 63 trading days captures slow-moving information diffusion that is orthogonal to pure price momentum. The 5-day skip prevents reversal from short-term overreaction. Abnormal return survives FF5 and is not subsumed by the price-momentum factor, making it a genuine additive overlay."
+    },
+    {
+      "title": "The Social Signal",
+      "source": "https://www.sciencedirect.com/science/article/abs/pii/S0304405X2400093X",
+      "positive_result": false,
+      "hypothesis": "Use prior-5-day average firm-level Twitter/StockTwits sentiment (from Social Market Analytics) as a cross-sectional ranking overlay, but condition on message-volume spikes (top quintile activity) to filter noise; informativeness collapsed after the Jan-2021 GME episode.",
+      "lookback_days": 5,
+      "skip_days": 1,
+      "hold_days": 5,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "Social Market Analytics API",
+        "volume-conditioned sentiment",
+        "multi-platform aggregation"
+      ],
+      "rationale": "Pre-2021, Twitter+StockTwits sentiment predicted analyst forecast revisions and earnings, giving measurable cross-sectional alpha. Post-GME the paper documents a structural break: return sensitivity to sentiment dropped sharply, likely due to coordinated retail manipulation inflating signal noise. Useful as a cautionary parameter bound \u2014 if using social sentiment, require message-volume spike conditioning and backtest only on 2022+ data to avoid optimism bias from the pre-GME regime."
+    },
+    {
+      "title": "Sentiment, Social Media, and Meme Stock Return Predictability",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4947010",
+      "positive_result": false,
+      "hypothesis": "Monthly identify meme-stock candidates via Reddit WSB textual mention counts; long the top-mentioned stocks produces positive alpha at 1-week horizon but significantly negative alpha beyond 1 month \u2014 usable as a short-side or avoidance screen in a cross-sectional momentum strategy.",
+      "lookback_days": 21,
+      "skip_days": 0,
+      "hold_days": 5,
+      "top_n_pct": 0.05,
+      "techniques": [
+        "Reddit WSB mention volume",
+        "textual analysis",
+        "short-horizon momentum",
+        "reversal screen"
+      ],
+      "rationale": "The paper shows Reddit-driven price inflation reverts sharply beyond 1-month, consistent with attention-driven mispricing. For a cross-sectional momentum strategy, flagging top-quintile Reddit-attention stocks as universe exclusions or downweights (rather than longs) could reduce drawdown from sentiment-induced momentum traps. The negative longer-horizon result is the actionable edge here."
+    },
+    {
+      "title": "Google Search Volume Index and Investor Attention in Stock Market: A Systematic Review",
+      "source": "https://link.springer.com/article/10.1186/s40854-023-00606-y",
+      "positive_result": true,
+      "hypothesis": "Construct a weekly attention-surge indicator per stock (Google Trends SVI z-scored over 52-week rolling window); stocks entering top-quintile attention (SVI z-score > 1.5) exhibit short-term return continuation of ~0.5\u20131% over the following 5\u201310 trading days before reversal \u2014 usable as a 2-week momentum accelerator overlay.",
+      "lookback_days": 260,
+      "skip_days": 2,
+      "hold_days": 10,
+      "top_n_pct": 0.2,
+      "techniques": [
+        "Google Trends SVI",
+        "attention z-score",
+        "52-week rolling normalization",
+        "attention-surge filter"
+      ],
+      "rationale": "The systematic review confirms GSVI significantly impacts short-term return predictability and liquidity across multiple markets; attention surges act as a catalyst that temporarily accelerates existing momentum. The 52-week normalization handles structural SVI level shifts. Combining an SVI-surge filter with price momentum lookback may improve the momentum signal-to-noise ratio by selecting stocks where investor attention is reinforcing rather than merely reflecting the price trend."
+    },
+    {
+      "title": "Technical Patterns and News Sentiment in Stock Markets",
+      "source": "https://www.sciencedirect.com/science/article/pii/S2405918824000308",
+      "positive_result": true,
+      "hypothesis": "Combine a classical technical pattern signal (e.g., 52-week high proximity) with a concurrent 21-day news sentiment z-score; the joint signal \u2014 requiring both a bullish pattern AND positive sentiment z-score > 0.5 \u2014 yields higher Sharpe than either alone in cross-sectional long-short portfolios.",
+      "lookback_days": 21,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "news sentiment z-score",
+        "52-week high momentum",
+        "pattern-sentiment conjunction filter",
+        "cross-sectional ranking"
+      ],
+      "rationale": "The paper demonstrates that news sentiment and technical patterns are complementary rather than substitutes: technical patterns identify price structure while sentiment confirms narrative alignment, reducing false breakouts. A conjunction filter (both must be positive) approximately halves the long-list size but increases hit rate, which is directly actionable as an additional ranking dimension or as a confirmation gate on the existing momentum score in the current S10-005 architecture."
+    }
+  ]
+}

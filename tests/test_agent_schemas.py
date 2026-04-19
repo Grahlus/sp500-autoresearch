@@ -35,6 +35,14 @@ class AgentSchemaTests(unittest.TestCase):
                 priority=0.8,
                 estimated_cost="medium_cpu",
                 timestamp_utc="2026-04-04T00:00:00+00:00",
+                idea_provider="minimax",
+                idea_model="MiniMax-M2.7",
+                is_structurally_novel=True,
+                is_out_of_box=True,
+                structural_distance=0.91,
+                template_similarity_class="portfolio_overlay",
+                uncommon_idea_reason="Test structural idea",
+                is_uncommon_idea=True,
             )
             proposal = ProposalRecord(
                 proposal_id="proposal1",
@@ -61,6 +69,12 @@ class AgentSchemaTests(unittest.TestCase):
             self.assertTrue(idea_path.exists())
             self.assertTrue(proposal_path.exists())
             self.assertTrue(report_path.exists())
+            saved_idea = load_json_records(Path(tmp) / "queues" / "ideas")[0]
+            self.assertEqual(saved_idea["idea_provider"], "minimax")
+            self.assertEqual(saved_idea["idea_model"], "MiniMax-M2.7")
+            self.assertTrue(saved_idea["is_structurally_novel"])
+            self.assertTrue(saved_idea["is_out_of_box"])
+            self.assertEqual(saved_idea["template_similarity_class"], "portfolio_overlay")
             self.assertEqual(len(load_json_records(Path(tmp) / "queues" / "ideas")), 1)
             self.assertEqual(len(load_json_records(Path(tmp) / "queues" / "proposals")), 1)
             self.assertEqual(len(load_json_records(Path(tmp) / "reports")), 1)

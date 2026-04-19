@@ -1,0 +1,28 @@
+{
+  "backoff_reason": "cooldown",
+  "backoff_state": "cooldown",
+  "last_attempt_at": "2026-04-19T14:00:11.557233+00:00",
+  "last_failure_at": null,
+  "last_success_at": "2026-04-19T14:00:11.557241+00:00",
+  "last_topic_slug": "regime_switching_momentum",
+  "next_retry_at": "2026-04-19T16:00:11.557244+00:00",
+  "papers_found": 1,
+  "queued_idea_count": 33,
+  "queued_web_idea_count": 1,
+  "session_limit_hit": false,
+  "timestamp_utc": "2026-04-19T14:00:11.557606+00:00",
+  "used_topic_slugs": [
+    "momentum_lookback_optimisation",
+    "momentum_volatility_scaling",
+    "residual_momentum",
+    "momentum_crash_protection",
+    "52_week_high_anchor",
+    "earnings_momentum_drift",
+    "options_flow_signal",
+    "short_interest_contrarian",
+    "insider_trading_signal",
+    "alternative_data_sentiment",
+    "regime_switching_momentum"
+  ],
+  "web_search_available": true
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ import pandas as pd
 
 from experiment_objective import rank_results
 from experiment_memory_guard import current_process_memory_kb
-from experiment_hot_index import refresh_hot_index_reports, upsert_batch_summary
+from experiment_hot_index import compact_batch_summary_for_disk, refresh_hot_index_reports, upsert_batch_summary
 from experiment_parallel import run_experiments_parallel
 from experiment_runner import run_single_experiment
 from experiment_spaces import enumerate_grid_candidates, list_searchable_families, sample_random_candidates
@@ -23,6 +24,8 @@ from prepare import load_data
 DEFAULT_BASELINES = {
     "momentum": "momentum_champion_s10005",
 }
+
+BATCH_SUMMARY_DISK_LIMIT_BYTES = 2_000_000
 
 DEFAULT_STRATEGY_TYPES = {
     "momentum": "classical",
@@ -380,7 +383,18 @@ def save_batch_reports(batch_result: BatchResult, *, base_dir: str) -> dict[str,
     summary["leaderboard_path"] = str(leaderboard_path)
     summary["raw_results_path"] = str(raw_results_path)
     summary["summary_path"] = str(summary_path)
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True))
+    if not leaderboard.empty:
+        top_results = leaderboard.copy()
+        if "objective_score" in top_results.columns:
+            top_results["_objective_score"] = pd.to_numeric(top_results["objective_score"], errors="coerce")
+            top_results = top_results.sort_values("_objective_score", ascending=False, na_position="last")
+        summary["top_results"] = top_results.head(5).drop(columns=["_objective_score"], errors="ignore").to_dict("records")
+        if "viable" in leaderboard.columns:
+            summary["viable_count"] = int(leaderboard["viable"].astype(str).str.lower().isin(["true", "1", "yes"]).sum())
+        if "beats_baseline_objective" in leaderboard.columns:
+            summary["baseline_beating_count"] = int(
+                leaderboard["beats_baseline_objective"].astype(str).str.lower().isin(["true", "1", "yes"]).sum()
+            )
     try:
         upsert_batch_summary(base_dir, summary)
         refresh_hot_index_reports(
@@ -390,6 +404,15 @@ def save_batch_reports(batch_result: BatchResult, *, base_dir: str) -> dict[str,
         )
     except Exception:
         pass
+    disk_limit = int(os.environ.get("BATCH_SUMMARY_DISK_LIMIT_BYTES", str(BATCH_SUMMARY_DISK_LIMIT_BYTES)))
+    disk_summary = compact_batch_summary_for_disk(summary, limit_bytes=disk_limit)
+    disk_summary["artifact_compaction"] = {
+        **(disk_summary.get("artifact_compaction") if isinstance(disk_summary.get("artifact_compaction"), dict) else {}),
+        "mode": "write_compact_summary",
+        "disk_limit_bytes": disk_limit,
+        "sqlite_written": True,
+    }
+    summary_path.write_text(json.dumps(disk_summary, indent=2, sort_keys=True, default=str))
 
     return {
         "leaderboard_path": str(leaderboard_path),
@@ -625,6 +648,7 @@ def proposal_to_batch_request(
                     selection_score=metadata.get("selection_score"),
                     source_proposal_id=proposal.request.proposal_id,
                     source_idea_ids=metadata.get("source_idea_ids"),
+                    idea_id=metadata.get("idea_id"),
                     idea_source=metadata.get("idea_source"),
                     idea_kind=metadata.get("idea_kind"),
                     novelty_reason=metadata.get("novelty_reason"),
@@ -640,6 +664,8 @@ def proposal_to_batch_request(
                     repeat_branch_depth=metadata.get("repeat_branch_depth"),
                     new_idea_budget_bucket=metadata.get("new_idea_budget_bucket"),
                     uncommon_idea_reason=metadata.get("uncommon_idea_reason"),
+                    synthesized_template_family=metadata.get("synthesized_template_family"),
+                    synthesis_rationale=metadata.get("synthesis_rationale"),
                     confirmation_state=metadata.get("confirmation_state") or proposal.request.confirmation_state,
                     confirmation_required=bool(
                         metadata.get("confirmation_required")

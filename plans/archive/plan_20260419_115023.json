@@ -1,0 +1,53 @@
+{
+  "plan_id": "plan_20260419_115023",
+  "created_at": "2026-04-19T11:50:23Z",
+  "valid_until": "2026-04-19T17:50:23Z",
+  "planner_name": "claude_planner_v1",
+  "planner_model": "claude-opus-4-7",
+  "planner_provider": "anthropic",
+  "planning_window_hours": 6.0,
+  "source_report_ids": [],
+  "source_dashboard_timestamp": "2026-04-19T11:50:20.445100+00:00",
+  "family_budgets": {
+    "momentum": 0.55,
+    "superstock": 0.35,
+    "ml_ranker": 0.1
+  },
+  "template_budgets": {
+    "momentum_volatility_gate": 0.12,
+    "momentum_quality_concentrated": 0.12,
+    "momentum_crash_robust": 0.1,
+    "momentum_balanced_default": 0.08,
+    "superstock_momentum_hybrid": 0.12,
+    "superstock_high_liquidity": 0.1,
+    "superstock_breakout_focused": 0.08,
+    "superstock_volatility_conservative": 0.08,
+    "confirmation_local_neighborhood": 0.05
+  },
+  "holdout_priorities": [
+    "momentum_8e89d89098a61297"
+  ],
+  "new_idea_quota": 0.55,
+  "uncommon_idea_quota": 0.35,
+  "repeat_branch_cap": 2,
+  "stagnation_escape_active": true,
+  "ml_probe_allowed": true,
+  "rl_probe_allowed": false,
+  "rationale": "Momentum is clearly stagnating \u2014 top experiments are all the same config hash (8e89d89098a61297, obj=2.0594) repeating across confirmation_local_neighborhood with dead_zone_density=0.83 and negative recent objective trend. Shifting budget toward structural template expansion (volatility_gate, quality_concentrated, crash_robust) and reviving superstock via momentum-hybrid and high-liquidity probes since superstock has 0% viable rate but higher best_score ceiling (3.08). Low ml_ranker probe retained; rl_bandit paused as it's CPU-heavy and negative trending.",
+  "cycle_mode_override": "stagnation_escape",
+  "targeted_validation_priority": "momentum_8e89d89098a61297",
+  "families_paused": [
+    "rl_bandit"
+  ],
+  "branches_deprioritized": [
+    "confirmation_local_neighborhood",
+    "momentum_8e89d89098a61297"
+  ],
+  "source_idea_ids": [
+    "idea_momentum_momentum_volatility_gate_20260418T151614.212326+0000",
+    "idea_momentum_momentum_quality_concentrated_20260418T151614.212314+0000",
+    "idea_momentum_momentum_crash_robust_20260418T151614.212298+0000",
+    "idea_superstock_superstock_momentum_hybrid_20260418T151614.241827+0000",
+    "idea_superstock_superstock_high_liquidity_20260418T151614.241843+0000"
+  ]
+}

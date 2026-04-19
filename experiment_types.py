@@ -39,6 +39,7 @@ class ExperimentSpec:
     source_proposal_id: str | None = None
     source_batch_id: str | None = None
     source_idea_ids: list[str] | None = None
+    idea_id: str | None = None
     idea_source: str | None = None
     idea_kind: str | None = None
     novelty_reason: str | None = None
@@ -50,6 +51,8 @@ class ExperimentSpec:
     repeat_branch_depth: int | None = None
     new_idea_budget_bucket: str | None = None
     uncommon_idea_reason: str | None = None
+    synthesized_template_family: str | None = None
+    synthesis_rationale: str | None = None
     confirmation_state: str | None = None
     confirmation_required: bool = False
     confirmation_reason: str | None = None
@@ -167,11 +170,19 @@ class ProposalRequest:
     confirmation_budget: int | None = None
     new_idea_quota: int | None = None
     uncommon_idea_quota: int | None = None
+    uncommon_idea_budget: int | None = None
+    structural_idea_budget: int | None = None
+    out_of_box_budget: int | None = None
+    max_routine_template_budget: int | None = None
     repeat_branch_cap: int | None = None
     max_same_template_per_cycle: int | None = None
     max_same_lineage_per_cycle: int | None = None
     structural_novelty_threshold: float = 0.55
     uncommon_template_bonus: float = 0.10
+    structural_execution_lane_enabled: bool = True
+    structural_execution_lane_budget: int | None = None
+    structural_execution_lane_min_candidates: int | None = None
+    structural_execution_lane_repeat_cap: int | None = None
     branch_budgets: dict[str, list[dict[str, Any]]] | None = None
     branch_budget_rationale: dict[str, Any] | None = None
     use_idea_queue: bool = True

@@ -1,0 +1,74 @@
+{
+  "topic": {
+    "slug": "regime_switching_momentum",
+    "focus": "regime-conditional momentum \u2014 adapting to market regimes",
+    "angle": "HMM regimes, macro-regime gating, time-series momentum as filter"
+  },
+  "search_results": [
+    {
+      "title": "Search for massive rare particles with MACRO",
+      "source": "https://arxiv.org/abs/hep-ex/0009002v1",
+      "snippet": "Massive rare particles have been searched for in the penetrating cosmic radiation using the MACRO apparatus at the Gran Sasso National Laboratories. Liquid scintillators, streamer tubes and nuclear track detectors have been used to search for magnetic monopoles (MMs). Based on no observation of such signals, stringent flux limits are established for MMs as slow as a few 10^(-5)c. The methods based on the scintillator and on the nuclear track subdetectors were also applied to search for nuclearites. Preliminary results of the searches for charged Q-balls are also presented."
+    },
+    {
+      "title": "Nuclearite search with the MACRO detector at Gran Sasso",
+      "source": "https://arxiv.org/abs/hep-ex/9904031v1",
+      "snippet": "In this paper we present the results of a search for nuclearites in the penetrating cosmic radiation using the scintillator and track-etch subdetectors of the MACRO apparatus. The analyses cover the beta =v/c range at the detector depth (3700 hg/cm^2) 10^-5 < beta < 1; for beta = 2 x 10^-3 the flux limit is 2.7 x 10^-16 cm^-2 s^-1 sr^-1 for an isotropic flux of nuclearites, and twice this value for a flux of downgoing nuclearites."
+    },
+    {
+      "title": "Moon and Sun shadowing effect in the MACRO detector",
+      "source": "https://arxiv.org/abs/astro-ph/0302586v1",
+      "snippet": "Using data collected by the MACRO experiment from 1989 to the end of its operations in 2000, we have studied in the underground muon flux the shadowing effects due to both the Moon and the Sun. We have observed the Moon shadowing effect with a significance of 6.5 sigma and the Sun shadowing effect with a significance of 4.3 sigma. The observed displacement of the Sun shadow, due to the configurations of the solar and interplanetary magnetic fields, has been used to quote the antiproton/proton flux limits for primaries of about 20 TeV energy."
+    },
+    {
+      "title": "Final results of magnetic monopole searches with the MACRO experiment",
+      "source": "https://arxiv.org/abs/hep-ex/0207020v2",
+      "snippet": "We present the final results obtained by the MACRO experiment in the search for GUT magnetic monopoles in the penetrating cosmic radiation, for the range $4\\times 10^{-5}< \u03b2< 1$. Several searches with all the MACRO sub-detectors (i.e. scintillation counters, limited streamer tubes and nuclear track detectors) were performed, both in stand alone and combined ways. No candidates were detected and a 90% Confidence Level (C.L.) upper limit to the local magnetic monopole flux was set at the level of $1.4\\times 10^{-16}$ cm$^{-2}$ s$^{-1}$ sr$^{-1}$. This result is the first experimental limit obtained in direct searches which is well below the Parker bound in the whole $\u03b2$ range in which GUT magnetic monopoles are expected."
+    },
+    {
+      "title": "Study of CR primaries and their cascades at E0 = 10-100 TeV through EAS-TOP and MACRO",
+      "source": "https://arxiv.org/abs/astro-ph/0112475v1",
+      "snippet": "A measurement of the lateral distribution of Cherenkov light in Extensive Air Showers (EAS) at E0 = 10-100 TeV and a study of the compatibility of the photon number spectra with the expectations from the direct measurements of p and He spectra and the Corsika-QGSJET propagation code in the atmosphere have been performed at the National Gran Sasso Laboratories by the EAS-TOP and MACRO arrays. The telescope array of EAS-TOP has been used as the Cherenkov light detector. The muon tracking system of MACRO in the deep underground Gran Sasso Laboratories (Emuon> 1.3 TeV) served as the EAS detector, including core localization and arrival direction."
+    },
+    {
+      "title": "A Search for Lightly Ionizing Particles with the MACRO Detector",
+      "source": "https://arxiv.org/abs/hep-ex/0002029v2",
+      "snippet": "A search for lightly ionizing particles has been performed with the MACRO detector. This search was sensitive to particles with charges between $\\fractional{5}$$e$ and close to the charge of an electron, with $\u03b2$ between approximately 0.25 and 1.0. Unlike previous searches both single track events and tracks buried within high multiplicity muon showers were examined. In a period of approximately one year no candidates were observed. Assuming an isotropic flux, for the single track sample this corresponds to a 90% C.L. upper flux limit $\u03a6\\leq 9.2 \\times 10^{-15} cm^{-2} sec^{-1} sr^{-1}$ ."
+    },
+    {
+      "title": "Multiple Muon Measurements with MACRO",
+      "source": "https://arxiv.org/abs/hep-ex/9410001v3",
+      "snippet": "The MACRO experiment at Gran Sasso provides means for detailed studies of multiple coincident penetrating cosmic ray muons. In this paper we concentrate on the studies of the ultrahigh energy primary cosmic ray composition using muon bundle multiplicities, muon pair lateral and angular separation distributions."
+    },
+    {
+      "title": "Search for Nucleon Decays induced by GUT Magnetic Monopoles with the MACRO Experiment",
+      "source": "https://arxiv.org/abs/hep-ex/0207024v1",
+      "snippet": "The interaction of a Grand Unification Magnetic Monopole with a nucleon can lead to a barion-number violating process in which the nucleon decays into a lepton and one or more mesons (catalysis of nucleon decay). In this paper we report an experimental study of the effects of a catalysis process in the MACRO detector. Using a dedicated analysis we obtain new magnetic monopole (MM) flux upper limits at the level of $\\sim 3\\cdot 10^{-16} cm^{-2} s^{-1} sr^{-1}$ for $1.1\\cdot 10^{-4} \\le |\u03b2| \\le 5\\cdot 10^{-3}$, based on the search for catalysis events in the MACRO data. We also analyze the dependence of the MM flux limit on the catalysis cross section."
+    }
+  ],
+  "papers": [
+    {
+      "title": "Cross-sectional equity momentum with HMM regime detection",
+      "source": "No relevant sources in provided results; physics papers on MACRO detector irrelevant to equity momentum",
+      "positive_result": false,
+      "hypothesis": "Apply Hidden Markov Models to detect market regimes, gating momentum signals based on regime probability, using time-series momentum as a filter for cross-sectional ranking",
+      "idea_kind": "new_regime_filter_concept",
+      "template_similarity_class": "regime_filter",
+      "structural_distance": 1.0,
+      "is_structurally_novel": true,
+      "is_out_of_box": true,
+      "is_uncommon_idea": true,
+      "uncommon_idea_reason": "No relevant sources found - this is a synthesized request based on the stated research focus rather than search results",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "HMM",
+        "regime_detection",
+        "time_series_momentum_filter"
+      ],
+      "rationale": "The provided search results contain only particle physics papers (MACRO detector cosmic ray experiments) with no relevance to equity momentum strategies. This idea is synthesized from the stated research focus but not grounded in the supplied sources."
+    }
+  ]
+}

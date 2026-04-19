@@ -332,6 +332,20 @@ def build_family_idea_yield_guidance(family_summary: dict[str, Any]) -> dict[str
     graduated_template_family = None
     if support_state == "graduated_structural_family":
         graduated_template_family = family_summary.get("graduated_template_family") or structural_record.get("synthesized_template_family")
+    structural_attempt_count = int(structural_record.get("idea_attempt_count") or 0)
+    structural_recent_attempt_count = int(structural_record.get("idea_recent_attempt_count") or 0)
+    if support_state == "graduated_structural_family":
+        lane_budget = 3
+        lane_min_candidates = 2
+        lane_repeat_cap = 3
+    elif support_state == "yield_supported":
+        lane_budget = 2
+        lane_min_candidates = 1
+        lane_repeat_cap = 2
+    else:
+        lane_budget = 1
+        lane_min_candidates = 1
+        lane_repeat_cap = 1
     return {
         "idea_state": str(family_summary.get("idea_state") or "untested"),
         "idea_quality_score": round(float(family_summary.get("idea_quality_score") or 0.0), 6),
@@ -365,6 +379,12 @@ def build_family_idea_yield_guidance(family_summary: dict[str, Any]) -> dict[str
         "structural_family_yield_supported": support_state == "yield_supported",
         "structural_family_graduated": support_state == "graduated_structural_family",
         "graduated_template_family": graduated_template_family,
+        "structural_execution_lane_enabled": True,
+        "structural_execution_lane_budget": lane_budget,
+        "structural_execution_lane_min_candidates": lane_min_candidates,
+        "structural_execution_lane_repeat_cap": lane_repeat_cap,
+        "structural_execution_lane_recent_active": bool(structural_recent_attempt_count > 0 or structural_attempt_count > 0),
+        "structural_execution_lane_recent_attempt_count": structural_recent_attempt_count,
         "structural_family_feedback": {
             "old_state": family_summary.get("structural_family_state_previous")
             or structural_record.get("idea_state_previous"),
@@ -657,6 +677,17 @@ def _summarize_records(records: list[IdeaYieldRecord], *, top_n: int = 5) -> dic
     }
 
 
+def _has_non_empty_source_idea_ids(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, list):
+        return len(value) > 0
+    if isinstance(value, tuple):
+        return len(value) > 0
+    text = str(value).strip()
+    return text not in {"", "[]", "()", "None", "nan"}
+
+
 def build_idea_yield_summary(
     *,
     families: list[str],
@@ -746,6 +777,12 @@ def build_idea_yield_summary(
             **family_summary,
             "top_synthesized_template_families": [asdict(record) for record in sorted(grouped_sources["synthesized_template_family"], key=lambda record: (-record.idea_quality_score, -record.confidence, record.idea_key))[:5]],
         }))
+        structural_frame = frame[frame["source_type"].astype(str) == "structural_synthesis"].copy()
+        structural_llm_seeded_mask = structural_frame["source_idea_ids"].map(_has_non_empty_source_idea_ids) if "source_idea_ids" in structural_frame else pd.Series(dtype=bool)
+        structural_execution_counts_by_family = {
+            record.idea_key.split("::", 2)[-1]: int(record.idea_attempt_count)
+            for record in grouped_sources["synthesized_template_family"]
+        }
         family_summary.update(
             {
                 "family": family,
@@ -767,6 +804,21 @@ def build_idea_yield_summary(
                     "synthesized_template_family": {record.idea_key: asdict(record) for record in grouped_sources["synthesized_template_family"]},
                     "idea_id": {record.idea_key: asdict(record) for record in grouped_sources["idea_id"]},
                 },
+                "structural_synthesis_proposal_count": int(len(structural_frame)),
+                "structural_synthesis_execution_count": int(len(structural_frame)),
+                "structural_synthesis_llm_seeded_count": int(structural_llm_seeded_mask.sum()) if not structural_llm_seeded_mask.empty else 0,
+                "structural_synthesis_execution_counts_by_family": structural_execution_counts_by_family,
+                "structural_synthesis_top_families": [
+                    {
+                        "synthesized_template_family": record.synthesized_template_family,
+                        "idea_attempt_count": record.idea_attempt_count,
+                        "idea_viable_count": record.idea_viable_count,
+                        "idea_baseline_beat_count": record.idea_baseline_beat_count,
+                        "idea_source": record.idea_source,
+                        "idea_id": record.idea_id,
+                    }
+                    for record in sorted(grouped_sources["synthesized_template_family"], key=lambda record: (-record.idea_quality_score, -record.confidence, record.idea_key))[:5]
+                ],
             }
         )
         family_summary["structural_family_feedback"] = {

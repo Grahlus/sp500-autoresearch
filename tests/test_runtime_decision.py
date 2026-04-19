@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from experiment_dashboard import BestResultsDashboard
+from experiment_idea_yield import build_idea_yield_summary, save_idea_yield_summary
 from experiment_runtime_decision import _confirmation_batch_plan, _targeted_follow_up_plan, build_runtime_decision, save_runtime_decision
 from experiment_memory import load_research_memory
 from experiment_store import init_store, save_experiment_result
@@ -230,6 +231,146 @@ class RuntimeDecisionTests(unittest.TestCase):
         self.assertIn("heavily reduced", decision.rationale["family_budget_rationale"]["superstock"]["reason"])
         self.assertIn("ml_", decision.rationale["family_budget_rationale"]["ml_ranker"]["focus_mode"])
         self.assertIn("rl_", decision.rationale["family_budget_rationale"]["rl_bandit"]["focus_mode"])
+
+    def test_runtime_budget_changes_with_structural_family_promotion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            experiments_dir = Path(tmp) / "experiments"
+            init_store(str(experiments_dir))
+            _save_result(
+                str(experiments_dir),
+                experiment_id="m1",
+                family="momentum",
+                objective_score=1.2,
+                viable=True,
+                beats_baseline=True,
+                config={"LOOKBACK_WEEKS": 26},
+            )
+            _save_result(
+                str(experiments_dir),
+                experiment_id="s1",
+                family="superstock",
+                objective_score=1.2,
+                viable=True,
+                beats_baseline=True,
+                config={"max_positions": 5},
+            )
+            _save_result(
+                str(experiments_dir),
+                experiment_id="r1",
+                family="rl_bandit",
+                objective_score=1.0,
+                viable=True,
+                beats_baseline=True,
+                config={"policy_type": "ucb"},
+            )
+            _save_result(
+                str(experiments_dir),
+                experiment_id="mrank1",
+                family="ml_ranker",
+                objective_score=1.0,
+                viable=True,
+                beats_baseline=True,
+                config={"model_type": "ridge"},
+            )
+            _save_result(
+                str(experiments_dir),
+                experiment_id="m_structural",
+                family="momentum",
+                objective_score=0.1,
+                viable=False,
+                beats_baseline=False,
+                config={"LOOKBACK_WEEKS": 30},
+            )
+
+            summary = build_idea_yield_summary(families=["momentum", "superstock"], base_dir=str(experiments_dir), persist_memory=False)
+            momentum_summary = summary["families"]["momentum"]
+            momentum_structural = momentum_summary["records"]["synthesized_template_family"]["momentum::synthesized_template_family::unknown"]
+            momentum_summary.update(
+                {
+                    "structural_family_state": "untested",
+                    "structural_family_state_previous": None,
+                    "structural_family_promotion_state": "floor_protected",
+                    "structural_family_transition_reason": "no execution evidence yet",
+                    "graduated_template_family": None,
+                    "structural_family_feedback": {
+                        "old_state": None,
+                        "new_state": "untested",
+                        "promotion_state": "floor_protected",
+                        "reason": "no execution evidence yet",
+                        "graduated_template_family": None,
+                    },
+                }
+            )
+            momentum_structural.update(
+                {
+                    "structural_family_state": "untested",
+                    "structural_family_state_previous": None,
+                    "structural_family_promotion_state": "floor_protected",
+                    "structural_family_transition_reason": "no execution evidence yet",
+                    "graduated_template_family": None,
+                }
+            )
+            if momentum_summary.get("top_synthesized_template_families"):
+                momentum_summary["top_synthesized_template_families"][0].update(momentum_structural)
+            save_idea_yield_summary(summary, base_dir=str(experiments_dir))
+
+            floor_decision = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum", "superstock", "rl_bandit", "ml_ranker"],
+                    max_experiments=16,
+                    exploration_fraction=0.65,
+                    exploitation_fraction=0.35,
+                )
+            )
+
+            momentum_summary.update(
+                {
+                    "structural_family_state": "promising",
+                    "structural_family_state_previous": "untested",
+                    "structural_family_promotion_state": "graduated_structural_family",
+                    "structural_family_transition_reason": "positive viable and baseline-beating evidence is durable enough to graduate",
+                    "graduated_template_family": "portfolio_overlay",
+                    "structural_family_feedback": {
+                        "old_state": "untested",
+                        "new_state": "promising",
+                        "promotion_state": "graduated_structural_family",
+                        "reason": "positive viable and baseline-beating evidence is durable enough to graduate",
+                        "graduated_template_family": "portfolio_overlay",
+                    },
+                }
+            )
+            momentum_structural.update(
+                {
+                    "structural_family_state": "promising",
+                    "structural_family_state_previous": "untested",
+                    "structural_family_promotion_state": "graduated_structural_family",
+                    "structural_family_transition_reason": "positive viable and baseline-beating evidence is durable enough to graduate",
+                    "graduated_template_family": "portfolio_overlay",
+                }
+            )
+            if momentum_summary.get("top_synthesized_template_families"):
+                momentum_summary["top_synthesized_template_families"][0].update(momentum_structural)
+            save_idea_yield_summary(summary, base_dir=str(experiments_dir))
+
+            promoted_decision = build_runtime_decision(
+                RuntimeDecisionInput(
+                    workspace_root=tmp,
+                    experiments_dir=str(experiments_dir),
+                    strategy_families=["momentum", "superstock", "rl_bandit", "ml_ranker"],
+                    max_experiments=16,
+                    exploration_fraction=0.65,
+                    exploitation_fraction=0.35,
+                )
+            )
+
+        self.assertLess(floor_decision.family_budgets["momentum"], promoted_decision.family_budgets["momentum"])
+        self.assertEqual(floor_decision.rationale["family_budget_rationale"]["momentum"]["structural_family_promotion_state"], "floor_protected")
+        self.assertEqual(promoted_decision.rationale["family_budget_rationale"]["momentum"]["structural_family_promotion_state"], "graduated_structural_family")
+        self.assertIn("structural_state=", promoted_decision.rationale["family_budget_rationale"]["momentum"]["reason"])
+        self.assertIn("->graduated_structural_family", promoted_decision.rationale["family_budget_rationale"]["momentum"]["reason"])
+        self.assertIn("idea_yield_summary", promoted_decision.used_signals)
 
     def test_runtime_decision_allows_small_ml_rl_probe_when_momentum_is_stalled(self):
         fake_dashboard = BestResultsDashboard(

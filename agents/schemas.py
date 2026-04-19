@@ -4,7 +4,7 @@ import json
 import math
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,23 @@ class IdeaRecord:
     suggested_template_id: str | None = None
     suggested_config: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+    idea_source: str | None = None
+    source_idea_ids: list[str] = field(default_factory=list)
+    paper_title: str | None = None
+    web_search_used: bool = False
+    idea_provider: str | None = None
+    idea_model: str | None = None
+    template_id: str | None = None
+    idea_kind: str | None = None
+    novelty_reason: str | None = None
+    is_structurally_novel: bool = False
+    is_out_of_box: bool = False
+    structural_distance: float | None = None
+    template_similarity_class: str | None = None
+    uncommon_idea_reason: str | None = None
+    is_uncommon_idea: bool = False
+    is_new_idea: bool = False
+    is_branch_repeat: bool = False
     status: str = "new"
 
 

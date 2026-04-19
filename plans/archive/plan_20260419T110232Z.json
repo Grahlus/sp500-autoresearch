@@ -1,0 +1,52 @@
+{
+  "plan_id": "plan_20260419T110232Z",
+  "created_at": "2026-04-19T11:02:32.336127+00:00",
+  "valid_until": "2026-04-19T17:02:32.336127+00:00",
+  "planner_name": "claude_planner_v1",
+  "planner_model": "claude-opus-4-7",
+  "planner_provider": "anthropic",
+  "planning_window_hours": 6.0,
+  "source_report_ids": [],
+  "source_dashboard_timestamp": "2026-04-19T11:02:29.629871+00:00",
+  "family_budgets": {
+    "momentum": 0.7,
+    "superstock": 0.1,
+    "ml_ranker": 0.15,
+    "rl_bandit": 0.05
+  },
+  "template_budgets": {
+    "momentum_volatility_gate": 0.18,
+    "momentum_quality_concentrated": 0.15,
+    "momentum_crash_robust": 0.15,
+    "momentum_balanced_default": 0.1,
+    "momentum_vol_scaling_downside_v1": 0.08,
+    "momentum_drift_regime_strict_v1": 0.06,
+    "momentum_drift_regime_v1": 0.04,
+    "momentum_vol_scaling_v1": 0.04,
+    "superstock_momentum_hybrid": 0.05,
+    "superstock_volatility_conservative": 0.03,
+    "superstock_high_liquidity": 0.02
+  },
+  "holdout_priorities": [],
+  "new_idea_quota": 0.55,
+  "uncommon_idea_quota": 0.4,
+  "repeat_branch_cap": 2,
+  "stagnation_escape_active": true,
+  "ml_probe_allowed": true,
+  "rl_probe_allowed": true,
+  "rationale": "Momentum is showing severe stagnation: dead-zone density 0.83, the top 10 leaderboard slots are all occupied by the identical config hash 8e89d89098a61297 (obj=2.0594), and confirmation lineage keeps producing near-duplicates. Superstock is effectively exhausted (viable_rate=0.0, dead_zone=0.96, duplicate_saturation=0.92), so its budget is slashed while ml_ranker gets a small probe since its recent trend is positive. I recommend stagnation_escape mode with strong template-expansion tilt toward the queued momentum volatility_gate / quality_concentrated / crash_robust ideas and a tight repeat_branch_cap to break the 8e89d8... lineage lock.",
+  "cycle_mode_override": "stagnation_escape",
+  "targeted_validation_priority": null,
+  "families_paused": [],
+  "branches_deprioritized": [
+    "momentum:8e89d89098a61297",
+    "confirmation_local_neighborhood"
+  ],
+  "source_idea_ids": [
+    "idea_momentum_momentum_volatility_gate_20260418T151614.212326+0000",
+    "idea_momentum_momentum_quality_concentrated_20260418T151614.212314+0000",
+    "idea_momentum_momentum_crash_robust_20260418T151614.212298+0000",
+    "idea_momentum_momentum_balanced_default_20260418T151614.212266+0000",
+    "idea_superstock_superstock_momentum_hybrid_20260418T151614.241827+0000"
+  ]
+}

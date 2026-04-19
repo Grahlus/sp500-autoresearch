@@ -1,0 +1,94 @@
+{
+  "topic": {
+    "slug": "52_week_high_anchor",
+    "focus": "52-week high anchoring and reference-price momentum",
+    "angle": "George & Hwang PTH ratio, anchoring bias exploitation"
+  },
+  "papers": [
+    {
+      "title": "Short-term Momentum and Reversals, Turnover, and a Stock's Price-to-52-week-High Ratio",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4122300",
+      "positive_result": true,
+      "hypothesis": "Rank stocks on a composite of PTH ratio and trailing turnover: high-PTH + high-turnover stocks exhibit short-term momentum continuation, while low-PTH + low-turnover stocks exhibit reversals \u2014 use PTH\u00d7turnover z-score as the ranking signal instead of raw past return.",
+      "lookback_days": 252,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.2,
+      "techniques": [
+        "PTH_ratio",
+        "turnover_interaction",
+        "momentum_reversal_split",
+        "cross_sectional_rank"
+      ],
+      "rationale": "Published in Journal of Empirical Finance 2024; results hold in both large- and small-cap subsamples and survive Fama-French 5-factor adjustment. The PTH\u00d7turnover interaction is a direct drop-in ranking signal: compute each stock's current price / 52-week-high (PTH) and 21-day average dollar volume z-score, multiply them, rank cross-sectionally. Skipping 5 days avoids the micro-reversal that contaminates formation-end contamination. For a daily rebalancing strategy, this could replace or augment the 12-1 return rank with a more behaviorally grounded signal that is explicitly forward in information content."
+    },
+    {
+      "title": "Dynamic Anchoring, 52-Week High, and Return Predictability",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4157874",
+      "positive_result": true,
+      "hypothesis": "Rank stocks on the 3-month change in PTH ratio (\u0394PTH = PTH_now \u2212 PTH_63_days_ago) rather than the PTH level: rising PTH signals accelerating anchor-driven underreaction and predicts stronger continuation than static PTH alone.",
+      "lookback_days": 63,
+      "skip_days": 5,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "dynamic_PTH",
+        "PTH_momentum",
+        "anchoring_velocity",
+        "cross_sectional_rank"
+      ],
+      "rationale": "Chou, Ko, and Yang (SSRN 4157874) show that static PTH level conflates stocks on different trajectories; the time-varying change in PTH isolates the marginal anchoring pressure and earns incremental alpha over static PTH. Implementation is straightforward: form \u0394PTH = (close / rolling_max(close, 252)) over a 63-day difference, rank cross-sectionally at each rebalance. This pairs naturally with an existing 12-1 momentum rank as a confirmation filter or a secondary sort, adding a behaviorally distinct dimension without look-ahead."
+    },
+    {
+      "title": "Momentum Crashes and the 52-Week High",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2900073",
+      "positive_result": true,
+      "hypothesis": "Construct PTH-neutral momentum by double-sorting on 12-1 past return and PTH quintile, then going long high-past-return / high-PTH and short low-past-return / low-PTH stocks to eliminate the speculative PTH-far component that drives momentum crashes.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 126,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "PTH_neutral_momentum",
+        "double_sort",
+        "crash_protection",
+        "speculative_screen"
+      ],
+      "rationale": "Byun and Jeon (published Marquette 2023) document that momentum crashes are concentrated in stocks far from their 52-week high (low PTH) that attract speculative demand during market rebounds; filtering these out substantially reduces left-tail drawdowns while preserving upside. For a walk-forward strategy targeting Sharpe stability, excluding low-PTH winner stocks from the long leg and low-PTH loser stocks from the short leg is a clean regime-robust filter. Negative windows (the primary penalty in the walk-forward objective) should shrink materially."
+    },
+    {
+      "title": "Overnight Returns, Daytime Reversals, and Anchoring Bias",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4482812",
+      "positive_result": true,
+      "hypothesis": "Use PTH < 0.85 as a regime filter: stocks significantly below their 52-week high show a persistent anchoring premium in overnight sessions that accumulates into positive medium-term drift, making PTH-based screening a useful complement to price-return ranking for the long leg.",
+      "lookback_days": 252,
+      "skip_days": 1,
+      "hold_days": 21,
+      "top_n_pct": 0.15,
+      "techniques": [
+        "overnight_return_premium",
+        "PTH_screen",
+        "anchoring_bias",
+        "intraday_decomposition"
+      ],
+      "rationale": "Kim and Goh (Applied Economics Letters 2025, SSRN 4482812) isolate anchoring premium as an overnight phenomenon: noise investors anchor to the 52-week high at close, creating a predictable drift that arbitrageurs cannot fully close intraday. For a daily-rebalancing cross-sectional strategy, ranking on cumulative overnight returns (close_{t-1} to open_{t}) over the past 21 days and using PTH as a secondary sort provides a signal orthogonal to 12-1 return. The result is negative for stocks very near their 52-week high (where anchoring upward suppresses further gains), making PTH a non-linear gate rather than a linear rank."
+    },
+    {
+      "title": "Anchoring, the 52-Week High and Post-Earnings Announcement Drift",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2391455",
+      "positive_result": true,
+      "hypothesis": "Amplify earnings-momentum signals by interacting standardized unexpected earnings (SUE) with the stock's PTH: positive-surprise stocks near their 52-week high (high PTH) exhibit the largest PEAD continuation because analysts anchor their revisions to the 52-week high anchor, producing systematic under-revision.",
+      "lookback_days": 252,
+      "skip_days": 3,
+      "hold_days": 63,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "PEAD_amplification",
+        "PTH_SUE_interaction",
+        "earnings_anchoring",
+        "analyst_revision_lag"
+      ],
+      "rationale": "George, Hwang, and Li (SSRN 2391455) show that PTH and earnings surprises interact multiplicatively: SUE\u00d7PTH cross-sectional rank generates alpha well beyond either variable alone because anchored analyst forecasts cause systematic underreaction to earnings beats near the 52-week high. This is directly implementable with daily price data (use TTM EPS estimate proxies or rolling 63-day return surprises as a SUE proxy) and adds a fundamental-behavioral dimension absent from pure price-momentum strategies, potentially helping in periods when price momentum alone stalls."
+    }
+  ]
+}

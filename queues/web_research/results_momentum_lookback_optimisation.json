@@ -1,0 +1,94 @@
+{
+  "topic": {
+    "slug": "momentum_lookback_optimisation",
+    "focus": "optimal lookback window length for cross-sectional price momentum",
+    "angle": "formation period 6-12-18 months, skip 1 month, US equities 2020-2025"
+  },
+  "papers": [
+    {
+      "title": "All Days Are Not Created Equal: Understanding Momentum by Learning to Weight Past Returns",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5702162",
+      "positive_result": true,
+      "hypothesis": "Replace uniform 12-month lookback with a learned sparse weighting over the prior 231 trading days, over-weighting days coinciding with earnings announcements, market-wide jumps, and large individual-stock return realizations.",
+      "lookback_days": 231,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": null,
+      "techniques": [
+        "sparse ML return weighting",
+        "event-day emphasis",
+        "earnings announcement returns",
+        "underreaction signal"
+      ],
+      "rationale": "Published Journal of Banking & Finance 2025; the optimal sparse weight vector concentrates ~30% of weight on just 2 of 231 days, beating standard 12-1 and surviving post-2010. Directly actionable: compute a weighted-rank signal where returns on earnings dates and market-jump days count more. This is novel relative to any uniform-window ranking and could materially boost the champion's signal quality with a targeted implementation."
+    },
+    {
+      "title": "Evaluating a 12-1 Month Momentum Strategy (2005\u20132024): Momentum in Large-Cap Equities",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5367656",
+      "positive_result": false,
+      "hypothesis": "Long-short 12-1 momentum on large-cap US equities produces a negative net Sharpe after 2005; however, the long-only top-decile leg remains viable at +7.9% annualized, suggesting the signal is intact but the short leg destroys value during crash rebounds.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "long-only truncation",
+        "crash protection",
+        "survivorship-bias-free constituents",
+        "granular turnover cost model"
+      ],
+      "rationale": "Posted SSRN February 2026; uses survivorship-bias-free S&P 500 history 2006-2024. Negative result for the full strategy is informative: it confirms the 12-1 lookback is sound on the long side but losers should not be shorted. For a long-only walk-forward system this is a positive confirmation. The cost model (10 bps/side) and gap-aware return construction are methodologically rigorous comparables."
+    },
+    {
+      "title": "Empirical Determinants of Momentum: A Perspective Using International Data",
+      "source": "https://academic.oup.com/rof/article/29/1/241/7772889",
+      "positive_result": true,
+      "hypothesis": "A 9-month formation / 3-month holding period (with 1-month skip) outperforms the canonical 12-1-1 construction and is explained by slow diffusion of information ('frog in the pan'), suggesting trimming the formation window to ~189 days and extending the hold to 63 days.",
+      "lookback_days": 189,
+      "skip_days": 21,
+      "hold_days": 63,
+      "top_n_pct": null,
+      "techniques": [
+        "frog-in-the-pan",
+        "news diffusion proxy",
+        "9-month formation",
+        "international cross-section"
+      ],
+      "rationale": "Goyal, Jegadeesh & Subrahmanyam in Review of Finance Vol 29 Jan 2025; tests a range of (J, K) combinations internationally and finds 9/3 optimal. The frog-in-the-pan mechanism (small incremental news underreacted to) is distinct from pure price continuation and implies that a 252-day window over-weights old stale signal. Trimming to 189 days is a concrete, low-risk parameter change to test against the current champion."
+    },
+    {
+      "title": "Cross-Sectional Factor Momentum: Evidence from Multiple Formation Periods",
+      "source": "https://www.tandfonline.com/doi/full/10.1080/13504851.2025.2472032",
+      "positive_result": true,
+      "hypothesis": "Combining a short-horizon (1\u20133 month) and intermediate-horizon (6\u201312 month) momentum signal into a composite rank captures distinct and non-spanning information, improving performance over any single formation window.",
+      "lookback_days": null,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": null,
+      "techniques": [
+        "dual formation period",
+        "recent-past signal",
+        "intermediate-past signal",
+        "signal combination"
+      ],
+      "rationale": "Applied Economics Letters 2025; shows the short-term (1-3 month) and intermediate (6-12 month) formation windows capture different return predictability and that neither spans the other. Directly actionable as a composite rank signal: average or blend the 63-day and 252-day lookback ranks before sorting. The 'recent-past' component persists post-publication, reducing data-mining concern."
+    },
+    {
+      "title": "Explaining and Predicting Momentum Performance Shifts Across Time and Sectors",
+      "source": "https://onlinelibrary.wiley.com/doi/full/10.1002/for.3232",
+      "positive_result": true,
+      "hypothesis": "Momentum performance is predictable from sector and macro-cycle features; conditioning the 12-1 lookback strategy on a predicted-performance regime signal (trained OOS on 2018\u20132023) can meaningfully reduce drawdowns.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": null,
+      "techniques": [
+        "regime conditioning",
+        "sector momentum",
+        "predictive model",
+        "momentum timing"
+      ],
+      "rationale": "Journal of Forecasting 2025 (Mamais); trained 1980\u20132017, tested 2018\u20132023 with holdout through 2024. Demonstrates that momentum crashes are partly predictable using available macro/sector inputs, not purely ex-post. Actionable as a position-sizing or universe-filter overlay: reduce exposure when the regime model flags an adverse environment, preserving the 12-1 signal structure while improving tail risk."
+    }
+  ]
+}

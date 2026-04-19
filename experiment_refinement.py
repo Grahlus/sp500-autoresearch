@@ -20,6 +20,7 @@ from experiment_memory import load_lineage_state_records, load_research_memory, 
 from experiment_novelty import coarse_signature_key, score_candidate, signature_distance
 from experiment_scorecards import build_family_scorecards, save_family_scorecards, scorecards_to_records
 from experiment_spaces import (
+    get_family_default_config,
     get_family_search_space,
     list_searchable_families,
     normalize_experiment_config,
@@ -56,11 +57,19 @@ def build_proposal_request(
     confirmation_budget: int | None = None,
     new_idea_quota: int | None = None,
     uncommon_idea_quota: int | None = None,
+    uncommon_idea_budget: int | None = None,
+    structural_idea_budget: int | None = None,
+    out_of_box_budget: int | None = None,
+    max_routine_template_budget: int | None = None,
     repeat_branch_cap: int | None = None,
     max_same_template_per_cycle: int | None = None,
     max_same_lineage_per_cycle: int | None = None,
     structural_novelty_threshold: float = 0.55,
     uncommon_template_bonus: float = 0.10,
+    structural_execution_lane_enabled: bool = True,
+    structural_execution_lane_budget: int | None = None,
+    structural_execution_lane_min_candidates: int | None = None,
+    structural_execution_lane_repeat_cap: int | None = None,
     branch_budgets: dict[str, list[dict[str, Any]]] | None = None,
     branch_budget_rationale: dict[str, Any] | None = None,
     use_idea_queue: bool = True,
@@ -137,11 +146,19 @@ def build_proposal_request(
         confirmation_budget=None if confirmation_budget is None else int(confirmation_budget),
         new_idea_quota=None if new_idea_quota is None else int(new_idea_quota),
         uncommon_idea_quota=None if uncommon_idea_quota is None else int(uncommon_idea_quota),
+        uncommon_idea_budget=None if uncommon_idea_budget is None else int(uncommon_idea_budget),
+        structural_idea_budget=None if structural_idea_budget is None else int(structural_idea_budget),
+        out_of_box_budget=None if out_of_box_budget is None else int(out_of_box_budget),
+        max_routine_template_budget=None if max_routine_template_budget is None else int(max_routine_template_budget),
         repeat_branch_cap=None if repeat_branch_cap is None else int(repeat_branch_cap),
         max_same_template_per_cycle=None if max_same_template_per_cycle is None else int(max_same_template_per_cycle),
         max_same_lineage_per_cycle=None if max_same_lineage_per_cycle is None else int(max_same_lineage_per_cycle),
         structural_novelty_threshold=float(structural_novelty_threshold),
         uncommon_template_bonus=float(uncommon_template_bonus),
+        structural_execution_lane_enabled=bool(structural_execution_lane_enabled),
+        structural_execution_lane_budget=None if structural_execution_lane_budget is None else int(structural_execution_lane_budget),
+        structural_execution_lane_min_candidates=None if structural_execution_lane_min_candidates is None else int(structural_execution_lane_min_candidates),
+        structural_execution_lane_repeat_cap=None if structural_execution_lane_repeat_cap is None else int(structural_execution_lane_repeat_cap),
         branch_budgets=branch_budgets,
         branch_budget_rationale=branch_budget_rationale,
         use_idea_queue=bool(use_idea_queue),
@@ -211,6 +228,207 @@ def _load_helper_ideas(
     return filtered
 
 
+def _idea_signature_from_payload(payload: dict[str, Any]) -> str:
+    keys = (
+        "family",
+        "source",
+        "idea_source",
+        "idea_kind",
+        "template_id",
+        "idea_id",
+        "synthesized_template_family",
+    )
+    canonical = {key: payload.get(key) for key in keys if payload.get(key) is not None}
+    return json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+
+
+def _structural_synthesis_family(idea: dict[str, Any]) -> str:
+    family = str(idea.get("template_similarity_class") or idea.get("synthesized_template_family") or "").strip().lower()
+    if family:
+        return family
+    idea_kind = str(idea.get("idea_kind") or "").strip().lower()
+    mapping = {
+        "new_portfolio_exposure_control": "portfolio_overlay",
+        "new_regime_filter_concept": "regime_filter",
+        "new_ranking_concept": "ranking_rethink",
+        "new_per_stock_state_model": "state_model",
+        "new_position_sizing_concept": "position_sizing",
+        "new_cross_family_borrowing_concept": "cross_family_mechanism",
+        "new_ml_architecture_family": "architecture_family",
+        "new_rl_policy_concept": "policy_family",
+        "new_crash_defense_mechanism": "crash_defense",
+        "new_breadth_dispersion_market_state_concept": "breadth_filter",
+        "literature_inspired_structural_template": "literature_transfer",
+    }
+    return mapping.get(idea_kind, "structural_extension")
+
+
+def _synthesized_structural_config(family: str, idea: dict[str, Any], idea_yield: dict[str, Any]) -> dict[str, Any]:
+    synth_family = _structural_synthesis_family(idea)
+    config = get_family_default_config(family)
+    state = str(idea_yield.get("idea_state") or "untested").strip().lower()
+    quality = float(idea_yield.get("idea_quality_score") or 0.0)
+    out_of_box = bool(idea.get("is_out_of_box"))
+    uncommon = bool(idea.get("is_uncommon_idea"))
+
+    if family == "momentum":
+        overrides: dict[str, Any] = {
+            "LOOKBACK_WEEKS": 39 if synth_family in {"state_model", "ranking_rethink"} else 26,
+            "SKIP_WEEKS": 4 if synth_family in {"regime_filter", "crash_defense"} else 3,
+            "REBAL_WEEKS": 2 if synth_family in {"portfolio_overlay", "position_sizing", "cross_family_mechanism"} else 4,
+            "TOP_PCT": 0.015 if synth_family in {"ranking_rethink", "cross_family_mechanism"} else 0.025,
+            "MA_WEEKS": 24 if synth_family in {"state_model", "regime_filter"} else 20,
+            "STOP_TYPE": "adaptive",
+            "STOP_LOSS_PCT": 0.15 if synth_family in {"crash_defense", "portfolio_overlay"} else 0.20,
+            "STOP_PARABOLIC": 0.35 if synth_family in {"crash_defense", "regime_filter"} else 0.30,
+            "FG_MIN": 30.0 if synth_family in {"regime_filter", "breadth_filter", "crash_defense"} else 22.0,
+            "EXIT_PCT_RANK": 0.94 if synth_family in {"ranking_rethink", "cross_family_mechanism", "portfolio_overlay"} else 0.97,
+            "RANK_EXIT_CONFIRM": 1 if synth_family in {"ranking_rethink", "cross_family_mechanism", "portfolio_overlay"} else None,
+        }
+        if synth_family == "portfolio_overlay":
+            overrides["MIN_HOLD_DAYS"] = 10
+        elif synth_family == "state_model":
+            overrides["MIN_HOLD_DAYS"] = 15
+        elif synth_family == "position_sizing":
+            overrides["MIN_HOLD_DAYS"] = 10
+        elif synth_family == "crash_defense":
+            overrides["MIN_HOLD_DAYS"] = 15
+    elif family == "superstock":
+        overrides = {
+            "max_positions": 3 if synth_family in {"portfolio_overlay", "crash_defense"} else 5,
+            "price_min": 5.0,
+            "price_max": 20.0 if synth_family in {"ranking_rethink", "cross_family_mechanism"} else 15.0,
+            "min_dollar_volume": 2_000_000.0 if synth_family in {"portfolio_overlay", "breadth_filter"} else 1_000_000.0,
+            "rs_rank_26w_min": 0.80 if synth_family in {"ranking_rethink", "state_model"} else 0.70,
+            "rs_rank_52w_min": 0.80 if synth_family in {"ranking_rethink", "state_model"} else 0.70,
+            "base_depth_max": 0.40 if synth_family in {"state_model", "ranking_rethink"} else 0.60,
+            "weekly_range_median_max": 0.15 if synth_family in {"crash_defense", "breadth_filter"} else 0.18,
+            "weekly_volatility_max": 0.10 if synth_family in {"crash_defense", "breadth_filter"} else 0.12,
+            "volume_dryup_max": 0.80,
+            "vix_hard_cap": 30.0 if synth_family in {"crash_defense", "regime_filter"} else 35.0,
+            "vix_ma_multiplier": 1.10 if synth_family in {"crash_defense", "regime_filter"} else 1.25,
+            "breakout_extension_max": 0.08 if synth_family in {"ranking_rethink", "state_model"} else 0.10,
+            "daily_volume_expansion_mult": 2.00 if synth_family in {"position_sizing", "cross_family_mechanism"} else 1.50,
+            "daily_dollar_volume_expansion_mult": 2.00 if synth_family in {"position_sizing", "cross_family_mechanism"} else 1.50,
+            "parabolic_from_pivot_min": 0.30 if synth_family in {"cross_family_mechanism", "ranking_rethink"} else 0.25,
+            "parabolic_above_10w_min": 0.25 if synth_family in {"cross_family_mechanism", "ranking_rethink"} else 0.20,
+            "late_stage_range_mult": 1.50 if synth_family in {"breadth_filter", "crash_defense"} else 1.75,
+            "late_stage_volume_mult": 1.50 if synth_family in {"breadth_filter", "crash_defense"} else 2.00,
+        }
+    elif family == "ml_ranker":
+        overrides = {
+            "model_type": "hgb" if synth_family in {"architecture_family", "state_model"} else "ridge",
+            "lookback_days": 504 if synth_family in {"architecture_family", "state_model"} else 252,
+            "horizon_days": 20 if synth_family in {"state_model", "ranking_rethink"} else 10,
+            "rebalance_days": 10 if synth_family in {"portfolio_overlay", "policy_family"} else 5,
+            "top_pct": 0.025 if synth_family in {"ranking_rethink", "state_model"} else 0.03,
+            "max_positions": 20 if synth_family in {"architecture_family", "state_model"} else 10,
+            "feature_set": "full" if synth_family in {"architecture_family", "state_model"} else "trend_volume",
+            "allow_short": False,
+            "use_vix_gate": True,
+            "use_fear_greed_gate": bool(out_of_box or uncommon or quality >= 0.45 or state in {"promising", "active"}),
+        }
+    elif family == "rl_bandit":
+        overrides = {
+            "policy_type": "epsilon_greedy" if synth_family in {"policy_family", "cross_family_mechanism"} else "ucb",
+            "lookback_days": 126 if synth_family in {"policy_family", "state_model"} else 252,
+            "rebalance_days": 10 if synth_family in {"policy_family", "portfolio_overlay"} else 5,
+            "epsilon": 0.20 if synth_family in {"policy_family", "cross_family_mechanism"} else 0.10,
+            "ucb_bonus": 0.5 if synth_family in {"policy_family", "cross_family_mechanism"} else 1.0,
+            "max_positions": 8 if synth_family in {"portfolio_overlay", "position_sizing"} else 5,
+            "momentum_top_pct": 0.025 if synth_family in {"cross_family_mechanism", "ranking_rethink"} else 0.03,
+            "superstock_top_pct": 0.025 if synth_family in {"cross_family_mechanism", "ranking_rethink"} else 0.03,
+            "use_vix_gate": True,
+            "use_fear_greed_gate": True,
+        }
+    else:
+        overrides = {}
+
+    if state == "promising":
+        overrides["rebalance_days"] = overrides.get("rebalance_days", config.get("rebalance_days", 5))
+    elif state == "retired":
+        if "use_fear_greed_gate" in config:
+            overrides["use_fear_greed_gate"] = True
+
+    normalized = normalize_experiment_config(family, {**config, **overrides})
+    return normalized
+
+
+def _synthesized_structural_candidates(
+    *,
+    family: str,
+    ideas: list[dict[str, Any]],
+    idea_yield: dict[str, Any],
+    recent_idea_signatures: set[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for idea in ideas:
+        idea_id = str(idea.get("idea_id") or "").strip()
+        if not idea_id:
+            continue
+        synth_family = _structural_synthesis_family(idea)
+        template_id = f"synth_structural_{family}_{synth_family}"
+        config = _synthesized_structural_config(family, idea, idea_yield)
+        signature = _idea_signature_from_payload(
+            {
+                "family": family,
+                "idea_id": idea_id,
+                "idea_source": idea.get("idea_source"),
+                "source": "structural_synthesis",
+                "idea_kind": idea.get("idea_kind"),
+                "template_id": template_id,
+                "synthesized_template_family": synth_family,
+            }
+        )
+        if signature in recent_idea_signatures:
+            continue
+        rationale = (
+            f"Synthesized from {idea_id} as {synth_family}; "
+            f"idea_kind={idea.get('idea_kind')}; source_type=structural_synthesis; "
+            f"idea_source={idea.get('idea_source')}; structural_distance={idea.get('structural_distance')}; "
+            f"novelty_reason={idea.get('novelty_reason') or idea.get('uncommon_idea_reason')}"
+        )
+        candidates.append(
+            {
+                "config": config,
+                "metadata": {
+                    "idea_id": idea_id,
+                    "source_type": "structural_synthesis",
+                    "idea_source": idea.get("idea_source") or idea.get("source") or "unknown",
+                    "idea_kind": idea.get("idea_kind") or "new_strategy_logic_concept",
+                    "template_id": template_id,
+                    "synthesized_template_family": synth_family,
+                    "synthesis_rationale": rationale,
+                    "structural_synthesis_family": synth_family,
+                    "hypothesis": idea.get("hypothesis"),
+                    "reason_selected": rationale,
+                    "exploration_mode": "structural_synthesis",
+                    "proposal_role": "explore",
+                    "region_label": synth_family,
+                    "source_idea_ids": [idea_id],
+                    "template_tags": [synth_family, str(idea.get("idea_kind") or "structural")],
+                    "is_structurally_novel": bool(idea.get("is_structurally_novel")),
+                    "is_out_of_box": bool(idea.get("is_out_of_box")),
+                    "is_uncommon_idea": bool(idea.get("is_uncommon_idea")),
+                    "structural_novelty_score": float(idea.get("structural_distance") or 0.0),
+                    "novelty_reason": idea.get("novelty_reason") or idea.get("uncommon_idea_reason") or rationale,
+                    "uncommon_idea_reason": idea.get("uncommon_idea_reason") or rationale,
+                },
+                "idea": idea,
+            }
+        )
+    candidates.sort(
+        key=lambda item: (
+            -int(bool(item["metadata"].get("is_out_of_box"))),
+            -int(bool(item["metadata"].get("is_structurally_novel"))),
+            -float(item["metadata"].get("structural_novelty_score") or 0.0),
+            str(item["metadata"].get("idea_id") or ""),
+        )
+    )
+    return candidates[:limit]
+
+
 def _latest_analysis_guidance(
     *,
     request: ProposalRequest,
@@ -271,6 +489,11 @@ def _load_detailed_history(
         robustness = payload.get("robustness", {})
         baseline = payload.get("baseline_comparison") or {}
         config = spec.get("config", spec.get("params", {}))
+        try:
+            from experiment_spaces import normalize_experiment_config
+            normalize_experiment_config(family, config)
+        except (ValueError, KeyError):
+            continue
         entry = {
             "experiment_id": spec.get("experiment_id"),
             "batch_id": spec.get("batch_id"),
@@ -341,7 +564,10 @@ def _poor_region_signatures(history: pd.DataFrame, family: str, median_score: fl
             config = row.get("config")
             if not isinstance(config, dict):
                 config = {key.removeprefix("param__"): value for key, value in row.items() if key.startswith("param__")}
-            poor.add(coarse_signature_key(family, config))
+            try:
+                poor.add(coarse_signature_key(family, config))
+            except (ValueError, KeyError):
+                pass
     return poor
 
 
@@ -387,7 +613,10 @@ def _signature_maps(history: pd.DataFrame, family: str) -> tuple[set[str], dict[
             config = {key.removeprefix("param__"): value for key, value in row.items() if key.startswith("param__")}
         config_hash = str(row.get("config_hash"))
         exact_hashes.add(config_hash)
-        signature_map[config_hash] = coarse_signature_key(family, config)
+        try:
+            signature_map[config_hash] = coarse_signature_key(family, config)
+        except (ValueError, KeyError):
+            pass
     return exact_hashes, signature_map
 
 
@@ -433,6 +662,9 @@ def _structural_novelty_profile(
     if source in {"cross_family_hybrid", "external_seed", "idea_seed", "model_based", "policy_learning"}:
         structural_score += 0.55
         structural_reasons.append(f"source_type={source}")
+    if source == "structural_synthesis":
+        structural_score += 0.80
+        structural_reasons.append("source_type=structural_synthesis")
     if source == "template_expansion" and template_key not in {"lineage_branch", "local_refinement"}:
         structural_score += 0.40
         structural_reasons.append("template_expansion")
@@ -448,6 +680,30 @@ def _structural_novelty_profile(
     if tags & {"regime", "horizon", "sizing", "exit", "ranking", "ml", "rl"}:
         structural_score += 0.15
         structural_reasons.append(f"concept_tags={sorted(tags)}")
+
+    # Template density: reward templates under-represented relative to median run share.
+    if (
+        template_counts
+        and template_id
+        and source not in {"local_refinement", "confirmation_reproduction", "confirmation_check", "holdout_check"}
+        and not is_branch_repeat
+    ):
+        total_template_runs = sum(template_counts.values()) or 1
+        template_run_share = template_count / total_template_runs
+        n_templates = max(1, len(template_counts))
+        median_run_share = 1.0 / n_templates
+        if template_run_share < median_run_share * 0.5:
+            structural_score += 0.18
+            structural_reasons.append(f"template_density_below_median(share={template_run_share:.3f})")
+        elif template_run_share > median_run_share * 2.5 and structural_score < 0.55:
+            structural_score -= 0.08
+            structural_reasons.append(f"template_density_above_2.5x_median(share={template_run_share:.3f})")
+
+    # Generic cross-family/cross-template borrowing bonus beyond the base source_type bonus.
+    if source == "cross_family_hybrid" or (tags & {"cross_family", "cross_template"}):
+        structural_score += 0.12
+        structural_reasons.append("cross_family_borrowing_bonus")
+
     if is_branch_repeat:
         structural_score = min(structural_score, 0.30)
         structural_reasons.append("branch_repeat_cap")
@@ -460,7 +716,7 @@ def _structural_novelty_profile(
             template_count <= 1
             or strategy in {"ml", "rl"}
             or family != "momentum"
-            or source in {"cross_family_hybrid", "external_seed", "model_based", "policy_learning"}
+            or source in {"cross_family_hybrid", "external_seed", "model_based", "policy_learning", "structural_synthesis"}
         )
     )
     uncommon_reason = None
@@ -468,6 +724,7 @@ def _structural_novelty_profile(
         uncommon_reason = "; ".join(structural_reasons or ["underused structural idea"])
     return {
         "is_structurally_novel": is_structural,
+        "is_out_of_box": bool(structural_score >= 0.75),
         "is_uncommon_idea": is_uncommon,
         "structural_novelty_score": round(structural_score, 6),
         "structural_novelty_reason": "; ".join(structural_reasons) if structural_reasons else "parameter-level variation",
@@ -493,6 +750,57 @@ def _stagnation_batches(history: pd.DataFrame, lookback: int) -> int:
             stagnant += 1
     return max(0, min(stagnant, lookback))
 
+
+
+def _get_novelty_floor(
+    exploration_mode: str,
+    *,
+    stagnation_batches: int = 0,
+    is_confirmation: bool = False,
+    is_holdout: bool = False,
+    base_floor: float = 0.15,
+) -> float:
+    """Per-mode novelty floor. Confirmation/holdout return 0.0 to preserve small-batch bypass."""
+    if is_confirmation or is_holdout:
+        return 0.0
+    if stagnation_batches >= 2:
+        return max(0.05, base_floor * 0.50)
+    mode = str(exploration_mode or "").strip().lower()
+    if mode in {"stagnation_escape", "saturation_escape", "structural_exploration"}:
+        return max(0.05, base_floor * 0.40)
+    if mode in {"broader_exploration", "large_search", "idea_seed"}:
+        return max(0.08, base_floor * 0.65)
+    if mode in {"local_refinement", "branch_refinement"}:
+        return max(0.10, base_floor)
+    return base_floor
+
+
+def _adaptive_budget_fractions(
+    *,
+    cycle_mode: str,
+    stagnation_batches: int,
+    viable_rate: float,
+    base_template_fraction: float,
+    base_cross_family_fraction: float,
+    branch_dominance: float,
+    has_multiple_families: bool,
+) -> tuple[float, float]:
+    """Return adapted (template_fraction, cross_family_fraction) for this cycle."""
+    t_frac = float(base_template_fraction)
+    cf_frac = float(base_cross_family_fraction)
+    if stagnation_batches >= 2:
+        t_frac = min(0.65, t_frac * 1.25)
+        if has_multiple_families:
+            cf_frac = min(0.30, cf_frac * 1.30)
+    if branch_dominance >= 0.50:
+        t_frac = min(0.65, t_frac * 1.15)
+    if viable_rate < 0.10:
+        t_frac = min(0.65, t_frac + 0.05)
+    if cycle_mode == "large-search":
+        t_frac = min(0.65, max(t_frac, 0.40))
+    if stagnation_batches >= 2 and cycle_mode not in {"confirmation", "large-search"}:
+        cf_frac = min(0.30, max(cf_frac, 0.18)) if has_multiple_families else cf_frac
+    return round(t_frac, 4), round(cf_frac, 4)
 
 def identify_dead_zones(history: pd.DataFrame, family: str) -> dict[str, set[Any]]:
     if history.empty:
@@ -664,7 +972,7 @@ def analyze_experiment_history(
 ) -> dict[str, Any]:
     baseline_by_family = {**DEFAULT_BASELINES, **(baseline_by_family or {})}
     memory = load_research_memory(base_dir)
-    scorecards = build_family_scorecards(families=families, base_dir=base_dir, include_idea_yield=False)
+    scorecards = build_family_scorecards(families=families, base_dir=base_dir)
     scorecard_records = scorecards_to_records(scorecards)
     summary: dict[str, Any] = {"families": {}}
     for family in families:
@@ -1120,6 +1428,9 @@ def _candidate_metadata(
     source_batch_ids: list[str],
     source_proposal_id: str | None,
     source_idea_ids: list[str] | None = None,
+    idea_id: str | None = None,
+    idea_source: str | None = None,
+    idea_kind: str | None = None,
     template_tags: list[str] | None = None,
     template_counts: dict[str, int] | None = None,
     lineage_root_config_hash: str | None = None,
@@ -1147,16 +1458,20 @@ def _candidate_metadata(
     holdout_regime_tags: list[str] | None = None,
     structural_novelty_threshold: float = 0.55,
     uncommon_template_bonus: float = 0.10,
+    synthesized_template_family: str | None = None,
+    synthesis_rationale: str | None = None,
 ) -> dict[str, Any]:
     from experiment_store import compute_config_hash
 
     normalized = normalize_experiment_config(family, candidate)
     config_hash = compute_config_hash(family, normalized)
-    idea_source = str(source_type or "").strip() or "unknown"
+    idea_source_value = str(idea_source or source_type or "").strip() or "unknown"
     if source_type in {"confirmation_reproduction", "confirmation_check", "holdout_check"}:
         idea_kind = "holdout_confirmation"
     elif source_type in {"local_refinement"}:
         idea_kind = "branch_refinement"
+    elif source_type in {"structural_synthesis"}:
+        idea_kind = idea_kind or "new_strategy_logic_concept"
     elif source_type in {"idea_seed"}:
         idea_kind = "helper_idea"
     elif source_type in {"cross_family_hybrid"}:
@@ -1209,7 +1524,7 @@ def _candidate_metadata(
         "config_hash": config_hash,
         "strategy_type": strategy_type,
         "source_type": source_type,
-        "idea_source": idea_source,
+        "idea_source": idea_source_value,
         "idea_kind": idea_kind,
         "template_id": template_id,
         "hypothesis": hypothesis,
@@ -1229,8 +1544,10 @@ def _candidate_metadata(
         "source_proposal_id": source_proposal_id,
         "source_batch_id": ",".join(source_batch_ids) if source_batch_ids else None,
         "source_idea_ids": list(source_idea_ids or []),
+        "idea_id": idea_id,
         "is_new_idea": is_new_idea,
         "is_structurally_novel": bool(novelty_profile["is_structurally_novel"]),
+        "is_out_of_box": bool(novelty_profile["is_out_of_box"]),
         "is_uncommon_idea": bool(novelty_profile["is_uncommon_idea"]),
         "structural_novelty_score": novelty_profile["structural_novelty_score"],
         "structural_novelty_reason": novelty_profile["structural_novelty_reason"],
@@ -1245,6 +1562,8 @@ def _candidate_metadata(
         "branch_budget_share": branch_budget_share,
         "branch_budget_stance": branch_budget_stance,
         "branch_budget_reason": branch_budget_reason,
+        "synthesized_template_family": synthesized_template_family,
+        "synthesis_rationale": synthesis_rationale,
         "confirmation_state": confirmation_state,
         "confirmation_required": confirmation_required,
         "confirmation_reason": confirmation_reason,
@@ -1404,6 +1723,7 @@ def generate_next_round_proposal(
             "exploration_fraction": request.exploration_fraction,
             "exploitation_fraction": request.exploitation_fraction,
             "novelty_floor": request.novelty_floor,
+            "novelty_floor_mode": "per_candidate_adaptive",
             "template_fraction": request.template_fraction,
             "cross_family_fraction": request.cross_family_fraction,
             "max_near_duplicate_distance": request.max_near_duplicate_distance,
@@ -1414,6 +1734,9 @@ def generate_next_round_proposal(
             "confirmation_budget": request.confirmation_budget,
             "new_idea_quota": request.new_idea_quota,
             "uncommon_idea_quota": request.uncommon_idea_quota,
+            "structural_idea_budget": request.structural_idea_budget,
+            "out_of_box_budget": request.out_of_box_budget,
+            "max_routine_template_budget": request.max_routine_template_budget,
             "repeat_branch_cap": request.repeat_branch_cap,
             "max_same_template_per_cycle": request.max_same_template_per_cycle,
             "max_same_lineage_per_cycle": request.max_same_lineage_per_cycle,
@@ -1518,6 +1841,10 @@ def generate_next_round_proposal(
         _fam_idea_quality = float(_fam_yield.get("idea_quality_score") or 0.0)
         _fam_retired_share = float(_fam_yield.get("idea_retired_share") or 0.0)
         _fam_promising_share = float(_fam_yield.get("idea_promising_share") or 0.0)
+        _fam_structural_state = str(_fam_yield.get("structural_family_state") or _fam_idea_state).strip().lower()
+        _fam_structural_state_previous = str(_fam_yield.get("structural_family_state_previous") or "").strip() or None
+        _fam_structural_promotion_state = str(_fam_yield.get("structural_family_promotion_state") or "floor_protected").strip().lower()
+        _fam_structural_transition_reason = str(_fam_yield.get("structural_family_transition_reason") or "").strip() or None
         _yield_floor_action = "default"
         if not family_confirmation_mode and budget > 1:
             if _fam_idea_state == "retired" or _fam_retired_share >= 0.70:
@@ -1532,6 +1859,18 @@ def generate_next_round_proposal(
                 # High-yield ideas available — keep floor high to sustain momentum
                 new_idea_floor = max(new_idea_floor, cycle_new_idea_floor)
                 _yield_floor_action = "maintained_promising"
+            if _fam_structural_promotion_state == "graduated_structural_family":
+                new_idea_floor = max(new_idea_floor, min(budget, cycle_new_idea_floor + 1))
+                _yield_floor_action = "graduated_structural_family"
+            elif _fam_structural_promotion_state == "yield_supported" and _yield_floor_action == "default":
+                new_idea_floor = max(new_idea_floor, cycle_new_idea_floor)
+                _yield_floor_action = "yield_supported"
+            elif _fam_structural_promotion_state == "floor_protected" and _fam_structural_state == "untested" and _yield_floor_action == "default":
+                new_idea_floor = max(new_idea_floor, cycle_new_idea_floor)
+                _yield_floor_action = "floor_protected"
+            elif _fam_structural_promotion_state in {"decaying", "retired"} and _yield_floor_action == "default":
+                new_idea_floor = min(new_idea_floor, max(1, int(round(cycle_new_idea_floor * (0.75 if _fam_structural_promotion_state == "decaying" else 0.50)))))
+                _yield_floor_action = _fam_structural_promotion_state
         stagnation_batches = max(int(family_analysis.get("stagnation_batches") or 0), int(family_memory.get("stagnation_batches") or 0))
         exploration_fraction = request.exploration_fraction
         exploitation_fraction = request.exploitation_fraction
@@ -1546,10 +1885,23 @@ def generate_next_round_proposal(
         if budget > new_idea_floor:
             exploit_n = min(exploit_n, max(1, budget - new_idea_floor))
         explore_n = max(0, budget - exploit_n)
-        template_n = max(1, int(round(explore_n * request.template_fraction))) if explore_n else 0
+        _branch_budget_total = sum(int(e.get("branch_budget") or 0) for e in (
+            [dict(en) for en in (branch_budgets.get(family) or []) if int((en or {}).get("branch_budget") or 0) > 0]
+        ))
+        _branch_dominance = _branch_budget_total / max(1, budget)
+        _eff_template_frac, _eff_cf_frac = _adaptive_budget_fractions(
+            cycle_mode=lineage_cycle_mode,
+            stagnation_batches=stagnation_batches,
+            viable_rate=float(family_analysis.get("viable_rate") or 0.0),
+            base_template_fraction=request.template_fraction,
+            base_cross_family_fraction=request.cross_family_fraction,
+            branch_dominance=_branch_dominance,
+            has_multiple_families=len(request.strategy_families) > 1,
+        )
+        template_n = max(1, int(round(explore_n * _eff_template_frac))) if explore_n else 0
         cross_family_n = 0
         if len(request.strategy_families) > 1 and explore_n:
-            cross_family_n = max(1, int(round(explore_n * request.cross_family_fraction)))
+            cross_family_n = max(1, int(round(explore_n * _eff_cf_frac)))
             cross_family_n = min(cross_family_n, explore_n)
         local_explore_n = max(0, explore_n - template_n - cross_family_n)
         if family_confirmation_mode:
@@ -1684,6 +2036,118 @@ def generate_next_round_proposal(
             ),
         )
         family_ideas = [record for record in helper_ideas if record.get("family") in {None, family}]
+        structural_family_ideas = [
+            record
+            for record in family_ideas
+            if bool(record.get("is_structurally_novel"))
+            or bool(record.get("is_out_of_box"))
+            or bool(record.get("is_uncommon_idea"))
+        ]
+        routine_family_ideas = [record for record in family_ideas if record not in structural_family_ideas]
+        structural_yield_records = [
+            record
+            for record in ((_idea_yield_cache.get("by_synthesized_template_family") or {}).values())
+            if str(record.get("family") or "") == family
+        ]
+        structural_feedback = dict(_fam_yield.get("structural_family_feedback") or {})
+        structural_successful_families = {
+            str(record.get("synthesized_template_family") or record.get("idea_kind") or "").strip().lower()
+            for record in structural_yield_records
+            if str(record.get("idea_state") or "").strip().lower() in {"promising", "active"}
+            and float(record.get("idea_quality_score") or 0.0) >= 0.55
+        }
+        structural_idea_budget = max(
+            1,
+            int(
+                request.structural_idea_budget
+                if request.structural_idea_budget is not None
+                else max(1, int(round(max(1, budget) * 0.30)))
+            ),
+        )
+        structural_idea_budget = min(budget, structural_idea_budget + len(structural_successful_families))
+        structural_execution_lane_enabled = bool(
+            request.structural_execution_lane_enabled if request.structural_execution_lane_enabled is not None else True
+        )
+        structural_execution_lane_budget = max(
+            0,
+            int(
+                request.structural_execution_lane_budget
+                if request.structural_execution_lane_budget is not None
+                else structural_idea_budget
+            ),
+        )
+        structural_execution_lane_min_candidates = max(
+            1,
+            int(
+                request.structural_execution_lane_min_candidates
+                if request.structural_execution_lane_min_candidates is not None
+                else max(1, int(round(max(1, budget) * 0.15)))
+            ),
+        )
+        structural_execution_lane_repeat_cap = max(
+            1,
+            int(
+                request.structural_execution_lane_repeat_cap
+                if request.structural_execution_lane_repeat_cap is not None
+                else repeat_branch_cap
+            ),
+        )
+        if _fam_structural_promotion_state == "graduated_structural_family":
+            structural_execution_lane_budget = max(structural_execution_lane_budget, cycle_new_idea_floor + 1)
+            structural_execution_lane_repeat_cap = max(structural_execution_lane_repeat_cap, 3)
+        elif _fam_structural_promotion_state == "yield_supported":
+            structural_execution_lane_budget = max(structural_execution_lane_budget, cycle_new_idea_floor)
+            structural_execution_lane_repeat_cap = max(structural_execution_lane_repeat_cap, 2)
+        elif _fam_structural_promotion_state in {"decaying", "retired"}:
+            structural_execution_lane_budget = min(structural_execution_lane_budget, max(1, cycle_new_idea_floor // 2 or 1))
+            structural_execution_lane_repeat_cap = min(structural_execution_lane_repeat_cap, 1)
+        structural_execution_lane_budget = min(
+            budget,
+            max(structural_execution_lane_min_candidates, structural_execution_lane_budget),
+            max(1, int(round(max(1, budget) * 0.33))),
+        )
+        out_of_box_budget = max(
+            1,
+            int(
+                request.out_of_box_budget
+                if request.out_of_box_budget is not None
+                else max(1, int(round(structural_idea_budget * 0.50)))
+            ),
+        )
+        uncommon_idea_budget = max(
+            1,
+            int(
+                request.uncommon_idea_budget
+                if request.uncommon_idea_budget is not None
+                else max(1, int(round(structural_idea_budget * 0.35)))
+            ),
+        )
+        max_routine_template_budget = max(
+            1,
+            int(
+                request.max_routine_template_budget
+                if request.max_routine_template_budget is not None
+                else max(1, budget - structural_idea_budget)
+            ),
+        )
+        structural_family_targets: dict[str, int] = {}
+        for idea in structural_family_ideas:
+            synth_family = _structural_synthesis_family(idea)
+            if synth_family in structural_successful_families:
+                structural_family_targets[synth_family] = max(structural_family_targets.get(synth_family, 0), 2)
+            else:
+                structural_family_targets.setdefault(synth_family, 1)
+        structural_budget_state = (
+            "yield_driven"
+            if _fam_structural_promotion_state == "graduated_structural_family" or structural_successful_families
+            else "yield_supported"
+            if _fam_structural_promotion_state == "yield_supported"
+            else "decaying"
+            if _fam_structural_promotion_state in {"decaying", "retired"}
+            else "floor_protected"
+            if structural_family_ideas
+            else "no_structural_ideas"
+        )
         family_branch_budget_entries = [
             dict(entry)
             for entry in (branch_budgets.get(family) or [])
@@ -1913,6 +2377,13 @@ def generate_next_round_proposal(
             region_label: str | None,
             parent_config_hash: str | None = None,
             source_idea_ids: list[str] | None = None,
+            idea_id: str | None = None,
+            idea_source: str | None = None,
+            idea_kind: str | None = None,
+            synthesized_template_family: str | None = None,
+            synthesis_rationale: str | None = None,
+            structural_novelty_threshold: float = 0.55,
+            uncommon_template_bonus: float = 0.10,
             template_tags: list[str] | None = None,
             template_counts: dict[str, int] | None = None,
             lineage_root_config_hash: str | None = None,
@@ -1940,7 +2411,18 @@ def generate_next_round_proposal(
             holdout_check_batch_id: str | None = holdout_check_batch_id,
             holdout_horizon_tags: list[str] | None = None,
             holdout_regime_tags: list[str] | None = None,
-        ) -> None:
+        ) -> bool:
+            effective_floor = (
+                float(novelty_floor_override)
+                if novelty_floor_override is not None
+                else _get_novelty_floor(
+                    exploration_mode,
+                    stagnation_batches=stagnation_batches,
+                    is_confirmation=family_confirmation_mode or bool(request.confirmation_required),
+                    is_holdout=holdout_check_required,
+                    base_floor=novelty_floor,
+                )
+            )
             novelty = score_candidate(
                 family,
                 candidate,
@@ -1952,25 +2434,25 @@ def generate_next_round_proposal(
                 source_type=source_type,
                 template_id=template_id,
                 exploration_mode=exploration_mode,
-                novelty_floor=novelty_floor if novelty_floor_override is None else float(novelty_floor_override),
+                novelty_floor=effective_floor,
                 near_duplicate_distance=request.max_near_duplicate_distance,
             )
             if novelty is None:
-                return
+                return False
             if novelty.near_duplicate and not allow_near_duplicate:
-                return
+                return False
             normalized = normalize_experiment_config(family, candidate)
             config_hash = compute_config_hash(family, normalized)
             if config_hash in seen_hashes:
-                return
+                return False
             signature = coarse_signature_key(family, normalized)
             if signature in seen_signatures and not allow_near_duplicate:
-                return
+                return False
             if any(
                 signature_distance(family, normalized, existing["config"]) <= request.max_near_duplicate_distance
                 for existing in selection_pool
             ) and not allow_near_duplicate:
-                return
+                return False
             seen_hashes.add(config_hash)
             seen_signatures.add(signature)
             candidate_metadata = _candidate_metadata(
@@ -2014,17 +2496,23 @@ def generate_next_round_proposal(
                 holdout_check_batch_id=holdout_check_batch_id,
                 holdout_horizon_tags=holdout_horizon_tags,
                 holdout_regime_tags=holdout_regime_tags,
-                structural_novelty_threshold=request.structural_novelty_threshold,
-                uncommon_template_bonus=request.uncommon_template_bonus,
+                structural_novelty_threshold=structural_novelty_threshold,
+                uncommon_template_bonus=uncommon_template_bonus,
+                idea_id=idea_id,
+                idea_source=idea_source,
+                idea_kind=idea_kind,
+                synthesized_template_family=synthesized_template_family,
+                synthesis_rationale=synthesis_rationale,
             )
             candidate_metadata["confirmation_slot_index"] = len(selection_pool) + 1
             if _cycle_caps_exhausted(candidate_metadata):
-                return
+                return False
             if _repeat_branch_exhausted(candidate_metadata):
-                return
+                return False
             selection_pool.append(candidate_metadata)
             _record_repeat_branch(candidate_metadata)
             _record_cycle_caps(candidate_metadata)
+            return True
 
         # Structural novelty floor: inject one guaranteed slot per protected momentum
         # template that is below _STRUCTURAL_EVIDENCE_THRESHOLD.  These slots are added
@@ -2088,6 +2576,107 @@ def generate_next_round_proposal(
                 # exhausted local neighborhood starve the rest of the cycle.
                 confirmation_focus_only = False
 
+        structural_lane_state = {
+            "active": False,
+            "planner_requested": bool(structural_execution_lane_enabled),
+            "candidate_count": len(structural_family_ideas),
+            "effective_budget": 0,
+            "executed_count": 0,
+            "skipped": False,
+            "skip_reason": None,
+            "reason": None,
+            "recent_active": bool(_fam_structural_promotion_state in {"floor_protected", "yield_supported", "graduated_structural_family"} or structural_yield_records),
+            "recent_family_counts": {},
+            "recent_llm_seeded_count": sum(1 for record in structural_family_ideas if list(record.get("source_idea_ids") or [])),
+        }
+        if structural_execution_lane_enabled and structural_family_ideas:
+            structural_lane_budget = min(
+                budget,
+                structural_execution_lane_budget,
+            )
+            if structural_lane_budget <= 0:
+                structural_lane_state["skipped"] = True
+                structural_lane_state["skip_reason"] = "lane_budget_zero"
+                structural_lane_state["reason"] = "deterministic lane budget reduced to zero"
+            else:
+                structural_lane_state["active"] = True
+                structural_lane_state["effective_budget"] = structural_lane_budget
+                structural_candidates = _synthesized_structural_candidates(
+                    family=family,
+                    ideas=structural_family_ideas,
+                    idea_yield=_fam_yield,
+                    recent_idea_signatures=set(),
+                    limit=structural_lane_budget,
+                )
+                structural_family_counts: dict[str, int] = {}
+                structural_budget_counts = {"structural": 0, "out_of_box": 0, "uncommon": 0}
+                structural_family_caps = {
+                    synth_family: max(1, min(structural_execution_lane_repeat_cap, structural_family_targets.get(synth_family, 1)))
+                    for synth_family in structural_family_targets
+                }
+                for payload in structural_candidates:
+                    if len(selection_pool) >= budget or structural_budget_counts["structural"] >= structural_lane_budget:
+                        break
+                    metadata = payload["metadata"]
+                    synth_family = str(metadata.get("synthesized_template_family") or "structural_extension")
+                    family_cap = structural_family_caps.get(synth_family, max(1, structural_execution_lane_repeat_cap))
+                    if structural_family_counts.get(synth_family, 0) >= family_cap:
+                        continue
+                    if bool(metadata.get("is_out_of_box")) and structural_budget_counts["out_of_box"] >= out_of_box_budget:
+                        continue
+                    if bool(metadata.get("is_uncommon_idea")) and structural_budget_counts["uncommon"] >= uncommon_idea_budget:
+                        continue
+                    added = _try_add_candidate(
+                        payload["config"],
+                        source_type="structural_synthesis",
+                        strategy_type=_family_strategy_type(family),
+                        template_id=metadata.get("template_id"),
+                        hypothesis=metadata.get("hypothesis"),
+                        reason_selected=metadata.get("reason_selected"),
+                        exploration_mode="structural_synthesis",
+                        proposal_role="explore",
+                        region_label=synth_family,
+                        source_idea_ids=list(metadata.get("source_idea_ids") or []),
+                        idea_id=metadata.get("idea_id"),
+                        idea_source=metadata.get("idea_source"),
+                        idea_kind=metadata.get("idea_kind"),
+                        template_tags=list(metadata.get("template_tags") or []),
+                        template_counts=family_analysis.get("template_counts", {}),
+                        structural_novelty_threshold=request.structural_novelty_threshold,
+                        uncommon_template_bonus=request.uncommon_template_bonus,
+                        synthesized_template_family=synth_family,
+                        synthesis_rationale=metadata.get("synthesis_rationale"),
+                        allow_near_duplicate=False,
+                    )
+                    if added:
+                        structural_budget_counts["structural"] += 1
+                        structural_family_counts[synth_family] = structural_family_counts.get(synth_family, 0) + 1
+                        if bool(metadata.get("is_out_of_box")):
+                            structural_budget_counts["out_of_box"] += 1
+                        if bool(metadata.get("is_uncommon_idea")):
+                            structural_budget_counts["uncommon"] += 1
+                structural_lane_state["executed_count"] = structural_budget_counts["structural"]
+                structural_lane_state["recent_family_counts"] = dict(structural_family_counts)
+                if structural_lane_state["executed_count"] <= 0:
+                    structural_lane_state["skipped"] = True
+                    structural_lane_state["skip_reason"] = "no_safe_structural_candidate"
+                    structural_lane_state["reason"] = "structural lane was available but no candidate passed deterministic safety checks"
+                elif structural_lane_state["executed_count"] < structural_execution_lane_min_candidates:
+                    structural_lane_state["reason"] = (
+                        "structural lane executed below the requested floor because deterministic caps "
+                        "limited the safe candidate count"
+                    )
+                else:
+                    structural_lane_state["reason"] = (
+                        "structural lane executed within its protected budget slice and remained under deterministic caps"
+                    )
+        else:
+            structural_lane_state["skipped"] = True
+            structural_lane_state["skip_reason"] = "disabled_or_no_structural_candidates"
+            structural_lane_state["reason"] = (
+                "structural lane disabled by plan or no structural-synthesis candidates were available"
+            )
+
         if family_branch_budget_entries and not confirmation_mode:
             for branch_entry in family_branch_budget_entries:
                 if len(selection_pool) >= budget:
@@ -2131,8 +2720,9 @@ def generate_next_round_proposal(
                         allow_near_duplicate=branch_stance in {"primary", "controlled"},
                     )
 
-        if not confirmation_focus_only:
-            for idea in family_ideas:
+        routine_template_count = 0
+        if not confirmation_focus_only and routine_template_count < max_routine_template_budget:
+            for idea in routine_family_ideas:
                 if len(selection_pool) >= budget:
                     break
                 suggested = idea.get("suggested_config") or {}
@@ -2157,7 +2747,9 @@ def generate_next_round_proposal(
                 for neighbor in neighbors:
                     if len(selection_pool) >= budget:
                         break
-                    _try_add_candidate(
+                    if routine_template_count >= max_routine_template_budget:
+                        break
+                    added = _try_add_candidate(
                         neighbor,
                         source_type="idea_seed",
                         strategy_type=idea.get("strategy_type") or _family_strategy_type(family),
@@ -2171,6 +2763,10 @@ def generate_next_round_proposal(
                         source_idea_ids=[idea.get("idea_id")] if idea.get("idea_id") else [],
                         allow_near_duplicate=True,
                     )
+                    if added:
+                        routine_template_count += 1
+                if routine_template_count >= max_routine_template_budget:
+                    break
 
         for top_idx, row in top.iterrows():
             if len(selection_pool) >= exploit_n:
@@ -2254,7 +2850,7 @@ def generate_next_round_proposal(
                     allow_near_duplicate=False,
                 )
 
-        if not confirmation_focus_only:
+        if not confirmation_focus_only and routine_template_count < max_routine_template_budget:
             template_payloads = _template_payloads_for_family(
                 family,
                 limit=max(template_n + cross_family_n + 4, 8),
@@ -2267,6 +2863,8 @@ def generate_next_round_proposal(
             for payload in template_payloads:
                 if len(selection_pool) >= budget:
                     break
+                if routine_template_count >= max_routine_template_budget:
+                    break
                 metadata = payload["metadata"]
                 if metadata.get("source_type") == "cross_family_hybrid":
                     if cross_count >= cross_family_n and len(selection_pool) >= exploit_n + template_n:
@@ -2276,7 +2874,7 @@ def generate_next_round_proposal(
                     if template_count >= template_n and len(selection_pool) >= exploit_n + template_n:
                         continue
                     template_count += 1
-                _try_add_candidate(
+                added = _try_add_candidate(
                     payload["config"],
                     source_type=metadata.get("source_type") or "template_expansion",
                     strategy_type=metadata.get("strategy_type") or _family_strategy_type(family),
@@ -2291,6 +2889,8 @@ def generate_next_round_proposal(
                     template_tags=metadata.get("tags"),
                     allow_near_duplicate=False,
                 )
+                if added:
+                    routine_template_count += 1
 
             _top_configs_for_smart_search = [
                 dict(row.get("config") or {})
@@ -2314,7 +2914,9 @@ def generate_next_round_proposal(
             for candidate in exploration_candidates:
                 if len(selection_pool) >= budget:
                     break
-                _try_add_candidate(
+                if routine_template_count >= max_routine_template_budget:
+                    break
+                added = _try_add_candidate(
                     candidate,
                     source_type="broad_exploration",
                     strategy_type=_family_strategy_type(family),
@@ -2327,12 +2929,16 @@ def generate_next_round_proposal(
                     source_idea_ids=[],
                     allow_near_duplicate=False,
                 )
+                if added:
+                    routine_template_count += 1
 
             if request.allow_external_seeds:
                 for seed_payload in load_external_idea_seeds(enabled=True):
                     if len(selection_pool) >= budget:
                         break
-                    _try_add_candidate(
+                    if routine_template_count >= max_routine_template_budget:
+                        break
+                    added = _try_add_candidate(
                         seed_payload.get("config", {}),
                         source_type="external_seed",
                         strategy_type=seed_payload.get("strategy_type") or _family_strategy_type(family),
@@ -2346,6 +2952,8 @@ def generate_next_round_proposal(
                         source_idea_ids=[],
                         allow_near_duplicate=False,
                     )
+                    if added:
+                        routine_template_count += 1
 
             if len(selection_pool) < budget:
                 fallback = sample_exploration_configs(
@@ -2362,7 +2970,9 @@ def generate_next_round_proposal(
                 for candidate in fallback:
                     if len(selection_pool) >= budget:
                         break
-                    _try_add_candidate(
+                    if routine_template_count >= max_routine_template_budget:
+                        break
+                    added = _try_add_candidate(
                         candidate,
                         source_type="broad_exploration",
                         strategy_type=_family_strategy_type(family),
@@ -2375,6 +2985,8 @@ def generate_next_round_proposal(
                         source_idea_ids=[],
                         allow_near_duplicate=False,
                     )
+                    if added:
+                        routine_template_count += 1
 
             if len(selection_pool) < budget:
                 saturation_escape = sample_exploration_configs(
@@ -2392,7 +3004,9 @@ def generate_next_round_proposal(
                 for candidate in saturation_escape:
                     if len(selection_pool) >= budget:
                         break
-                    _try_add_candidate(
+                    if routine_template_count >= max_routine_template_budget:
+                        break
+                    added = _try_add_candidate(
                         candidate,
                         source_type="saturation_escape",
                         strategy_type=_family_strategy_type(family),
@@ -2405,6 +3019,8 @@ def generate_next_round_proposal(
                         source_idea_ids=[],
                         allow_near_duplicate=True,
                     )
+                    if added:
+                        routine_template_count += 1
         else:
             if holdout_check_required and not history.empty:
                 _append_confirmation_neighborhood(top.iloc[0], holdout=True)
@@ -2443,6 +3059,8 @@ def generate_next_round_proposal(
         ranked_payloads = sorted(
             selection_pool,
             key=lambda item: (
+                -int(str(item.get("source_type") or "") == "structural_synthesis"),
+                -int(bool(item.get("synthesized_template_family"))),
                 -int(bool(item.get("branch_budget_stance"))),
                 -float(item.get("branch_budget") or 0.0),
                 -int(bool(item.get("is_uncommon_idea"))),
@@ -2462,6 +3080,15 @@ def generate_next_round_proposal(
         candidate_configs[family] = [item["config"] for item in ranked_payloads[:budget]]
         candidate_metadata[family] = [
             {key: value for key, value in item.items() if key != "config"} for item in ranked_payloads[:budget]
+        ]
+        selected_structural = [item for item in candidate_metadata[family] if item.get("source_type") == "structural_synthesis"]
+        selected_routine = [
+            item
+            for item in candidate_metadata[family]
+            if item.get("source_type")
+            in {"idea_seed", "template_expansion", "cross_family_hybrid", "broad_exploration", "external_seed", "saturation_escape"}
+            and not item.get("branch_budget_stance")
+            and not item.get("branch_budget")
         ]
         reasoning["families"][family] = {
             "baseline_name": family_analysis.get("baseline_name"),
@@ -2521,12 +3148,50 @@ def generate_next_round_proposal(
             "idea_yield_quality": round(_fam_idea_quality, 4),
             "idea_yield_retired_share": round(_fam_retired_share, 4),
             "idea_yield_promising_share": round(_fam_promising_share, 4),
+            "structural_family_state": _fam_structural_state,
+            "structural_family_state_previous": _fam_structural_state_previous,
+            "structural_family_promotion_state": _fam_structural_promotion_state,
+            "structural_family_transition_reason": _fam_structural_transition_reason,
+            "graduated_template_family": _fam_yield.get("graduated_template_family"),
+            "structural_family_feedback": structural_feedback,
             "idea_yield_floor_action": _yield_floor_action,
             "idea_yield_top_kinds": [r.get("idea_kind") for r in (_fam_yield.get("top_idea_kinds") or [])[:3] if r.get("idea_kind")],
+            "structural_idea_budget": structural_idea_budget,
+            "structural_execution_lane_enabled": structural_execution_lane_enabled,
+            "structural_execution_lane_budget": structural_execution_lane_budget,
+            "structural_execution_lane_min_candidates": structural_execution_lane_min_candidates,
+            "structural_execution_lane_repeat_cap": structural_execution_lane_repeat_cap,
+            "out_of_box_budget": out_of_box_budget,
+            "uncommon_idea_budget": uncommon_idea_budget,
+            "max_routine_template_budget": max_routine_template_budget,
+            "structural_budget_state": structural_budget_state,
+            "structural_candidate_count": len(structural_family_ideas),
+            "structural_successful_families": sorted(structural_successful_families),
+            "structural_family_targets": dict(structural_family_targets),
+            "structural_execution_lane": structural_lane_state,
+            "structural_execution_lane_active_recent_cycles": bool(structural_lane_state.get("recent_active")),
+            "structural_execution_lane_planner_requested": bool(structural_lane_state.get("planner_requested")),
+            "structural_execution_lane_received_candidates": int(structural_lane_state.get("candidate_count") or 0),
+            "structural_execution_lane_executed_count": int(structural_lane_state.get("executed_count") or 0),
+            "structural_execution_lane_skipped": bool(structural_lane_state.get("skipped")),
+            "structural_execution_lane_skip_reason": structural_lane_state.get("skip_reason"),
+            "routine_template_budget_used": routine_template_count,
+            "selected_structural_synthesis_count": len(selected_structural),
+            "selected_routine_candidate_count": len(selected_routine),
+            "selected_structural_synthesis_families": sorted(
+                {
+                    str(item.get("synthesized_template_family") or "")
+                    for item in selected_structural
+                    if item.get("synthesized_template_family")
+                }
+            ),
             "structural_handoff_state": _handoff_state if family == "momentum" else None,
             "structural_handoff_rationale": _handoff_rationale if family == "momentum" else None,
             "structural_yield_scores": {k: round(v, 4) for k, v in _structural_yield_scores.items()} if family == "momentum" else {},
             "structural_per_template_cap": dict(_structural_per_template_cap) if family == "momentum" else {},
+            "adaptive_template_fraction": _eff_template_frac,
+            "adaptive_cross_family_fraction": _eff_cf_frac,
+            "branch_dominance": round(_branch_dominance, 4),
         }
         if isinstance(family_analysis.get("history_frame"), pd.DataFrame):
             family_analysis["history_frame"] = pd.DataFrame()
@@ -2584,7 +3249,7 @@ def generate_next_round_proposal(
     if request.persist_memory:
         save_research_memory(proposal_memory, base_dir)
     if request.persist_scorecards:
-        scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir, include_idea_yield=True)
+        scorecards = build_family_scorecards(families=request.strategy_families, base_dir=base_dir)
         scorecard_path = save_family_scorecards(scorecards, base_dir=base_dir, timestamp_utc=request.timestamp_utc)
         reasoning["family_scorecard_path"] = str(scorecard_path)
 

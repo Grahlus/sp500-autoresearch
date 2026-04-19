@@ -1,0 +1,91 @@
+{
+  "topic": {
+    "slug": "insider_trading_signal",
+    "focus": "insider trading filings (Form 4) as a predictive equity signal",
+    "angle": "cluster buys, officer vs director buys, net insider buying rate"
+  },
+  "papers": [
+    {
+      "title": "Synthesizing Information-Driven Insider Trade Signals",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4537187",
+      "positive_result": true,
+      "hypothesis": "Rank stocks by a composite of multiple insider-trade signals (recency, trade size, officer-vs-director role, cluster count) normalized into a single cross-sectional score; long the top decile.",
+      "lookback_days": 63,
+      "skip_days": 2,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "composite_signal",
+        "z-score_aggregation",
+        "cross-sectional_rank",
+        "equal_weight"
+      ],
+      "rationale": "Heckmann, Jacobs & Schwarz (2023, SSRN 4537187) test a composite that synthesizes several academic insider-trade signals across an international panel; long-short generates significant alpha in ~2/3 of countries, predominantly in equal-weighted portfolios. The composite approach is robust to individual-signal noise, making it directly translatable as a ranking layer in a cross-sectional strategy. The 2-day skip accounts for Form 4 filing lag post-SOX."
+    },
+    {
+      "title": "Do Insiders Cluster Trades with Colleagues? Evidence from Daily Insider Trading",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2781761",
+      "positive_result": true,
+      "hypothesis": "Score each stock by the count of distinct insiders who filed open-market purchases within a 42-day rolling window; stocks with \u22653 clustered buyers rank highest and are held for 21 days.",
+      "lookback_days": 42,
+      "skip_days": 2,
+      "hold_days": 21,
+      "top_n_pct": 0.05,
+      "techniques": [
+        "cluster_count",
+        "open_market_purchase_filter",
+        "cross-sectional_rank"
+      ],
+      "rationale": "Alldredge & Blank (Journal of Financial Research, 2019) find cluster purchases generate 2.1% abnormal return over 21 days vs 1.2% for solitary buys; 90-day abnormal return gap widens to 2.5%. The signal is consistent with information sharing among insiders rather than coincidence. Implementable as a simple count of distinct Form 4 filers within 42 trading days, filtered to direct open-market purchases only."
+    },
+    {
+      "title": "Decoding Inside Information",
+      "source": "https://www.nber.org/system/files/working_papers/w16454/w16454.pdf",
+      "positive_result": true,
+      "hypothesis": "Classify each insider as 'opportunistic' (no predictable calendar pattern in prior 3 years) and use only their buy filings as a cross-sectional ranking signal; ignore 'routine' traders.",
+      "lookback_days": 756,
+      "skip_days": 2,
+      "hold_days": 63,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "routine_vs_opportunistic_classification",
+        "insider_type_filter",
+        "cross-sectional_rank"
+      ],
+      "rationale": "Cohen, Malloy & Pomorski (NBER/RFS) show opportunistic buys predict next-quarter returns with 4-factor alpha of ~82 bps/month; routine buys show near-zero alpha. Requiring 3 years of history to classify each filer eliminates most noise and mechanically filters out grants/awards. This filter is straightforward to layer on top of any Form 4 pipeline and is the single highest-confidence separator in the literature."
+    },
+    {
+      "title": "Herding Insider Traders: The Case of Opportunistic Insiders",
+      "source": "https://www.mdpi.com/1911-8074/18/11/629",
+      "positive_result": true,
+      "hypothesis": "Measure the net insider buying rate among opportunistic officers (CFO, CEO, COO) only within a 63-day window, weighting by trade-size USD; rank stocks by this officer-specific net buy rate for a 21-day hold.",
+      "lookback_days": 63,
+      "skip_days": 2,
+      "hold_days": 21,
+      "top_n_pct": 0.08,
+      "techniques": [
+        "officer_filter",
+        "opportunistic_classification",
+        "net_buy_rate",
+        "usd_weighting"
+      ],
+      "rationale": "MDPI 2025 paper on herding among opportunistic insiders finds that clustering behavior amplifies return predictability specifically for C-suite officers who are classified as opportunistic traders. Combining the officer-role filter with the opportunistic classification and a net-buy-rate metric (buys minus sells / total insider volume) yields a stronger signal than either filter alone, particularly for mid- and large-cap stocks in the Russell 1000 universe."
+    },
+    {
+      "title": "Insider Filings as Trading Signals \u2014 Does It Pay to Be Fast?",
+      "source": "https://www.sciencedirect.com/science/article/pii/S1544612324015435",
+      "positive_result": false,
+      "hypothesis": "Reacting intraday to Form 4 filings to capture short-horizon abnormal returns is not scalable; dollar-adjusted returns are negative after realistic position sizing and transaction costs.",
+      "lookback_days": null,
+      "skip_days": null,
+      "hold_days": 5,
+      "top_n_pct": null,
+      "techniques": [
+        "intraday_execution",
+        "vwap_entry",
+        "dollar_return_adjustment"
+      ],
+      "rationale": "Oenschl\u00e4ger & M\u00f6llenhoff (Finance Research Letters, Nov 2024) find positive percentage abnormal returns for very short holds (1-5 days) but negative USD-adjusted returns once realistic position sizing is applied; returns are negatively correlated with liquidity. This is an important negative result: the signal should be used at longer holding horizons (21-63 days) and with a universe liquidity filter, not exploited intraday. Supports using insider signals in a weekly or monthly rebalanced cross-sectional strategy."
+    }
+  ]
+}

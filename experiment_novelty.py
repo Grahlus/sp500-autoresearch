@@ -97,6 +97,49 @@ def is_near_duplicate(
     return (best_match is not None, best_match)
 
 
+def _get_selection_weights(exploration_mode: str) -> tuple[float, float, float]:
+    """Return (objective_weight, novelty_weight, dead_zone_penalty_weight) by mode."""
+    mode = str(exploration_mode or "").strip().lower()
+    if mode in {"confirmation", "holdout", "confirmation_reproduction", "confirmation_check", "holdout_check"}:
+        return (0.65, 0.35, 0.28)
+    if mode in {"local_refinement"}:
+        return (0.62, 0.38, 0.30)
+    if mode in {"branch_refinement"}:
+        return (0.55, 0.45, 0.30)
+    if mode in {"normal_exploration", "template_expansion"}:
+        return (0.52, 0.48, 0.30)
+    if mode in {"broader_exploration", "idea_seed"}:
+        return (0.45, 0.55, 0.26)
+    if mode in {"large_search"}:
+        return (0.38, 0.62, 0.24)
+    if mode in {"stagnation_escape", "saturation_escape", "structural_exploration"}:
+        return (0.33, 0.67, 0.20)
+    return (0.52, 0.48, 0.30)
+
+
+def _near_dup_penalties(exploration_mode: str, *, near_dead_zone: bool = False) -> tuple[float, float]:
+    """Return (novelty_score_penalty, selection_score_penalty) for a near-duplicate.
+
+    Refinement/confirmation modes tolerate near-duplicates; escape modes penalise lightly.
+    """
+    mode = str(exploration_mode or "").strip().lower()
+    if mode in {
+        "confirmation", "holdout", "confirmation_reproduction",
+        "confirmation_check", "holdout_check", "local_refinement", "branch_refinement",
+    }:
+        nov_pen, sel_pen = 0.12, 0.06
+    elif mode in {"stagnation_escape", "saturation_escape", "structural_exploration"}:
+        nov_pen, sel_pen = 0.20, 0.10
+    elif mode in {"broader_exploration", "idea_seed"}:
+        nov_pen, sel_pen = 0.26, 0.13
+    else:
+        nov_pen, sel_pen = 0.30, 0.15
+    if near_dead_zone:
+        nov_pen += 0.14
+        sel_pen += 0.07
+    return nov_pen, sel_pen
+
+
 def _objective_from_history(
     history: list[dict[str, Any]],
     family: str,
@@ -176,6 +219,8 @@ def score_candidate(
         novelty_score += 0.55
     elif source_type == "policy_learning":
         novelty_score += 0.60
+    elif source_type == "structural_synthesis":
+        novelty_score += 0.55
     elif source_type == "external_seed":
         novelty_score += 0.55
     elif source_type == "saturation_escape":
@@ -186,10 +231,13 @@ def score_candidate(
         novelty_score += 0.15
     elif exploration_mode == "broader_exploration":
         novelty_score += 0.20
+    elif exploration_mode == "structural_synthesis":
+        novelty_score += 0.25
     elif exploration_mode == "saturation_escape":
         novelty_score += 0.25
     if near:
-        novelty_score -= 0.40
+        _nov_pen, _ = _near_dup_penalties(exploration_mode)
+        novelty_score -= _nov_pen
     if exact:
         novelty_score = 0.0
     novelty_score = max(0.0, min(1.0, novelty_score))
@@ -203,16 +251,24 @@ def score_candidate(
             if str(normalized.get(param)) in {str(value) for value in bad_values}:
                 dead_zone_flags.append(f"{param}={normalized.get(param)}")
         if dead_zone_flags:
-            dead_zone_risk = min(1.0, 0.25 * len(dead_zone_flags))
+            # Proportional partial-overlap penalty (cap 0.60); broad modes tolerate more overlap.
+            partial_risk = min(0.60, 0.15 * len(dead_zone_flags))
+            if exploration_mode in {
+                "stagnation_escape", "saturation_escape", "structural_exploration", "broader_exploration",
+            }:
+                partial_risk *= 0.70
+            dead_zone_risk = partial_risk
 
     if dead_zone_signatures and json.dumps(discrete_signature(family, normalized), sort_keys=True, separators=(",", ":")) in dead_zone_signatures:
         dead_zone_risk = 1.0
 
-    selection_score = (0.55 * objective_proxy) + (0.45 * novelty_score) - (0.35 * dead_zone_risk)
+    obj_w, nov_w, dz_w = _get_selection_weights(exploration_mode)
+    selection_score = (obj_w * objective_proxy) + (nov_w * novelty_score) - (dz_w * dead_zone_risk)
     if source_type in {"idea_seed", "cross_family_hybrid", "external_seed", "model_based", "policy_learning"}:
         selection_score += 0.05
     if near:
-        selection_score -= 0.20
+        _, sel_pen = _near_dup_penalties(exploration_mode, near_dead_zone=bool(dead_zone_flags))
+        selection_score -= sel_pen
 
     return CandidateNovelty(
         exact_duplicate=exact,

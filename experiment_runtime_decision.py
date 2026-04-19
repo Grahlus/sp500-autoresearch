@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from experiment_dashboard import build_best_results_dashboard
+from experiment_idea_yield import build_family_idea_yield_guidance, load_latest_idea_yield_summary
 from experiment_lineage import build_lineage_summary
 from experiment_memory import (
     get_lineage_state_record,
@@ -110,6 +111,11 @@ def _latest_batch_overview(base_dir: str) -> dict[str, Any] | None:
 
 def _scorecard_dict(dashboard: dict[str, Any], family: str) -> dict[str, Any]:
     return dict((dashboard.get("family_scorecards") or {}).get(family) or {})
+
+
+def _idea_yield_feedback_for_family(idea_yield_summary: dict[str, Any] | None, family: str) -> dict[str, Any]:
+    family_summary = dict(((idea_yield_summary or {}).get("families") or {}).get(family) or {})
+    return build_family_idea_yield_guidance(family_summary)
 
 
 def _top_family_result(dashboard: dict[str, Any], family: str) -> dict[str, Any] | None:
@@ -1422,6 +1428,7 @@ def _family_weight(
     cycle_mode: str,
     overfit_signal: dict[str, Any] | None = None,
     promotion_policy: dict[str, Any] | None = None,
+    idea_yield_feedback: dict[str, Any] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     weight = DEFAULT_BASE_FAMILY_WEIGHTS.get(family, 0.05)
     reasons: list[str] = [f"base={weight:.2f}"]
@@ -1461,6 +1468,11 @@ def _family_weight(
     lineage_confirmation_descendant_count = int(scorecard.get("confirmation_descendant_count") or 0)
     lineage_holdout_descendant_count = int(scorecard.get("holdout_descendant_count") or 0)
     lineage_rejected_descendant_count = int(scorecard.get("rejected_descendant_count") or 0)
+    structural_family_state = str((idea_yield_feedback or {}).get("structural_family_state") or "untested").strip().lower() or "untested"
+    structural_family_state_previous = str((idea_yield_feedback or {}).get("structural_family_state_previous") or "").strip() or None
+    structural_family_promotion_state = str((idea_yield_feedback or {}).get("structural_family_promotion_state") or "floor_protected").strip().lower() or "floor_protected"
+    structural_family_transition_reason = str((idea_yield_feedback or {}).get("structural_family_transition_reason") or "").strip() or None
+    structural_graduated_template_family = (idea_yield_feedback or {}).get("graduated_template_family")
 
     if family == "momentum" and viable_rate > 0.05:
         weight += 0.10
@@ -1641,6 +1653,27 @@ def _family_weight(
         weight *= 0.40
         budget_stance = "controlled"
         reasons.append("winner_blocked_pending_new_evidence")
+    if structural_family_promotion_state == "graduated_structural_family":
+        weight += 0.20
+        reasons.append("structural_graduated_structural_family")
+        if budget_stance not in {"paused", "controlled"}:
+            budget_stance = "primary"
+    elif structural_family_promotion_state == "yield_supported":
+        weight += 0.08
+        reasons.append("structural_yield_supported")
+    elif structural_family_promotion_state == "decaying":
+        weight *= 0.90
+        reasons.append("structural_decaying")
+        if budget_stance == "active":
+            budget_stance = "controlled"
+    elif structural_family_promotion_state == "retired":
+        weight *= 0.70
+        budget_stance = "paused"
+        reasons.append("structural_retired")
+    elif structural_family_state == "untested":
+        reasons.append("structural_floor_protected")
+    if structural_family_transition_reason:
+        reasons.append(f"structural_transition={structural_family_transition_reason}")
     if promotion_policy and family == promotion_policy.get("winner_family"):
         status = str(promotion_policy.get("winner_promotion_status") or "not_promoted")
         if status == "promoted":
@@ -1709,6 +1742,11 @@ def _family_weight(
         "holdout_check_scope": holdout_check_scope,
         "holdout_horizon_tags": holdout_horizon_tags,
         "holdout_regime_tags": holdout_regime_tags,
+        "structural_family_state": structural_family_state,
+        "structural_family_state_previous": structural_family_state_previous,
+        "structural_family_promotion_state": structural_family_promotion_state,
+        "structural_family_transition_reason": structural_family_transition_reason,
+        "graduated_template_family": structural_graduated_template_family,
     }
 
 
@@ -1871,6 +1909,11 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
     latest_non_empty_batch = dashboard.get("latest_non_empty_batch")
     lineage_summary = dashboard.get("lineage_summary") or {}
     latest_batch_overview = _latest_batch_overview(request.experiments_dir)
+    idea_yield_summary = load_latest_idea_yield_summary(request.experiments_dir) or {}
+    idea_yield_guidance = {
+        family: _idea_yield_feedback_for_family(idea_yield_summary, family)
+        for family in selected_families
+    }
     memory = load_research_memory(request.experiments_dir)
     family_risk_reports: dict[str, Any] = {}
     for family in selected_families:
@@ -2043,6 +2086,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
     scorecards = dashboard.get("family_scorecards") or {}
     for family in selected_families:
         scorecard = _scorecard_dict(dashboard, family)
+        idea_yield_feedback = idea_yield_guidance.get(family) or {}
         best_viable_family = (best_viable or {}).get("strategy_family")
         best_baseline_family = (best_baseline or {}).get("strategy_family")
         score, score_report = _family_weight(
@@ -2054,12 +2098,14 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             cycle_mode=cycle_mode,
             overfit_signal=family_risk_reports.get(family),
             promotion_policy=promotion_policy,
+            idea_yield_feedback=idea_yield_feedback,
         )
         family_scores[family] = score
         families_report[family] = score_report | {
             "scorecard": scorecard,
             "overfit_signal": family_risk_reports.get(family) or {},
             "selected": 0,
+            "idea_yield_feedback": idea_yield_feedback,
         }
 
     total_weight = sum(family_scores.values()) or float(len(selected_families))
@@ -2136,6 +2182,19 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             families_report[family]["reason"] += f"; horizon_tags={validation_horizon_tags}"
         if validation_regime_tags:
             families_report[family]["reason"] += f"; regime_tags={validation_regime_tags}"
+        if families_report[family].get("idea_yield_feedback"):
+            yield_feedback = families_report[family]["idea_yield_feedback"]
+            families_report[family]["structural_family_state"] = yield_feedback.get("structural_family_state")
+            families_report[family]["structural_family_state_previous"] = yield_feedback.get("structural_family_state_previous")
+            families_report[family]["structural_family_promotion_state"] = yield_feedback.get("structural_family_promotion_state")
+            families_report[family]["structural_family_transition_reason"] = yield_feedback.get("structural_family_transition_reason")
+            families_report[family]["graduated_template_family"] = yield_feedback.get("graduated_template_family")
+            families_report[family]["structural_family_feedback"] = yield_feedback.get("structural_family_feedback")
+            families_report[family]["reason"] += (
+                f"; structural_state={yield_feedback.get('structural_family_state')}->{yield_feedback.get('structural_family_promotion_state')}"
+            )
+            if yield_feedback.get("structural_family_transition_reason"):
+                families_report[family]["reason"] += f"; {yield_feedback.get('structural_family_transition_reason')}"
         if families_report[family].get("robustness_score", 0.0) >= 0.70:
             families_report[family]["reason"] += "; boosted by robust family history"
         if families_report[family].get("overfit_risk", 0.0) >= 0.45:
@@ -2188,6 +2247,8 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "best_baseline_beating": best_baseline,
         "latest_non_empty_batch": latest_non_empty_batch,
         "latest_batch_overview": latest_batch_overview,
+        "idea_yield_summary": idea_yield_summary,
+        "idea_yield_guidance": idea_yield_guidance,
         "family_scorecards": scorecards,
         "lineage_summary": {
             "latest_batch_id": lineage_summary.get("latest_batch_id"),
@@ -2280,6 +2341,8 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "used_dashboard_report_id": dashboard_obj.generated_at_utc,
         "latest_non_empty_batch": latest_non_empty_batch,
         "latest_batch_overview": latest_batch_overview,
+        "idea_yield_summary": idea_yield_summary,
+        "idea_yield_guidance": idea_yield_guidance,
         "overfit_focus_families": focus_families,
         "winner_promotion_policy": promotion_policy,
         "winner_family": winner_family,

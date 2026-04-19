@@ -6,3 +6,12 @@ __pycache__/
 .venv/
 *.egg-info/
 .uv/
+experiments/runs/
+experiments/batches/
+experiments/proposals/
+experiments/runs/
+*.sqlite3
+report_*.json
+best_results.json
+family_scorecards.json
+hot_index.json

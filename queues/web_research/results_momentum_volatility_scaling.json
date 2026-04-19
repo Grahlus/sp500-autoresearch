@@ -1,0 +1,93 @@
+{
+  "topic": {
+    "slug": "momentum_volatility_scaling",
+    "focus": "volatility-scaled or risk-managed momentum strategies",
+    "angle": "vol-targeting, inverse-vol weighting, downside deviation scaling"
+  },
+  "papers": [
+    {
+      "title": "Enhanced Momentum Strategies",
+      "source": "https://www.sciencedirect.com/science/article/abs/pii/S0378426622002928",
+      "positive_result": true,
+      "hypothesis": "Replace standard momentum signal with semi-volatility-scaled momentum (stock formation return divided by its realized downside standard deviation over the formation window), which reduces crash exposure and raises Sharpe versus equal-vol scaling.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "semi-volatility scaling",
+        "downside deviation",
+        "constant vol scaling",
+        "crash mitigation"
+      ],
+      "rationale": "Hanauer & Windm\u00fcller (2022, JBF) test cMOM, sMOM, and dMOM across 48 country universes and find semi-vol scaling (sMOM) narrowly outperforms standard vol scaling by preserving upside vol in the denominator. For a cross-sectional ranker, replacing the raw 12-1 return rank with (return / semi-vol) is a one-line change with empirically documented Sharpe improvement of ~0.15\u20130.25 in U.S. data. Negative skewness and crash frequency both drop materially."
+    },
+    {
+      "title": "Momentum is Still There Conditional on Volatility-Amplified Pessimism",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4680094",
+      "positive_result": true,
+      "hypothesis": "Attenuate or zero out cross-sectional momentum exposure when realized market volatility (e.g., 21-day rolling) and an investor pessimism proxy (e.g., put-call ratio or VIX term structure slope) are simultaneously elevated, restoring alpha in calm or optimistic regimes.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "regime conditioning",
+        "VIX overlay",
+        "pessimism proxy",
+        "interaction signal"
+      ],
+      "rationale": "Ghazi, Schneider & Strauss (2023, SSRN 4680094) show that the joint interaction of high market vol and high pessimism is the key predictor of momentum failure \u2014 neither alone is sufficient. This maps directly to a binary or smooth scaling factor applied to position weights: full exposure in low-vol or optimistic regimes, reduced/zero in the joint-high regime. The fear-and-greed data already loaded in this repo (data/*.parquet) could proxy pessimism cheaply."
+    },
+    {
+      "title": "All Days Are Not Created Equal: Understanding Momentum by Learning to Weight Past Returns",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5702162",
+      "positive_result": true,
+      "hypothesis": "Compute the formation-period momentum signal as a weighted sum of daily returns, assigning higher weights to days that coincide with earnings announcements or large cross-sectional market jumps, and lower weights to calm mid-period days.",
+      "lookback_days": 252,
+      "skip_days": 0,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "return day weighting",
+        "earnings event emphasis",
+        "jump day emphasis",
+        "ML-derived weights"
+      ],
+      "rationale": "Beckmeyer & Wiedemann (2025, JBF) use a machine-learning approach to recover which days in the 12-month window most predict future returns; earnings announcement days and market-wide jump days receive the highest weights. The practical implementation is a simple day-type lookup: tag each past trading day as 'event' (earnings \u00b11, |market return| > 1.5%) vs 'normal', then weight returns 3\u20135\u00d7 higher on event days when computing the stock-level signal. The paper shows this subsumes standard 12-1 momentum and is robust through the most recent decade."
+    },
+    {
+      "title": "Volatility Targeting Is Trendy: How Trend Following Explains Alpha in Volatility-Managed Strategies",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4773781",
+      "positive_result": true,
+      "hypothesis": "Scale each selected stock's position weight by inverse realized 21-day volatility (individual stock level, not portfolio level), so that high-vol winners receive smaller allocations and low-vol winners receive larger ones, capturing the implicit trend/momentum benefit of vol targeting documented for equity.",
+      "lookback_days": 21,
+      "skip_days": null,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "inverse vol weighting",
+        "position sizing",
+        "leverage effect",
+        "realized volatility"
+      ],
+      "rationale": "Hood & Raughtigan (2024, SSRN 4773781) decompose vol-targeting alpha and show that for equities the entire excess comes from an embedded trend/momentum tilt created by the leverage effect (high-vol periods follow down-moves). Applied at stock level within an already-ranked cross-sectional portfolio, this modifies allocation weights \u2014 not ranking \u2014 which is an additive change that avoids disturbing the signal construction. The 21-day lookback for vol estimation is a well-documented sweet spot balancing responsiveness and noise."
+    },
+    {
+      "title": "Momentum, Market Volatility, and Reversal",
+      "source": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4342008",
+      "positive_result": false,
+      "hypothesis": "Standard cross-sectional momentum underperforms and reverts to contrarian in high-realized-market-volatility regimes; a regime-switching strategy that flips to reversal when trailing 60-day market vol exceeds the 70th percentile improves returns, but the switching adds turnover and timing risk.",
+      "lookback_days": 252,
+      "skip_days": 21,
+      "hold_days": 21,
+      "top_n_pct": 0.1,
+      "techniques": [
+        "volatility regime",
+        "momentum-to-reversal switch",
+        "market-state conditioning"
+      ],
+      "rationale": "Butt, Kolari & Sadaqat (2023, SSRN 4342008) confirm that momentum profits collapse and reverse specifically when preceding 60-day market volatility is elevated above historical norms. This is a negative result for pure always-on momentum, but the regime-conditioning insight is actionable: a simpler implementation is to reduce portfolio size (top_n_pct) or hold_days in high-vol regimes rather than flip to reversal, which avoids adding a contrarian overlay that may behave differently in a long-only constrained universe."
+    }
+  ]
+}

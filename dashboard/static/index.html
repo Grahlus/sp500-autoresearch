@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OttoChaosbot — S&P 500 Autonomous Research</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-deep:     #070a0f;
+      --bg:          #0d1117;
+      --panel:       #111827;
+      --panel2:      #161d2e;
+      --panel-hover: #1a2333;
+      --border:      #1e2a3a;
+      --border-glow: #2a3a50;
+      --green:       #00e5a0;
+      --green-dim:   #00c488;
+      --green-glow:  rgba(0,229,160,0.25);
+      --red:         #ff4d6a;
+      --red-dim:     #e6435c;
+      --red-glow:    rgba(255,77,106,0.2);
+      --yellow:      #f5c400;
+      --yellow-dim:  #d4a800;
+      --blue:        #4d9bff;
+      --blue-dim:    #3d8bef;
+      --purple:      #a78bfa;
+      --purple-dim:  #9575f0;
+      --text:        #e2e8f0;
+      --text-dim:    #8899a8;
+      --dim:         #4a5568;
+      --accent:      #00e5a0;
+      --shadow:      0 4px 24px rgba(0,0,0,0.5);
+      --shadow-glow: 0 0 30px rgba(0,229,160,0.1);
+      --radius:      8px;
+      --radius-sm:   4px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    }
+
+    ::selection {
+      background: var(--green-glow);
+      color: var(--green);
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-deep); }
+    ::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+    /* ── HEADER ─────────────────────────────────────────── */
+    header {
+      background: linear-gradient(180deg, var(--bg) 0%, var(--panel) 100%);
+      border-bottom: 1px solid var(--border);
+      border-bottom-glow: 0 1px 0 0 var(--green-glow);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .led {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: all 0.4s ease;
+      position: relative;
+    }
+    .led.green  {
+      background: var(--green);
+      box-shadow: 0 0 12px var(--green), 0 0 24px var(--green-glow), 0 0 4px var(--green) inset;
+      animation: led-pulse 2s ease-in-out infinite;
+    }
+    .led.red    {
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red-dim), 0 0 16px var(--red-glow);
+    }
+
+    @keyframes led-pulse {
+      0%, 100% { box-shadow: 0 0 12px var(--green), 0 0 24px var(--green-glow), 0 0 4px var(--green) inset; }
+      50% { box-shadow: 0 0 16px var(--green), 0 0 32px var(--green-glow), 0 0 6px var(--green) inset; }
+    }
+
+    /* ── HEADER METRICS BAR ──────────────────────────── */
+    .hdr-metric {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 20px;
+      min-width: 80px;
+      position: relative;
+    }
+    .hdr-metric:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 1px;
+      height: 60%;
+      background: linear-gradient(180deg, transparent, var(--border), transparent);
+    }
+    .hdr-label {
+      font-size: 9px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+    .hdr-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      white-space: nowrap;
+      letter-spacing: -0.5px;
+    }
+    .hdr-value.nominal { color: var(--green); }
+    .hdr-value.degraded { color: var(--yellow); }
+    .hdr-value.error   { color: var(--red); }
+    .hdr-value.idle    { color: var(--dim); }
+
+    .title {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      background: linear-gradient(135deg, rgba(0,229,160,0.1) 0%, rgba(0,229,160,0.05) 100%);
+      border: 1px solid rgba(0,229,160,0.2);
+      border-radius: var(--radius-sm);
+      text-shadow: 0 0 20px var(--green-glow);
+    }
+
+    .header-stats {
+      display: flex;
+      gap: 24px;
+      margin-left: auto;
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
+    .header-stats span { color: var(--dim); font-weight: 500; }
+    .header-stats b   { color: var(--text); font-weight: 600; }
+
+    /* ── GRID ───────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 12px;
+      padding: 12px;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: 1fr; }
+      .col-side { order: -1; }
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .panel:hover {
+      border-color: var(--border-glow);
+      box-shadow: var(--shadow), 0 0 40px rgba(0,0,0,0.3);
+    }
+
+    .panel-head {
+      background: linear-gradient(180deg, var(--panel2) 0%, var(--panel) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+    .panel-head:hover {
+      background: linear-gradient(180deg, var(--panel-hover) 0%, var(--panel2) 100%);
+      color: var(--text);
+    }
+    .panel-head .toggle-icon {
+      font-size: 8px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      opacity: 0.6;
+    }
+    .panel-head.collapsed .toggle-icon { transform: rotate(-90deg); }
+    .panel-head.collapsed + .panel-body { display: none; }
+
+    .panel-body { padding: 12px; }
+
+    /* ── ACTIVITY BAR ─────────────────────────────────── */
+    .activity-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .act-item {
+      background: linear-gradient(145deg, var(--panel2), var(--bg));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      transition: all 0.2s ease;
+    }
+    .act-item:hover {
+      border-color: var(--border-glow);
+      transform: translateY(-1px);
+    }
+    .act-label {
+      font-size: 9px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .act-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .act-value.running {
+      color: var(--green);
+      text-shadow: 0 0 12px var(--green-glow);
+    }
+    .act-value.idle    { color: var(--dim); }
+
+    /* ── DISCOVERIES ─────────────────────────────────────── */
+    .discovery-banner {
+      display: none;
+      background: linear-gradient(135deg, rgba(0,229,160,0.12) 0%, rgba(0,229,160,0.04) 100%);
+      border: 1px solid rgba(0,229,160,0.35);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      animation: discovery-glow 2s ease-in-out infinite alternate;
+      position: relative;
+      overflow: hidden;
+    }
+    .discovery-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(0,229,160,0.1), transparent);
+      animation: shimmer 3s ease-in-out infinite;
+    }
+    .discovery-banner.show { display: block; }
+    @keyframes discovery-glow {
+      from { box-shadow: 0 0 20px rgba(0,229,160,0.15), inset 0 0 30px rgba(0,229,160,0.05); }
+      to   { box-shadow: 0 0 35px rgba(0,229,160,0.25), inset 0 0 40px rgba(0,229,160,0.08); }
+    }
+    @keyframes shimmer {
+      0% { left: -100%; }
+      100% { left: 100%; }
+    }
+    .discovery-banner .disc-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--green);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .discovery-banner .disc-sharpe {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--green);
+      text-shadow: 0 0 20px var(--green-glow);
+    }
+    .discovery-banner .disc-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── FAMILY CARDS ───────────────────────────────────── */
+    .family-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .fam-card {
+      background: linear-gradient(145deg, var(--panel) 0%, var(--panel2) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .fam-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--card-accent, var(--border-glow)), transparent);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .fam-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      border-color: var(--border-glow);
+    }
+    .fam-card:hover::before { opacity: 1; }
+    .fam-card .fam-name {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .fam-card .fam-stat {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .fam-card .fam-label  {
+      font-size: 9px;
+      color: var(--dim);
+      margin-top: 3px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .fam-bar {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    .fam-fill  {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+    .fam-fill::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      animation: bar-shimmer 2s ease-in-out infinite;
+    }
+    @keyframes bar-shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    /* ── FILTER BAR ────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      padding: 8px 12px;
+      background: linear-gradient(180deg, var(--panel2) 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-label {
+      font-size: 9px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 600;
+    }
+    .filter-select {
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .filter-select:hover {
+      border-color: var(--border-glow);
+      background: var(--bg);
+    }
+    .filter-select:focus {
+      outline: none;
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px var(--green-glow);
+    }
+    .filter-count {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── TABLES ─────────────────────────────────────────── */
+    .scroll { max-height: 360px; overflow-y: auto; }
+
+    table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      border-bottom: 2px solid var(--border);
+      background: var(--panel2);
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    td {
+      padding: 10px 12px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s ease;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td {
+      background: linear-gradient(90deg, rgba(0,229,160,0.05) 0%, transparent 50%);
+    }
+    tr { cursor: pointer; transition: all 0.15s ease; }
+    tr:hover {
+      background: var(--panel-hover);
+    }
+
+    /* Sharpe color coding */
+    .sharpe-excellent { color: var(--green); font-weight: 700; text-shadow: 0 0 8px var(--green-glow); }
+    .sharpe-good       { color: #5ee8a8; }
+    .sharpe-mixed      { color: var(--yellow); }
+    .sharpe-poor       { color: #e87070; }
+    .sharpe-bad        { color: var(--red); font-weight: 600; }
+
+    /* NEW badge */
+    .badge-new {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--green), var(--green-dim));
+      color: var(--bg-deep);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 6px;
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-success { background: rgba(0,229,160,0.15); color: var(--green); border: 1px solid rgba(0,229,160,0.25); }
+    .badge-warn    { background: rgba(245,196,0,0.15);  color: var(--yellow); border: 1px solid rgba(245,196,0,0.25); }
+    .badge-danger  { background: rgba(255,77,106,0.15); color: var(--red); border: 1px solid rgba(255,77,106,0.25); }
+    .badge-info    { background: rgba(61,155,255,0.15); color: var(--blue); border: 1px solid rgba(61,155,255,0.25); }
+    .badge-purple  { background: rgba(155,109,255,0.15);color: var(--purple); border: 1px solid rgba(155,109,255,0.25); }
+    .badge-neutral { background: rgba(90,100,120,0.2);  color: var(--text-dim); border: 1px solid rgba(90,100,120,0.3); }
+
+    /* ── LOG ─────────────────────────────────────────────── */
+    #log-lines {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.7;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      padding: 10px 14px;
+      background: var(--bg-deep);
+    }
+    .log-ts      { color: #2a3a50; font-size: 10px; }
+    .log-debug   { color: #3a4a5a; }
+    .log-info    { color: var(--blue-dim); }
+    .log-warn    { color: var(--yellow); }
+    .log-error   { color: var(--red); font-weight: 600; text-shadow: 0 0 8px var(--red-glow); }
+    .log-ok      { color: var(--green-dim); }
+    .log-cycle   { color: #c792ea; }
+    .log-proposal{ color: #89ddff; }
+
+    .log-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      background: var(--panel2);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+    }
+    .log-controls label {
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s ease;
+    }
+    .log-controls label:hover { color: var(--text); }
+    .log-controls input[type="checkbox"] {
+      accent-color: var(--green);
+      width: 14px;
+      height: 14px;
+    }
+    .log-controls button {
+      margin-left: auto;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 4px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .log-controls button:hover {
+      background: var(--border);
+      color: var(--text);
+      border-color: var(--border-glow);
+    }
+
+    /* ── CHART ─────────────────────────────────────────── */
+    #familyChart { max-height: 160px; }
+
+    /* ── SECTION LABEL ─────────────────────────────────── */
+    .section-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--dim);
+      margin: 12px 0 8px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--border), transparent);
+    }
+
+    /* ── IDEAS ──────────────────────────────────────────── */
+    #ideas-content { max-height: 260px; overflow-y: auto; }
+    .idea-row {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      transition: all 0.15s ease;
+    }
+    .idea-row:last-child { border-bottom: none; }
+    .idea-row:hover {
+      padding-left: 6px;
+      border-left: 2px solid var(--green);
+      margin-left: -2px;
+    }
+    .idea-hypothesis {
+      color: var(--text);
+      line-height: 1.5;
+      margin-top: 4px;
+    }
+    .idea-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+      font-size: 9px;
+    }
+
+    /* ── MODAL ─────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .modal-overlay.active {
+      display: flex;
+      opacity: 1;
+    }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--border-glow);
+      border-radius: var(--radius);
+      max-width: 960px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.7), 0 0 60px rgba(0,229,160,0.05);
+      transform: scale(0.95) translateY(10px);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .modal-overlay.active .modal {
+      transform: scale(1) translateY(0);
+    }
+    .modal::-webkit-scrollbar { width: 8px; }
+    .modal::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 4px; }
+
+    .modal-header {
+      background: linear-gradient(180deg, var(--panel2) 0%, var(--panel) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .modal-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      flex: 1;
+      word-break: break-all;
+      color: var(--text);
+    }
+    .modal-close {
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      transition: all 0.2s ease;
+    }
+    .modal-close:hover {
+      background: var(--border);
+      color: var(--text);
+      border-color: var(--border-glow);
+    }
+
+    .modal-body { padding: 18px; }
+
+    .modal-section { margin-bottom: 20px; }
+    .modal-section-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 8px;
+    }
+    .config-item {
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      transition: all 0.2s ease;
+    }
+    .config-item:hover {
+      border-color: var(--border-glow);
+      background: var(--bg);
+    }
+    .config-key   { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 500; }
+    .config-val   { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--green); font-weight: 600; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+    }
+    .metric-box {
+      background: linear-gradient(145deg, var(--bg-deep), var(--bg));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 8px;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+    .metric-box:hover {
+      border-color: var(--border-glow);
+      transform: translateY(-1px);
+    }
+    .metric-val   { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; }
+    .metric-label { font-size: 8px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; font-weight: 500; }
+
+    /* per-window chart */
+    #window-canvas { max-height: 180px; }
+
+    /* windows table in modal */
+    .win-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .win-table th {
+      font-size: 9px;
+      padding: 6px 10px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-deep);
+    }
+    .win-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .win-table tr:hover td { background: var(--panel-hover); }
+
+    .status-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .status-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .status-label { color: var(--dim); }
+    .status-value { font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+    .ideas-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .idea-tag {
+      background: rgba(61, 155, 255, 0.1);
+      color: var(--blue);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      border: 1px solid rgba(61,155,255,0.2);
+      transition: all 0.2s ease;
+    }
+    .idea-tag:hover {
+      background: rgba(61, 155, 255, 0.2);
+      border-color: rgba(61,155,255,0.4);
+    }
+
+    .config-abbrev { font-size: 10px; color: var(--dim); white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+
+    /* refresh bar */
+    #refresh-msg {
+      font-size: 10px;
+      color: var(--dim);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    #refresh-msg .spin {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--border-glow);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .num-positive { color: var(--green); font-weight: 600; }
+    .num-negative { color: var(--red); font-weight: 600; }
+
+    .fam-momentum   { color: var(--blue); }
+    .fam-superstock { color: var(--yellow); }
+    .fam-ml_ranker  { color: var(--purple); }
+    .fam-rl_bandit  { color: var(--green); }
+    .fam-fill-momentum   { background: linear-gradient(90deg, var(--blue), var(--blue-dim)); }
+    .fam-fill-superstock { background: linear-gradient(90deg, var(--yellow), var(--yellow-dim)); }
+    .fam-fill-ml_ranker  { background: linear-gradient(90deg, var(--purple), var(--purple-dim)); }
+    .fam-fill-rl_bandit  { background: linear-gradient(90deg, var(--green), var(--green-dim)); }
+
+    /* champion star */
+    .champ-star { color: var(--yellow); font-size: 14px; text-shadow: 0 0 8px rgba(245,196,0,0.4); }
+
+    /* ── ANIMATIONS ────────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .panel {
+      animation: fadeIn 0.4s ease backwards;
+    }
+    .col-main .panel:nth-child(1) { animation-delay: 0.05s; }
+    .col-main .panel:nth-child(2) { animation-delay: 0.1s; }
+    .col-main .panel:nth-child(3) { animation-delay: 0.15s; }
+    .col-main .panel:nth-child(4) { animation-delay: 0.2s; }
+    .col-main .panel:nth-child(5) { animation-delay: 0.25s; }
+    .col-main .panel:nth-child(6) { animation-delay: 0.3s; }
+    .col-side .panel:nth-child(1) { animation-delay: 0.1s; }
+    .col-side .panel:nth-child(2) { animation-delay: 0.15s; }
+    .col-side .panel:nth-child(3) { animation-delay: 0.2s; }
+
+    /* ── UTILITY ────────────────────────────────────────── */
+    .text-glow-green { text-shadow: 0 0 10px var(--green-glow); }
+    .text-glow-blue { text-shadow: 0 0 10px rgba(61,155,255,0.3); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <!-- LEFT: System identity -->
+  <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+    <div class="led red" id="status-led"></div>
+    <div class="title">AUTONOMOUS RESEARCH DASHBOARD</div>
+  </div>
+
+  <!-- CENTER: Key metrics bar -->
+  <div style="display:flex;gap:0;margin:0 auto;align-items:center;">
+    <div class="hdr-metric">
+      <div class="hdr-label">UPTIME</div>
+      <div class="hdr-value" id="hdr-uptime">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">EXPERIMENTS</div>
+      <div class="hdr-value" id="hdr-experiments">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">CYCLES</div>
+      <div class="hdr-value" id="hdr-cycles">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">IDEAS</div>
+      <div class="hdr-value" id="hdr-ideas">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">STATUS</div>
+      <div class="hdr-value" id="hdr-status">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">PROCESSES</div>
+      <div class="hdr-value" id="hdr-processes">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
+      <div class="hdr-label">HEALTH</div>
+      <div class="hdr-value" id="hdr-health">—</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Last completed experiment -->
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;margin-left:auto;">
+    <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;">LAST EXPERIMENT</div>
+    <div class="hdr-value" id="hdr-last-exp" style="font-size:12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="">—</div>
+  </div>
+</header>
+
+<!-- BODY GRID -->
+<div class="grid">
+
+  <!-- LEFT COL -->
+  <div class="col-main" style="display:flex; flex-direction:column; gap:10px;">
+
+    <!-- System Activity Panel -->
+    <div class="panel">
+      <div class="panel-head">System Activity</div>
+      <div class="panel-body">
+        <div class="activity-bar">
+          <div class="act-item">
+            <div class="act-label">Status</div>
+            <div class="act-value" id="act-status">—</div>
+          </div>
+          <div class="act-item">
+            <div class="act-label">Parallel Runs</div>
+            <div class="act-value" id="act-parallel">—</div>
+          </div>
+          <div class="act-item">
+            <div class="act-label">Last Experiment</div>
+            <div class="act-value" id="act-last">—</div>
+          </div>
+          <div class="act-item">
+            <div class="act-label">Ideas Queued</div>
+            <div class="act-value" id="act-ideas">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discoveries Banner -->
+    <div class="discovery-banner" id="discovery-banner">
+      <div class="disc-title">★ NEW CHAMPION DISCOVERED</div>
+      <div class="disc-sharpe" id="disc-sharpe">—</div>
+      <div class="disc-meta">
+        <span id="disc-family">—</span> · <span id="disc-exp">—</span>
+      </div>
+    </div>
+
+    <!-- Family Cards -->
+    <div class="family-row">
+      <div class="fam-card" id="card-momentum">
+        <div class="fam-name fam-momentum">MOMENTUM</div>
+        <div class="fam-stat" id="momentum-viable" style="color:var(--blue)">—</div>
+        <div class="fam-label">viable rate</div>
+        <div class="fam-bar"><div class="fam-fill fam-fill-momentum" id="momentum-bar" style="width:0%"></div></div>
+        <div class="fam-stat" id="momentum-expts" style="font-size:12px; margin-top:6px;">—</div>
+        <div class="fam-label">experiments</div>
+      </div>
+      <div class="fam-card" id="card-superstock">
+        <div class="fam-name fam-superstock">SUPERSTOCK</div>
+        <div class="fam-stat" id="superstock-viable" style="color:var(--yellow)">—</div>
+        <div class="fam-label">viable rate</div>
+        <div class="fam-bar"><div class="fam-fill fam-fill-superstock" id="superstock-bar" style="width:0%"></div></div>
+        <div class="fam-stat" id="superstock-expts" style="font-size:12px; margin-top:6px;">—</div>
+        <div class="fam-label">experiments</div>
+      </div>
+      <div class="fam-card" id="card-ml_ranker">
+        <div class="fam-name fam-ml_ranker">ML_RANKER</div>
+        <div class="fam-stat" id="ml_ranker-viable" style="color:var(--purple)">—</div>
+        <div class="fam-label">viable rate</div>
+        <div class="fam-bar"><div class="fam-fill fam-fill-ml_ranker" id="ml_ranker-bar" style="width:0%"></div></div>
+        <div class="fam-stat" id="ml_ranker-expts" style="font-size:12px; margin-top:6px;">—</div>
+        <div class="fam-label">experiments</div>
+      </div>
+      <div class="fam-card" id="card-rl_bandit">
+        <div class="fam-name fam-rl_bandit">RL_BANDIT</div>
+        <div class="fam-stat" id="rl_bandit-viable" style="color:var(--green)">—</div>
+        <div class="fam-label">viable rate</div>
+        <div class="fam-bar"><div class="fam-fill fam-fill-rl_bandit" id="rl_bandit-bar" style="width:0%"></div></div>
+        <div class="fam-stat" id="rl_bandit-expts" style="font-size:12px; margin-top:6px;">—</div>
+        <div class="fam-label">experiments</div>
+      </div>
+    </div>
+
+    <!-- Live experiment feed -->
+    <div class="panel">
+      <div class="panel-head">Live Experiment Feed</div>
+      <div class="filter-bar">
+        <span class="filter-label">Family</span>
+        <select class="filter-select" id="filter-family" onchange="applyFilters()">
+          <option value="">All</option>
+          <option value="momentum">momentum</option>
+          <option value="superstock">superstock</option>
+          <option value="ml_ranker">ml_ranker</option>
+          <option value="rl_bandit">rl_bandit</option>
+        </select>
+        <span class="filter-label">Viable</span>
+        <select class="filter-select" id="filter-viable" onchange="applyFilters()">
+          <option value="">All</option>
+          <option value="true">Viable Only</option>
+        </select>
+        <span class="filter-count" id="filter-count"></span>
+      </div>
+      <div class="scroll" style="padding:0;">
+        <table id="exp-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Family</th>
+              <th>Sharpe</th>
+              <th>Return%</th>
+              <th>MaxDD%</th>
+              <th>Viable</th>
+              <th>Holdout</th>
+            </tr>
+          </thead>
+          <tbody id="exp-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Current Ideas -->
+    <div class="panel">
+      <div class="panel-head collapsed" id="ideas-header">
+        <span>Current Idea Queue</span>
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div class="panel-body" id="ideas-body" style="display:none;">
+        <div id="ideas-content" class="scroll"></div>
+      </div>
+    </div>
+
+    <!-- Holdout queue -->
+    <div class="panel">
+      <div class="panel-head">Holdout Queue</div>
+      <div class="panel-body scroll" style="padding:0;">
+        <table>
+          <thead>
+            <tr>
+              <th>Family</th>
+              <th>Experiment</th>
+              <th>Status</th>
+              <th>Outcome</th>
+              <th>Sharpe</th>
+            </tr>
+          </thead>
+          <tbody id="holdout-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /col-main -->
+
+  <!-- RIGHT COL -->
+  <div class="col-side" style="display:flex; flex-direction:column; gap:10px;">
+
+    <!-- Top performers -->
+    <div class="panel">
+      <div class="panel-head">Top Performers (Sharpe)</div>
+      <div style="padding:8px 12px 0;display:flex;gap:8px;align-items:center;">
+        <span style="font-size:11px;color:var(--dim);">Filter:</span>
+        <select id="best-family-filter" onchange="fetchBestFiltered()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;">
+          <option value="">All Families</option>
+          <option value="momentum">momentum</option>
+          <option value="superstock">superstock</option>
+          <option value="ml_ranker">ml_ranker</option>
+          <option value="rl_bandit">rl_bandit</option>
+        </select>
+      </div>
+      <div class="panel-body scroll" style="padding:0; max-height:280px;">
+        <table>
+          <thead>
+            <tr>
+              <th>★</th>
+              <th>Family</th>
+              <th>Sharpe</th>
+              <th>Return%</th>
+              <th>MaxDD%</th>
+            </tr>
+          </thead>
+          <tbody id="best-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Family chart -->
+    <div class="panel">
+      <div class="panel-head">Family Viable Rates</div>
+      <div class="panel-body">
+        <canvas id="familyChart" height="140"></canvas>
+      </div>
+    </div>
+
+    <!-- Log tail -->
+    <div class="panel" style="flex:1;">
+      <div class="panel-head">Log Tail</div>
+      <div id="log-lines"></div>
+      <div class="log-controls">
+        <label><input type="checkbox" id="auto-scroll" checked onchange="toggleAutoScroll()"> Auto-scroll</label>
+        <button onclick="downloadLog()" style="margin-left:auto; background:var(--panel2); border:1px solid var(--border); color:var(--dim); font-family:inherit; font-size:10px; padding:2px 8px; border-radius:3px; cursor:pointer;">Download</button>
+      </div>
+    </div>
+
+  </div><!-- /col-side -->
+
+</div><!-- /grid -->
+
+<div id="refresh-msg">
+  <div class="spin"></div>
+  Auto-refresh every 10s — <span id="last-refresh">—</span>
+</div>
+
+<!-- EXPERIMENT DETAIL MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Experiment Details</div>
+      <button class="modal-close" id="modal-close">✕ Close</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ── state ────────────────────────────────────────────────────────────────────
+let knownExperiments = new Set();
+let championSharpe = -Infinity;
+let championExpId = '';
+let autoScroll = true;
+let allExperiments = [];  // buffered for filtering
+
+const familyColor = {
+  momentum: '#3d9bff', superstock: '#f5c400',
+  ml_ranker: '#9b6dff', rl_bandit: '#00d97e',
+};
+
+const familyBg = {
+  momentum: 'rgba(61,155,255,0.1)', superstock: 'rgba(245,196,0,0.1)',
+  ml_ranker: 'rgba(155,109,255,0.1)', rl_bandit: 'rgba(0,217,126,0.1)',
+};
+
+// ── formatters ───────────────────────────────────────────────────────────────
+const fmt = (v, d=2) => (v === null || v === undefined || v === '' || isNaN(v)) ? '—' : parseFloat(v).toFixed(d);
+const fmtPct = v => (v === null || v === '' || isNaN(v)) ? '—' : parseFloat(v).toFixed(1) + '%';
+
+const numClass = v => {
+  const n = parseFloat(v);
+  if (isNaN(n)) return '';
+  return n >= 0 ? 'num-positive' : 'num-negative';
+};
+
+const sharpeClass = v => {
+  const n = parseFloat(v);
+  if (isNaN(n)) return '';
+  if (n > 0.8)  return 'sharpe-excellent';
+  if (n > 0.3)  return 'sharpe-good';
+  if (n > 0)    return 'sharpe-mixed';
+  if (n > -0.3) return 'sharpe-poor';
+  return 'sharpe-bad';
+};
+
+const badge = v => {
+  if (v === true || v === 'True' || v === 'true') return '<span class="badge badge-success">YES</span>';
+  if (v === false|| v === 'False'|| v === 'false') return '<span class="badge badge-neutral">NO</span>';
+  if (!v || v === 'none' || v === 'None') return '<span class="badge badge-neutral">—</span>';
+  return `<span class="badge badge-info">${v}</span>`;
+};
+
+const holdoutBadge = (s, o) => {
+  if (o === 'confirmed') return '<span class="badge badge-success">CONF</span>';
+  if (o === 'failed')    return '<span class="badge badge-danger">FAIL</span>';
+  if (s === 'required')  return '<span class="badge badge-warn">REQ</span>';
+  if (s === 'pending')   return '<span class="badge badge-info">PND</span>';
+  if (s === 'passed')    return '<span class="badge badge-success">PASS</span>';
+  return badge(s);
+};
+
+const shortId = id => {
+  if (!id) return '—';
+  const parts = id.split('_');
+  return parts.slice(2, 4).join('_').slice(0, 10) + '…';
+};
+
+const shortDate = ts => {
+  if (!ts) return '—';
+  try { return new Date(ts).toISOString().replace('T',' ').slice(0,19) + 'Z'; }
+  catch { return ts; }
+};
+
+const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const escAttr = s => String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+// ── log level classification ────────────────────────────────────────────────
+const logClass = line => {
+  const l = line.toLowerCase();
+  if (l.includes('error') || l.includes('exception') || l.includes('traceback') || l.includes('failed')) return 'log-error';
+  if (l.includes('warn')) return 'log-warn';
+  if (l.includes('cycle') || l.includes('batch')) return 'log-cycle';
+  if (l.includes('proposal')) return 'log-proposal';
+  if (l.includes('success') || l.includes('completed') || l.includes('viable') || l.includes('champion')) return 'log-ok';
+  if (l.includes('debug')) return 'log-debug';
+  return 'log-info';
+};
+
+const parseLogLine = line => {
+  const tsMatch = line.match(/^(\[?\d{4}-\d{2}-\d{2}[T\s][\d:.]+Z?\]?)/);
+  const ts = tsMatch ? `<span class="log-ts">${tsMatch[1]}</span> ` : '';
+  const clean = line
+    .replace(/^\[?\d{4}-\d{2}-\d{2}[T\s][\d:.]+Z?\]?\s*/, '')
+    .replace(/^\[\d+\]\s*/, '');
+  return { ts, clean };
+};
+
+// ── apply filters ────────────────────────────────────────────────────────────
+function applyFilters() {
+  const fam = document.getElementById('filter-family').value;
+  const viable = document.getElementById('filter-viable').value;
+
+  let filtered = allExperiments;
+  if (fam)    filtered = filtered.filter(e => e.strategy_family === fam);
+  if (viable === 'true') filtered = filtered.filter(e => e.viable === true || e.viable === 'true');
+
+  document.getElementById('filter-count').textContent = `${filtered.length} of ${allExperiments.length}`;
+  renderExperiments(filtered);
+}
+
+function renderExperiments(exps) {
+  const tbody = document.getElementById('exp-tbody');
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!exps || !exps.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:14px">No experiments</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = exps.map(exp => {
+    const fam = exp.strategy_family || '';
+    const fc  = familyColor[fam] || '#888';
+    const sc  = sharpeClass(exp.sharpe);
+    const isNew = String(exp.timestamp_utc || '').startsWith(today);
+    const expId = escAttr(exp.experiment_id || '');
+
+    return `<tr onclick="openExperimentModal('${expId}')">
+      <td class="mono" style="font-size:10px;color:var(--dim);white-space:nowrap">${shortDate(exp.timestamp_utc)}</td>
+      <td class="mono" style="color:${fc}">${fam}${isNew ? '<span class="badge-new">NEW</span>' : ''}</td>
+      <td class="mono ${sc}">${fmt(exp.sharpe)}</td>
+      <td class="mono ${numClass(exp.total_return)}">${fmtPct(exp.total_return)}</td>
+      <td class="mono ${numClass(exp.max_drawdown)}">${fmtPct(exp.max_drawdown)}</td>
+      <td>${badge(exp.viable)}</td>
+      <td>${holdoutBadge(exp.holdout_check_status, exp.holdout_check_outcome)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── modal ────────────────────────────────────────────────────────────────────
+let windowChart = null;
+
+async function openExperimentModal(expId) {
+  const overlay = document.getElementById('modal-overlay');
+  const body = document.getElementById('modal-body');
+  const title = document.getElementById('modal-title');
+
+  body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--dim)">Loading…</div>';
+  overlay.classList.add('active');
+  title.textContent = expId;
+
+  try {
+    const res = await fetch(`/api/experiment/${encodeURIComponent(expId)}`);
+    const data = await res.json();
+
+    if (data.error) {
+      body.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${data.error}</div>`;
+      return;
+    }
+
+    const fam = data.strategy_family || '';
+    const fc  = familyColor[fam] || '#888';
+    const famStyle = `color:${fc}`;
+
+    let html = `
+      <div class="modal-section">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="font-size:17px;font-weight:700;${famStyle}">${escHtml(fam)}</span>
+          ${badge(data.viable)}
+          ${holdoutBadge(data.holdout_check_status, data.holdout_check_outcome)}
+          ${data.confirmation_state ? badge(data.confirmation_state) : ''}
+        </div>
+        <div class="status-row">
+          <div class="status-item"><span class="status-label">Status:</span><span class="status-value">${data.status || '—'}</span></div>
+          <div class="status-item"><span class="status-label">ID:</span><span class="status-value" style="font-size:10px;word-break:break-all;">${escHtml(data.experiment_id || '')}</span></div>
+        </div>
+      </div>
+    `;
+
+    // Metrics
+    html += `
+      <div class="modal-section">
+        <div class="modal-section-title">Metrics</div>
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <div class="metric-val ${sharpeClass(data.sharpe)}">${fmt(data.sharpe)}</div>
+            <div class="metric-label">Sharpe</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val ${numClass(data.calmar)}">${fmt(data.calmar)}</div>
+            <div class="metric-label">Calmar</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val ${numClass(data.total_return)}">${fmtPct(data.total_return)}</div>
+            <div class="metric-label">Return</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val ${numClass(data.max_drawdown)}">${fmtPct(data.max_drawdown)}</div>
+            <div class="metric-label">MaxDD</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val">${data.trade_count || '—'}</div>
+            <div class="metric-label">Trades</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-val ${numClass(data.final_value)}">${fmt(data.final_value, 0)}</div>
+            <div class="metric-label">Final Value</div>
+          </div>
+          ${data.windows_beat_spy ? `
+          <div class="metric-box">
+            <div class="metric-val" style="color:var(--blue)">${escHtml(data.windows_beat_spy)}</div>
+            <div class="metric-label">Beat SPY</div>
+          </div>` : ''}
+          ${data.runtime_seconds ? `
+          <div class="metric-box">
+            <div class="metric-val" style="color:var(--dim)">${Math.round(data.runtime_seconds)}s</div>
+            <div class="metric-label">Runtime</div>
+          </div>` : ''}
+        </div>
+      </div>
+    `;
+
+    // Per-window metrics
+    if (data.windows && data.windows.length > 0) {
+      const windows = data.windows;
+      const labels = windows.map(w => w.window || '?');
+      const sharpes = windows.map(w => w.sharpe != null ? parseFloat(w.sharpe) : null);
+      const benchmark = windows.map(w => w.bench_ret != null ? parseFloat(w.bench_ret) : null);
+
+      html += `
+        <div class="modal-section">
+          <div class="modal-section-title">Per-Window Sharpe</div>
+          <canvas id="window-canvas"></canvas>
+          <div style="margin-top:8px;overflow-x:auto;">
+            <table class="win-table">
+              <thead>
+                <tr>
+                  <th>Window</th>
+                  <th>Sharpe</th>
+                  <th>Calmar</th>
+                  <th>Ret%</th>
+                  <th>MaxDD%</th>
+                  <th>Bench%</th>
+                  <th>Trades/yr</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${windows.map(w => `
+                  <tr>
+                    <td class="mono" style="font-size:10px;color:var(--dim)">${escHtml(w.window || '—')}</td>
+                    <td class="mono ${sharpeClass(w.sharpe)}">${fmt(w.sharpe)}</td>
+                    <td class="mono ${numClass(w.calmar)}">${fmt(w.calmar)}</td>
+                    <td class="mono ${numClass(w.total_ret)}">${fmtPct(w.total_ret)}</td>
+                    <td class="mono ${numClass(w.max_dd)}">${fmtPct(w.max_dd)}</td>
+                    <td class="mono" style="color:var(--dim)">${fmtPct(w.bench_ret)}</td>
+                    <td class="mono" style="color:var(--dim)">${w.trades_yr != null ? fmt(w.trades_yr,1) : '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      // Render window chart after HTML is inserted
+      setTimeout(() => {
+        const ctx = document.getElementById('window-canvas');
+        if (!ctx) return;
+        if (windowChart) windowChart.destroy();
+        windowChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Sharpe',
+                data: sharpes,
+                backgroundColor: sharpes.map(s => {
+                  if (s == null) return 'transparent';
+                  if (s > 0.8)  return 'rgba(0,217,126,0.8)';
+                  if (s > 0.3)  return 'rgba(0,217,126,0.4)';
+                  if (s > 0)    return 'rgba(245,196,0,0.5)';
+                  return 'rgba(255,77,106,0.5)';
+                }),
+                borderRadius: 2,
+              },
+              {
+                label: 'Benchmark Ret',
+                data: benchmark,
+                type: 'line',
+                borderColor: 'rgba(90,100,120,0.6)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 2,
+                tension: 0.3,
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#5a6478', font: { size: 9 } }, grid: { color: '#1e2635' } },
+              y: { ticks: { color: '#5a6478', font: { size: 9 } }, grid: { color: '#1e2635' } }
+            }
+          }
+        });
+      }, 50);
+
+    } else {
+      html += `
+        <div class="modal-section">
+          <div class="modal-section-title">Per-Window Sharpe</div>
+          <div style="color:var(--dim);font-size:11px;padding:8px 0;">No window data available</div>
+        </div>
+      `;
+    }
+
+    // Config
+    if (data.spec && data.spec.config) {
+      const cfg = data.spec.config;
+      html += `
+        <div class="modal-section">
+          <div class="modal-section-title">Config Parameters</div>
+          <div class="config-grid">
+            ${Object.entries(cfg).map(([k,v]) => `
+              <div class="config-item">
+                <div class="config-key">${escHtml(k)}</div>
+                <div class="config-val">${v === null ? 'null' : escHtml(String(v))}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Hypothesis
+    if (data.spec && data.spec.hypothesis) {
+      html += `
+        <div class="modal-section">
+          <div class="modal-section-title">Hypothesis</div>
+          <div style="font-size:12px;line-height:1.5;color:var(--text);padding:8px;background:#0b0e13;border-radius:3px;">
+            ${escHtml(data.spec.hypothesis)}
+          </div>
+        </div>
+      `;
+    }
+
+    // Lineage
+    const lineageItems = [
+      { label: 'Template ID', value: data.template_id },
+      { label: 'Holdout', value: data.holdout_check_status },
+      { label: 'Holdout Outcome', value: data.holdout_check_outcome },
+      { label: 'Novelty Score', value: fmt(data.novelty_score, 3) },
+      { label: 'Selection Score', value: fmt(data.selection_score, 3) },
+      { label: 'Duplicate Risk', value: data.duplicate_risk },
+      { label: 'Dead Zone Risk', value: data.dead_zone_risk },
+      { label: 'Follow-up Required', value: data.targeted_follow_up_required ? 'YES' : 'NO' },
+    ].filter(i => i.value !== undefined && i.value !== null && i.value !== '');
+
+    if (lineageItems.length > 0) {
+      html += `
+        <div class="modal-section">
+          <div class="modal-section-title">Status & Lineage</div>
+          <div class="status-row">
+            ${lineageItems.map(i => `
+              <div class="status-item">
+                <span class="status-label">${i.label}:</span>
+                <span class="status-value">${escHtml(String(i.value))}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Source Ideas
+    if (data.source_idea_ids) {
+      const ideas = String(data.source_idea_ids).split(',').map(s => s.trim()).filter(Boolean);
+      if (ideas.length > 0) {
+        html += `
+          <div class="modal-section">
+            <div class="modal-section-title">Source Ideas</div>
+            <div class="ideas-list">
+              ${ideas.map(id => `<span class="idea-tag">${escHtml(id)}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    body.innerHTML = html;
+
+  } catch(e) {
+    body.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+}
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-overlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeModal(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// ── collapsible panels ───────────────────────────────────────────────────────
+document.getElementById('ideas-header').addEventListener('click', function() {
+  this.classList.toggle('collapsed');
+  document.getElementById('ideas-body').style.display = this.classList.contains('collapsed') ? 'none' : 'block';
+});
+
+// ── log auto-scroll ─────────────────────────────────────────────────────────
+function toggleAutoScroll() {
+  autoScroll = document.getElementById('auto-scroll').checked;
+}
+
+function downloadLog() {
+  fetch('/api/logs/full')
+    .then(r => r.json())
+    .then(d => {
+      const blob = new Blob([d.content || ''], {type: 'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'autonomous_research.log';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+}
+
+// ── refresh ─────────────────────────────────────────────────────────────────
+let familyChart = null;
+
+async function refresh() {
+  try {
+    const [sysRes, expRes, bestRes, famRes, logRes, holdRes, ideasRes, activityRes, discRes] = await Promise.all([
+      fetch('/api/system-summary').then(r=>r.json()),
+      fetch('/api/experiments?limit=100').then(r=>r.json()),
+      fetch('/api/best?limit=10').then(r=>r.json()),
+      fetch('/api/families').then(r=>r.json()),
+      fetch('/api/logs?lines=50').then(r=>r.json()),
+      fetch('/api/holdout').then(r=>r.json()),
+      fetch('/api/current-ideas').then(r=>r.json()),
+      fetch('/api/activity').then(r=>r.json()),
+      fetch('/api/discoveries').then(r=>r.json()),
+    ]);
+
+    renderHeader(sysRes);
+    renderActivity(activityRes);
+    renderDiscoveries(discRes);
+    renderExperimentsFeed(expRes);
+    await fetchBestFiltered();
+    renderFamilies(famRes);
+    renderLogs(logRes);
+    renderHoldout(holdRes);
+    renderIdeas(ideasRes);
+
+    document.getElementById('last-refresh').textContent =
+      new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';
+  } catch(e) {
+    console.error('refresh error:', e);
+  }
+}
+
+function renderHeader(sys) {
+  // LED
+  const led = document.getElementById('status-led');
+  led.className = 'led ' + (sys.running ? 'green' : 'red');
+
+  // Uptime
+  document.getElementById('hdr-uptime').textContent = sys.uptime_formatted || '—';
+
+  // Experiments
+  document.getElementById('hdr-experiments').textContent = sys.n_experiments
+    ? Number(sys.n_experiments).toLocaleString()
+    : '—';
+
+  // Cycles
+  document.getElementById('hdr-cycles').textContent = sys.total_cycles
+    ? Number(sys.total_cycles).toLocaleString()
+    : '—';
+
+  // Ideas
+  document.getElementById('hdr-ideas').textContent = sys.total_ideas_tested
+    ? Number(sys.total_ideas_tested).toLocaleString()
+    : '—';
+
+  // Status
+  const statusEl = document.getElementById('hdr-status');
+  if (sys.running) {
+    statusEl.textContent = 'RUNNING';
+    statusEl.className = 'hdr-value nominal';
+  } else {
+    statusEl.textContent = 'IDLE';
+    statusEl.className = 'hdr-value idle';
+  }
+
+  // Active processes
+  document.getElementById('hdr-processes').textContent = sys.active_python_processes || 0;
+
+  // Health
+  const healthEl = document.getElementById('hdr-health');
+  const health = sys.system_health || 'NOMINAL';
+  healthEl.textContent = health;
+  if (health === 'NOMINAL') healthEl.className = 'hdr-value nominal';
+  else if (health === 'DEGRADED') healthEl.className = 'hdr-value degraded';
+  else healthEl.className = 'hdr-value error';
+
+  // Last experiment ID (truncated)
+  const lastExpEl = document.getElementById('hdr-last-exp');
+  const lastId = sys.last_experiment_id || '';
+  if (lastId) {
+    // Truncate to family + timestamp parts
+    const parts = lastId.split('_');
+    const truncated = parts.length >= 3
+      ? parts.slice(2).join('_').slice(0, 18) + '…'
+      : lastId.slice(0, 20) + '…';
+    lastExpEl.textContent = truncated;
+    lastExpEl.title = lastId;
+  } else {
+    lastExpEl.textContent = '—';
+  }
+}
+
+function renderStatus(s) {
+  const led = document.getElementById('status-led');
+  led.className = 'led ' + (s.running ? 'green' : 'red');
+  document.getElementById('stat-pid').textContent    = s.running ? s.pid : '—';
+  document.getElementById('stat-uptime').textContent = s.running ? (s.uptime_formatted || '—') : '—';
+  document.getElementById('stat-exp').textContent     = (s.n_experiments || 0).toLocaleString();
+  const prop = s.current_proposal || '';
+  document.getElementById('stat-prop').textContent = prop.length > 70 ? prop.slice(0,70) + '…' : prop || '—';
+}
+
+function renderActivity(act) {
+  const statusEl = document.getElementById('act-status');
+  if (act.running) {
+    statusEl.textContent = 'RUNNING';
+    statusEl.className = 'act-value running';
+  } else {
+    statusEl.textContent = 'IDLE';
+    statusEl.className = 'act-value idle';
+  }
+  document.getElementById('act-parallel').textContent = act.n_parallel || 0;
+  document.getElementById('act-ideas').textContent     = act.idea_queue_size || 0;
+
+  const lastEl = document.getElementById('act-last');
+  if (act.last_experiment_ts) {
+    const d = new Date(act.last_experiment_ts);
+    const diff = Math.round((Date.now() - d.getTime()) / 60000);
+    lastEl.textContent = diff < 1 ? 'just now' : `${diff}m ago`;
+  } else {
+    lastEl.textContent = '—';
+  }
+}
+
+function renderDiscoveries(disc) {
+  const banner = document.getElementById('discovery-banner');
+  if (!disc || !disc.champion) {
+    banner.classList.remove('show');
+    return;
+  }
+
+  const champ = disc.champion;
+  const champSharpe = parseFloat(champ.sharpe || -Infinity);
+
+  if (champSharpe > championSharpe && championSharpe !== -Infinity) {
+    // New champion!
+    championSharpe = champSharpe;
+    championExpId  = champ.experiment_id;
+    banner.classList.add('show');
+    document.getElementById('disc-sharpe').textContent  = fmt(champ.sharpe);
+    document.getElementById('disc-family').textContent  = champ.strategy_family || '—';
+    document.getElementById('disc-exp').textContent      = shortId(champ.experiment_id);
+  } else if (championSharpe === -Infinity) {
+    // First load — show champion banner and update DOM
+    championSharpe = champSharpe;
+    championExpId  = champ.experiment_id;
+    banner.classList.add('show');
+    document.getElementById('disc-sharpe').textContent  = fmt(champ.sharpe);
+    document.getElementById('disc-family').textContent  = champ.strategy_family || '—';
+    document.getElementById('disc-exp').textContent      = shortId(champ.experiment_id);
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+function renderExperimentsFeed(res) {
+  allExperiments = res.experiments || [];
+  applyFilters();
+
+  // Track new experiments
+  for (const exp of allExperiments) {
+    if (!knownExperiments.has(exp.experiment_id)) {
+      knownExperiments.add(exp.experiment_id);
+    }
+  }
+}
+
+let currentBestFamily = '';
+
+async function fetchBestFiltered() {
+  const family = document.getElementById('best-family-filter').value;
+  currentBestFamily = family;
+  const url = family ? `/api/best-by-family?limit=10` : `/api/best?limit=10`;
+  const res = await fetch(url).then(r=>r.json());
+  if (family) {
+    // best-by-family returns {momentum:[...], superstock:[...], ...}
+    const items = res[family] || [];
+    renderBest({ best: items });
+  } else {
+    renderBest(res);
+  }
+}
+
+function renderBest(res) {
+  const tbody = document.getElementById('best-tbody');
+  if (!res.best || !res.best.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:10px">No viable experiments</td></tr>';
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0,10);
+  tbody.innerHTML = res.best.map((exp, i) => {
+    const fam  = exp.strategy_family || '';
+    const fc   = familyColor[fam] || '#888';
+    const sc   = sharpeClass(exp.sharpe);
+    const isChampion = exp.experiment_id === championExpId;
+    const star = isChampion ? '★' : (i === 0 ? '☆' : '');
+
+    return `<tr onclick="openExperimentModal('${escAttr(exp.experiment_id)}')">
+      <td style="color:var(--yellow);font-size:13px;">${star}</td>
+      <td class="mono" style="color:${fc}">${fam}</td>
+      <td class="mono ${sc}">${fmt(exp.sharpe)}</td>
+      <td class="mono ${numClass(exp.total_return)}">${fmtPct(exp.total_return)}</td>
+      <td class="mono ${numClass(exp.max_drawdown)}">${fmtPct(exp.max_drawdown)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderFamilies(res) {
+  const families = ['momentum','superstock','ml_ranker','rl_bandit'];
+  if (!res || res.error) return;
+
+  let chartLabels=[], chartData=[], chartColors=[];
+  families.forEach(fam => {
+    const d = res[fam] || {};
+    const vr = parseFloat(d.viable_rate || 0);
+    const ex = parseInt(d.total_experiments || 0);
+
+    const vrEl = document.getElementById(`${fam}-viable`);
+    const exEl = document.getElementById(`${fam}-expts`);
+    const brEl = document.getElementById(`${fam}-bar`);
+    if (vrEl) vrEl.textContent = vr > 0 ? vr.toFixed(3) : '0.000';
+    if (exEl) exEl.textContent = ex.toLocaleString();
+    if (brEl) brEl.style.width = Math.min(vr*100,100).toFixed(1)+'%';
+
+    chartLabels.push(fam);
+    chartData.push(parseFloat(vr.toFixed(4)));
+    chartColors.push(familyColor[fam] || '#888');
+  });
+
+  const ctx = document.getElementById('familyChart')?.getContext('2d');
+  if (!ctx) return;
+  if (familyChart) {
+    familyChart.data.labels = chartLabels;
+    familyChart.data.datasets[0].data = chartData;
+    familyChart.data.datasets[0].backgroundColor = chartColors;
+    familyChart.update();
+  } else {
+    familyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: chartLabels,
+        datasets: [{
+          label: 'Viable Rate',
+          data: chartData,
+          backgroundColor: chartColors,
+          borderRadius: 3,
+          borderWidth: 0,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color:'#5a6478', font:{size:10} }, grid:{color:'#1e2635'} },
+          y: { min:0, max:1, ticks:{color:'#5a6478',font:{size:10},callback:v=>v.toFixed(2)}, grid:{color:'#1e2635'} }
+        }
+      }
+    });
+  }
+}
+
+function renderLogs(res) {
+  const el = document.getElementById('log-lines');
+  if (!res.lines || !res.lines.length) {
+    el.innerHTML = '<span style="color:var(--dim)">No log entries.</span>';
+    return;
+  }
+  el.innerHTML = res.lines.map(line => {
+    const cls  = logClass(line);
+    const { ts, clean } = parseLogLine(line);
+    return `<div class="${cls}">${ts}${escHtml(clean)}</div>`;
+  }).join('');
+
+  if (autoScroll) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function renderHoldout(res) {
+  const tbody = document.getElementById('holdout-tbody');
+  if (!res.holdout_experiments || !res.holdout_experiments.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:10px">No pending holdout experiments</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.holdout_experiments.map(exp => {
+    const fam = exp.strategy_family || '';
+    const fc  = familyColor[fam] ? `style="color:${familyColor[fam]}"` : '';
+    return `<tr onclick="openExperimentModal('${escAttr(exp.experiment_id)}')">
+      <td class="mono" ${fc}>${fam}</td>
+      <td class="mono" style="font-size:10px" title="${escAttr(exp.experiment_id||'')}">${shortId(exp.experiment_id)}</td>
+      <td>${holdoutBadge(exp.holdout_check_status, exp.holdout_check_outcome)}</td>
+      <td>${badge(exp.holdout_check_outcome)}</td>
+      <td class="mono ${sharpeClass(exp.sharpe)}">${fmt(exp.sharpe)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderIdeas(res) {
+  const container = document.getElementById('ideas-content');
+  if (!res || res.error || !res.ideas || res.ideas.length === 0) {
+    container.innerHTML = '<div style="color:var(--dim);padding:8px">No current ideas</div>';
+    return;
+  }
+
+  const famGroups = {};
+  for (const idea of res.ideas) {
+    const f = idea.family || 'unknown';
+    if (!famGroups[f]) famGroups[f] = [];
+    famGroups[f].push(idea);
+  }
+
+  let html = `<div style="padding:4px 0;color:var(--dim);font-size:10px;margin-bottom:8px;">${res.ideas.length} ideas in queue from <b style="color:var(--text)">${escHtml(res.proposal_dir || 'latest proposal')}</b></div>`;
+
+  for (const [fam, ideas] of Object.entries(famGroups).sort(([a],[b]) => a.localeCompare(b))) {
+    const fc = familyColor[fam] || '#888';
+    html += `<div class="section-label" style="color:${fc}">${escHtml(fam.toUpperCase())} — ${ideas.length} idea${ideas.length!==1?'s':''}</div>`;
+    for (const idea of ideas) {
+      html += `
+        <div class="idea-row">
+          <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+            <span class="idea-tag" style="font-size:9px;flex-shrink:0;">${escHtml(idea.idea_kind || idea.template_id || '—')}</span>
+            <span class="mono" style="font-size:9px;color:var(--dim);">${escHtml(idea.exploration_mode || '')}</span>
+            ${idea.novelty_score != null ? `<span style="font-size:9px;color:var(--dim);">novelty=${fmt(idea.novelty_score,2)}</span>` : ''}
+          </div>
+          <div class="idea-hypothesis">${escHtml(idea.hypothesis || '—').slice(0,120)}</div>
+          <div class="idea-meta">
+            <span style="color:var(--dim);">hash=${escHtml(String(idea.config_hash||'').slice(0,8))}</span>
+            ${idea.source_type ? `<span>source=${escHtml(idea.source_type)}</span>` : ''}
+            ${idea.confirmation_state ? badge(idea.confirmation_state) : ''}
+            ${holdoutBadge(idea.holdout_check_status, idea.holdout_check_outcome)}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  container.innerHTML = html || '<div style="color:var(--dim);padding:8px">No current ideas</div>';
+}
+
+// ── bootstrap ─────────────────────────────────────────────────────────────────
+refresh();
+setInterval(refresh, 10_000);
+</script>
+</body>
+</html>

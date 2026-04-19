@@ -57,6 +57,7 @@ INDEX_COLUMNS = [
     "dead_zone_flags",
     "source_proposal_id",
     "source_idea_ids",
+    "idea_id",
     "confirmation_state",
     "confirmation_required",
     "confirmation_reason",
@@ -75,6 +76,8 @@ INDEX_COLUMNS = [
     "holdout_check_batch_id",
     "holdout_horizon_tags",
     "holdout_regime_tags",
+    "synthesized_template_family",
+    "synthesis_rationale",
     "max_workers",
     "fail_fast",
     "execution_mode",
@@ -232,6 +235,7 @@ def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
         "dead_zone_flags": json.dumps(spec.get("dead_zone_flags")) if spec.get("dead_zone_flags") is not None else None,
         "source_proposal_id": spec.get("source_proposal_id"),
         "source_idea_ids": json.dumps(spec.get("source_idea_ids")) if spec.get("source_idea_ids") is not None else None,
+        "idea_id": spec.get("idea_id"),
         "confirmation_state": spec.get("confirmation_state"),
         "confirmation_required": spec.get("confirmation_required"),
         "confirmation_reason": spec.get("confirmation_reason"),
@@ -250,6 +254,8 @@ def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
         "holdout_check_batch_id": spec.get("holdout_check_batch_id"),
         "holdout_horizon_tags": json.dumps(spec.get("holdout_horizon_tags")) if spec.get("holdout_horizon_tags") is not None else None,
         "holdout_regime_tags": json.dumps(spec.get("holdout_regime_tags")) if spec.get("holdout_regime_tags") is not None else None,
+        "synthesized_template_family": spec.get("synthesized_template_family"),
+        "synthesis_rationale": spec.get("synthesis_rationale"),
         "max_workers": spec.get("max_workers"),
         "fail_fast": spec.get("fail_fast"),
         "execution_mode": spec.get("execution_mode"),
@@ -414,6 +420,19 @@ def save_proposal_result_atomic(proposal: dict[str, Any], base_dir: str = "exper
         }
         index = pd.concat([index, pd.DataFrame([row], columns=PROPOSAL_INDEX_COLUMNS)], ignore_index=True)
         _atomic_write_text(Path(base_dir) / "proposals" / "index.csv", index.to_csv(index=False))
+
+    try:
+        from experiment_hot_index import upsert_proposal_metadata
+
+        upsert_proposal_metadata(
+            base_dir,
+            proposal,
+            proposal_path=str(proposal_path),
+            summary_path=str(summary_path),
+            candidate_configs_path=str(candidates_path),
+        )
+    except Exception:
+        pass
 
     return {
         "proposal_path": str(proposal_path),
