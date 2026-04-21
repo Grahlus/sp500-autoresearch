@@ -8,12 +8,12 @@ from __future__ import annotations
 from typing import Any
 
 from family_candidate_store import family_candidate_summary, get_controlled_probes
-from family_discovery_scheduler import get_discovery_status
+from family_discovery_scheduler import get_scheduler_status
 
 
 def build_health_report(workspace_root: str = ".") -> dict[str, Any]:
     """Aggregate all discovery pipeline state into one dict."""
-    sched = get_discovery_status(workspace_root)
+    sched = get_scheduler_status(workspace_root)
     queue = family_candidate_summary(workspace_root)
 
     # Count probe ideas in queues/ideas/

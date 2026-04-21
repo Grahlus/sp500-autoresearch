@@ -854,7 +854,7 @@ def main(argv: list[str] | None = None) -> int:
             if _fd_run_fast:
                 _fast_report = run_fast_scheduler_tick(
                     workspace_root,
-                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 3),
+                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
                     probe_budget=getattr(args, "new_family_probe_budget", 2),
                     max_active_probes=getattr(args, "max_active_family_probes", 6),
                 )
@@ -898,7 +898,7 @@ def main(argv: list[str] | None = None) -> int:
                 workspace_root=workspace_root,
                 n_ideas=getattr(args, "family_discovery_n_ideas", 15),
                 top_k=getattr(args, "family_discovery_top_k", 8),
-                auto_promote_top=getattr(args, "family_discovery_auto_promote", 3),
+                auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
                 seed_ideas_for_probe=True,
                 temperature=getattr(args, "family_discovery_temperature", 0.75),
                 max_active_probes=_effective_cap,
