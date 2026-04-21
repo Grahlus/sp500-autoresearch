@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load MiniMax API key from local file (not in git to avoid leaking the key)
+# This file is created by the OttoChaosbot setup script
+if [ -f "$HOME/.research_api_key.sh" ]; then
+    . "$HOME/.research_api_key.sh"
+fi
+
 REPO_DIR=${REPO_DIR:-$HOME/sp500-autoresearch}
 SESSION_NAME=${SESSION_NAME:-autoresearch}
 BASE_DIR=${BASE_DIR:-$REPO_DIR/experiments}
