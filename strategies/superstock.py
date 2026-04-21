@@ -54,7 +54,11 @@ def build_superstock_pipeline(
     close = data["close"]
     resolved_max_positions = int(config.get("max_positions", max_positions))
 
-    weekly = build_superstock_weekly_features(data)
+    cache = data.setdefault("_grid_cache", {})
+    weekly = cache.get("superstock_weekly")
+    if weekly is None:
+        weekly = build_superstock_weekly_features(data)
+        cache["superstock_weekly"] = weekly
     screen = build_superstock_screen(data, weekly=weekly, config=config)
     entries = build_superstock_breakout_entries(data, weekly=weekly, screen=screen, config=config)
     exits = build_superstock_exit_signals(data, weekly=weekly, entries=entries, config=config)

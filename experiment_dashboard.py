@@ -12,6 +12,7 @@ import pandas as pd
 
 from experiment_best_results import BEST_RESULTS_COLUMNS, latest_non_empty_batch, rank_best_results
 from experiment_scorecards import build_family_scorecards, scorecards_to_records
+from experiment_spaces import get_family_search_status
 from experiment_store import load_results_index
 
 
@@ -81,6 +82,7 @@ class BestResultsDashboard:
     top_per_family: dict[str, list[dict[str, Any]]]
     latest_non_empty_batch: dict[str, Any] | None
     family_scorecards: dict[str, dict[str, Any]]
+    lineage_summary: dict[str, Any] | None = None
 
 
 def _truthy(value: Any) -> bool:
@@ -263,6 +265,20 @@ def format_dashboard_markdown(dashboard: BestResultsDashboard) -> str:
         "exploitation_budget_recommendation",
     ]
     scorecard_rows = [record for _, record in sorted(dashboard.family_scorecards.items())]
+    search_status_families = [
+        "fear_greed_contrarian_overlay",
+        "momentum_fear_greed_overlay",
+        "mean_reversion",
+        "vix_regime_sector_tilt",
+    ]
+    search_status_rows = [
+        {
+            "family": family,
+            "status": get_family_search_status(family).get("status", ""),
+            "reason": get_family_search_status(family).get("reason", ""),
+        }
+        for family in search_status_families
+    ]
     latest = dashboard.latest_non_empty_batch or {}
     lines = [
         "# Best Results Dashboard",
@@ -294,6 +310,9 @@ def format_dashboard_markdown(dashboard: BestResultsDashboard) -> str:
             "(none)"
             if not latest
             else "\n".join(f"{key}={latest.get(key)}" for key in ("batch_id", "executed_count", "leaderboard_path", "summary_path")),
+            "",
+            "## Search Status",
+            _markdown_table(search_status_rows, ["family", "status", "reason"]),
             "",
             "## Family Scorecards",
             _markdown_table(scorecard_rows, scorecard_columns),

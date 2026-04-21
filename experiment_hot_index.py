@@ -13,6 +13,8 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from proposal_artifacts import compact_request, compact_summary_for_disk
+
 HOT_INDEX_FILENAME = "hot_index.sqlite3"
 HOT_INDEX_EXPERIMENT_LIMIT_PER_FAMILY = 256
 HOT_INDEX_BOOTSTRAP_LIMIT_PER_FAMILY = 128
@@ -1087,6 +1089,8 @@ def upsert_proposal_metadata(
         family = str(row.get("family") or "")
         candidate_family_counts[family] = candidate_family_counts.get(family, 0) + 1
     reasoning_summary = proposal.get("reasoning_summary") if isinstance(proposal.get("reasoning_summary"), dict) else {}
+    compact_reasoning_summary = compact_summary_for_disk(reasoning_summary, proposal)
+    compact_request_payload = compact_request(request)
     proposal_quality = reasoning_summary.get("proposal_quality") if isinstance(reasoning_summary.get("proposal_quality"), dict) else {}
     proposal_dir = str(Path(proposal_path).parent) if proposal_path else None
     record = {
@@ -1105,8 +1109,8 @@ def upsert_proposal_metadata(
         "candidate_family_counts_json": _json_dumps(candidate_family_counts),
         "source_idea_ids_json": _json_dumps(request.get("source_idea_ids") or []),
         "proposal_quality_json": _json_dumps(proposal_quality),
-        "reasoning_summary_json": _json_dumps(reasoning_summary),
-        "request_json": _json_dumps(request),
+        "reasoning_summary_json": _json_dumps(compact_reasoning_summary),
+        "request_json": _json_dumps(compact_request_payload),
         "proposal_dir": proposal_dir,
         "proposal_path": proposal_path,
         "summary_path": summary_path,

@@ -22,6 +22,7 @@ import requests
 from lxml import html as lxml_html
 
 from agents.schemas import IdeaRecord, ensure_helper_dirs, load_idea_records, load_latest_analysis_report, save_idea_record, utc_now_iso
+from experiment_idea_manager import gate_new_idea, run_lifecycle_maintenance
 from experiment_idea_yield import load_latest_idea_yield_summary
 from experiment_best_results import top_results_per_family
 from experiment_idea_library import list_idea_templates
@@ -30,6 +31,11 @@ from experiment_store import load_results_index
 
 
 FAMILY_STRATEGY_TYPES = {
+    "amihud_illiquidity_premium": "classical",
+    "fear_greed_contrarian": "classical",
+    "fear_greed_contrarian_overlay": "classical",
+    "sector_breadth_overlay": "classical",
+    "volatility_compression_expansion": "classical",
     "momentum": "classical",
     "superstock": "classical",
     "ml_ranker": "ml",
@@ -533,7 +539,7 @@ def _web_research_status(workspace_root: str) -> dict[str, Any]:
         "last_topic_slug": state.get("last_topic_slug"),
         "papers_found": int(state.get("papers_found") or 0),
         "used_topic_slugs": list(state.get("used_topic_slugs") or []),
-        "web_search_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "web_search_available": bool(os.getenv("OPENAI_API_KEY")),
     }
 
 
@@ -675,7 +681,14 @@ def _call_minimax_web_synthesis(
             if raw_text.startswith("json"):
                 raw_text = raw_text[4:]
             raw_text = raw_text.rsplit("```", 1)[0].strip()
-        data = json.loads(raw_text)
+        start = raw_text.find("[")
+        end = raw_text.rfind("]")
+        if start >= 0 and end > start:
+            raw_text = raw_text[start:end + 1]
+        try:
+            data = json.loads(raw_text)
+        except json.JSONDecodeError:
+            return []
         if not isinstance(data, list):
             return []
         return [item for item in data[:max_ideas] if isinstance(item, dict)]
@@ -1903,9 +1916,28 @@ def main(argv: list[str] | None = None) -> int:
         families=families,
         limit=args.limit,
     )
+    # Run lifecycle maintenance first so caps are fresh before we add new ideas.
+    try:
+        maint = run_lifecycle_maintenance(args.workspace_root)
+        if maint.get("archived", 0) > 0:
+            print(f"[idea_manager] archived {maint['archived']} stale/excess ideas before saving new ones", flush=True)
+    except Exception:
+        pass
+    saved = 0
+    skipped = 0
     for record in records:
+        import dataclasses
+        idea_dict = dataclasses.asdict(record)
+        should_save, reason = gate_new_idea(idea_dict, args.workspace_root)
+        if not should_save:
+            print(f"[idea_manager] skip {record.idea_id} reason={reason}", flush=True)
+            skipped += 1
+            continue
         path = save_idea_record(record, workspace_root=args.workspace_root)
         print(path)
+        saved += 1
+    if skipped > 0:
+        print(f"[idea_manager] saved={saved} skipped={skipped} (queue cap enforcement)", flush=True)
     return 0
 
 

@@ -381,10 +381,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Widen exploration if no improvement occurs for this many batches",
     )
     parser.add_argument("--run-family-discovery", action="store_true", help="Run the family discovery agent to propose new strategy families via MiniMax")
-    parser.add_argument("--no-inline-family-discovery", action="store_true", help="Defer auto family discovery to an external sidecar instead of running inline")
-    parser.add_argument("--family-discovery-n-ideas", type=int, default=20, help="Number of family ideas to generate (used with --run-family-discovery)")
-    parser.add_argument("--family-discovery-top-k", type=int, default=12, help="Number of top family candidates to select (used with --run-family-discovery)")
-    parser.add_argument("--family-discovery-auto-promote", type=int, default=5, help="Number of top candidates to auto-promote to controlled_probe (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-n-ideas", type=int, default=15, help="Number of family ideas to generate (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-top-k", type=int, default=8, help="Number of top family candidates to select (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-auto-promote", type=int, default=3, help="Number of top candidates to auto-promote to controlled_probe (used with --run-family-discovery)")
     parser.add_argument("--family-discovery-temperature", type=float, default=0.75, help="LLM generation temperature (used with --run-family-discovery)")
     # Auto-scheduling controls
     parser.add_argument("--family-discovery-enabled", action="store_true", default=True, help="Enable periodic automatic family discovery (default: on)")
@@ -398,8 +397,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--family-scheduler-fast-tick-every-n-cycles", type=int, default=1, help="Fast tick runs every N cycles (default: 1)")
     parser.add_argument("--family-scheduler-fast-tick-interval-minutes", type=float, default=10.0, help="Fast tick minimum interval in minutes (default: 10.0)")
     # Budget controls
-    parser.add_argument("--new-family-probe-budget", type=int, default=4, help="Max new probe IdeaRecords seeded per discovery run (default: 4)")
-    parser.add_argument("--max-active-family-probes", type=int, default=10, help="Max concurrent controlled_probe candidates (default: 10)")
+    parser.add_argument("--new-family-probe-budget", type=int, default=2, help="Max new probe IdeaRecords seeded per discovery run (default: 2)")
+    parser.add_argument("--max-active-family-probes", type=int, default=6, help="Max concurrent controlled_probe candidates (default: 6)")
     parser.add_argument("--family-probe-repeat-cap", type=int, default=2, help="Max times the same family probe can appear in proposals (default: 2)")
     parser.add_argument("--family-discovery-web-mode", default="arxiv", choices=["none", "arxiv", "hybrid"],
                         help="Web research mode for family discovery (default: arxiv)")
@@ -855,7 +854,7 @@ def main(argv: list[str] | None = None) -> int:
             if _fd_run_fast:
                 _fast_report = run_fast_scheduler_tick(
                     workspace_root,
-                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
+                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 3),
                     probe_budget=getattr(args, "new_family_probe_budget", 2),
                     max_active_probes=getattr(args, "max_active_family_probes", 6),
                 )
@@ -880,74 +879,43 @@ def main(argv: list[str] | None = None) -> int:
 
     if _fd_manual or _fd_auto_trigger:
         trigger_label = "manual" if _fd_manual else f"auto({_fd_trigger_reason})"
-        if _fd_auto_trigger and getattr(args, "no_inline_family_discovery", False) and not _fd_manual:
-            _request_path = Path(workspace_root) / "run" / "family_discovery_request.txt"
-            _request_path.parent.mkdir(parents=True, exist_ok=True)
-            _request_path.write_text(f"{trigger_label}\n", encoding="utf-8")
-            print(f"family_discovery: deferred trigger={trigger_label} request={_request_path}", flush=True)
-        else:
-            print(f"family_discovery: trigger={trigger_label}", flush=True)
-            try:
-                from family_candidate_store import recycle_stale_probe_slots, get_dynamic_probe_cap
-                _releases = recycle_stale_probe_slots(workspace_root)
-                if _releases:
-                    print(f"family_discovery: recycled {len(_releases)} stale probe slots", flush=True)
-                _effective_cap = getattr(args, "max_active_family_probes", 6)
-                if not getattr(args, "max_active_family_probes", None):
-                    _effective_cap = get_dynamic_probe_cap(workspace_root)
-                    print(f"family_discovery: dynamic cap={_effective_cap}", flush=True)
-            except Exception as _recycle_err:
-                print(f"family_discovery: recycle step skipped err={_recycle_err}", flush=True)
-            try:
-                from agents.family_discovery_agent import discover_and_rank_families, print_discovery_report
-                from family_discovery_scheduler import record_discovery_run, record_discovery_attempt
-                _fd_report = discover_and_rank_families(
-                    workspace_root=workspace_root,
-                    n_ideas=getattr(args, "family_discovery_n_ideas", 20),
-                    top_k=getattr(args, "family_discovery_top_k", 12),
-                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
-                    seed_ideas_for_probe=True,
-                    temperature=getattr(args, "family_discovery_temperature", 0.75),
-                    max_active_probes=_effective_cap,
-                    probe_budget=getattr(args, "new_family_probe_budget", 4),
-                    web_mode=getattr(args, "family_discovery_web_mode", "arxiv"),
-                    max_web_queries=getattr(args, "family_discovery_max_web_queries", 5),
-                )
-                print_discovery_report(_fd_report)
-                record_discovery_run(
-                    workspace_root,
-                    batch_id=_fd_report.get("batch_id"),
-                    n_candidates=len(_fd_report.get("candidates", [])),
-                    n_promoted=_fd_report.get("n_promoted", 0),
-                    trigger_reason=_fd_trigger_reason,
-                )
-                try:
-                    from agents.family_discovery_agent import generate_probe_mutation_ideas
-                    _fd_mutation_report = generate_probe_mutation_ideas(
-                        workspace_root=workspace_root,
-                        experiments_dir=args.base_dir,
-                        max_targets=1,
-                        mutations_per_target=2,
-                    )
-                    print(
-                        "family_discovery_mutations: "
-                        f"status={_fd_mutation_report.get('status')} "
-                        f"targets={_fd_mutation_report.get('target_count', 0)} "
-                        f"saved={len(_fd_mutation_report.get('saved_idea_ids') or [])} "
-                        f"report={_fd_mutation_report.get('report_path')}",
-                        flush=True,
-                    )
-                except Exception as _fd_mut_err:
-                    print(f"family_discovery_mutations: skipped err={_fd_mut_err}", flush=True)
-            except Exception as _fd_err:
-                print(f"family_discovery: failed err={_fd_err}", flush=True)
-                # Always reset cycle counter even on failure; consecutive_failures drives backoff
-                # in should_run_discovery so we don't hammer the API every cycle on hard errors.
-                try:
-                    from family_discovery_scheduler import record_discovery_attempt
-                    record_discovery_attempt(workspace_root, error=str(_fd_err), trigger_reason=_fd_trigger_reason)
-                except Exception:
-                    pass
+        print(f"family_discovery: trigger={trigger_label}", flush=True)
+        try:
+            from family_candidate_store import recycle_stale_probe_slots, get_dynamic_probe_cap
+            _releases = recycle_stale_probe_slots(workspace_root)
+            if _releases:
+                print(f"family_discovery: recycled {len(_releases)} stale probe slots", flush=True)
+            _effective_cap = getattr(args, "max_active_family_probes", 6)
+            if not getattr(args, "max_active_family_probes", None):
+                _effective_cap = get_dynamic_probe_cap(workspace_root)
+                print(f"family_discovery: dynamic cap={_effective_cap}", flush=True)
+        except Exception as _recycle_err:
+            print(f"family_discovery: recycle step skipped err={_recycle_err}", flush=True)
+        try:
+            from agents.family_discovery_agent import discover_and_rank_families, print_discovery_report
+            from family_discovery_scheduler import record_discovery_run
+            _fd_report = discover_and_rank_families(
+                workspace_root=workspace_root,
+                n_ideas=getattr(args, "family_discovery_n_ideas", 15),
+                top_k=getattr(args, "family_discovery_top_k", 8),
+                auto_promote_top=getattr(args, "family_discovery_auto_promote", 3),
+                seed_ideas_for_probe=True,
+                temperature=getattr(args, "family_discovery_temperature", 0.75),
+                max_active_probes=_effective_cap,
+                probe_budget=getattr(args, "new_family_probe_budget", 2),
+                web_mode=getattr(args, "family_discovery_web_mode", "arxiv"),
+                max_web_queries=getattr(args, "family_discovery_max_web_queries", 5),
+            )
+            print_discovery_report(_fd_report)
+            record_discovery_run(
+                workspace_root,
+                batch_id=_fd_report.get("batch_id"),
+                n_candidates=len(_fd_report.get("candidates", [])),
+                n_promoted=_fd_report.get("n_promoted", 0),
+                trigger_reason=_fd_trigger_reason,
+            )
+        except Exception as _fd_err:
+            print(f"family_discovery: failed err={_fd_err}", flush=True)
         # Manual-only invocation exits early; auto-trigger continues the normal loop
         if _fd_manual and not args.run_proposal and not args.proposal_next:
             return 0
@@ -1044,14 +1012,6 @@ def main(argv: list[str] | None = None) -> int:
                 history_limit_per_family=planned_n,
             ))
             print(f"runtime_decision: confirmation_required batch_id={decision.confirmation_batch_id}")
-            current_novelty_floor = float(proposal_kwargs.get("novelty_floor") or 0.0)
-            if current_novelty_floor > 0.05:
-                proposal_kwargs["novelty_floor"] = 0.05
-                print(
-                    "runtime_decision: confirmation_required "
-                    f"novelty_floor={current_novelty_floor:.2f}->0.05 "
-                    "to reduce underfilled validation batches"
-                )
 
         # Handle targeted follow-up
         if decision.targeted_follow_up_required:

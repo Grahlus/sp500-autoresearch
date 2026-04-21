@@ -312,6 +312,51 @@ def _count_ideas_tested() -> int:
         return 0
 
 
+_backlog_cache: dict = {"count": None, "ts": 0.0}
+_BACKLOG_TTL = 60  # seconds
+
+
+def _count_ideas_backlog() -> int:
+    """Count ideas in queue that have not yet been turned into experiments.
+    
+    An idea is "done" if its full idea_id (filename without .json) appears
+    in the index.csv source_idea_ids or idea_id columns.
+    """
+    import glob, os, json as _json
+    now = time.monotonic()
+    if _backlog_cache["count"] is not None and (now - _backlog_cache["ts"]) < _BACKLOG_TTL:
+        return _backlog_cache["count"]
+
+    try:
+        # 1. All queued idea IDs (filename without .json)
+        queue_files = glob.glob("/home/mrlearn/sp500-autoresearch/queues/ideas/*.json")
+        queue_ids = {os.path.splitext(os.path.basename(f))[0] for f in queue_files}
+
+        # 2. All processed idea IDs from index.csv
+        processed_ids: set[str] = set()
+        try:
+            import pandas as pd
+            df = pd.read_csv(INDEX, low_memory=True, usecols=["idea_id", "source_idea_ids"])
+            for v in df["idea_id"].dropna():
+                processed_ids.add(str(v).strip())
+            for v in df["source_idea_ids"].dropna():
+                try:
+                    ids = _json.loads(v)
+                    for i in ids:
+                        processed_ids.add(str(i).strip())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        backlog = len(queue_ids - processed_ids)
+        _backlog_cache["count"] = backlog
+        _backlog_cache["ts"] = now
+        return backlog
+    except Exception:
+        return 0
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -418,6 +463,7 @@ async def system_summary():
         "downtime_minutes": downtime_minutes,
         "total_cycles": total_cycles,
         "total_ideas_tested": total_ideas,
+        "idea_backlog": _count_ideas_backlog(),
         "system_health": system_health,
         "active_python_processes": active_procs,
         "last_error": last_error,
@@ -486,6 +532,9 @@ async def discoveries():
     try:
         df = _df(low_memory=False)
         df = df[df["sharpe"].notna()]
+        df_viable = df[df.get("viable", False) == True]
+        if len(df_viable) > 0:
+            df = df_viable
         df = df.sort_values("sharpe", ascending=False)
 
         # Best overall
@@ -807,6 +856,17 @@ async def logs_full():
         return {"content": content, "size_bytes": len(content)}
     except Exception as e:
         return {"content": "", "error": str(e)}
+
+
+@app.get("/api/family-discovery")
+async def family_discovery_status():
+    """Return family discovery pipeline health: scheduler state + candidate queue."""
+    try:
+        from family_discovery_health import build_health_report
+        report = build_health_report(workspace_root=str(Path(__file__).resolve().parents[1]))
+        return report
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/holdout")

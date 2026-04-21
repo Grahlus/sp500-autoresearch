@@ -37,7 +37,8 @@ Stop only when the system clock reaches 23:55 local time.'
 
 # 4. Launch detached tmux session
 tmux new-session -d -s sp500 -x 220 -y 50 \
-  "bash -c 'export ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY; \
+  "bash -c 'export OPENAI_API_KEY=$OPENAI_API_KEY; \
+  export OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.minimaxi.com/v1}; \
   cd /root/sp500-autoresearch && \
   claude --print \"$CLAUDE_PROMPT\" 2>&1 | tee -a $LOGFILE; \
   echo \"[session ended at \$(date)]\" >> $LOGFILE'"

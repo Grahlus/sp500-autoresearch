@@ -4,7 +4,7 @@ import hashlib
 import json
 import subprocess
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,6 +15,10 @@ from prepare import load_data, run_backtest
 from strategies import get_strategy_family
 
 from experiment_objective import evaluate_objective, evaluate_robustness
+from experiment_promoted_regions import (
+    VALIDATOR_MODE_PROMOTED_REGION,
+    normalize_promoted_region_followup_config,
+)
 from experiment_spaces import normalize_experiment_config, validate_experiment_config
 from experiment_store import compute_config_hash, has_experiment_result, load_experiment_result, save_experiment_result
 from experiment_types import ExperimentResult, ExperimentSpec
@@ -234,6 +238,20 @@ def _make_experiment_spec(
         selection_score=metadata.get("selection_score"),
         source_proposal_id=metadata.get("source_proposal_id"),
         source_batch_id=metadata.get("source_batch_id"),
+        source_region_id=metadata.get("source_region_id"),
+        source_grid_search_id=metadata.get("source_grid_search_id"),
+        source_cells=metadata.get("source_cells"),
+        region_class=metadata.get("region_class"),
+        promotion_recommendation=metadata.get("promotion_recommendation"),
+        region_state=metadata.get("region_state"),
+        neighbor_of_cell=metadata.get("neighbor_of_cell"),
+        neighbor_generation_reason=metadata.get("neighbor_generation_reason"),
+        neighbor_grid_status=metadata.get("neighbor_grid_status"),
+        validator_mode=metadata.get("validator_mode"),
+        allowed_override_params=metadata.get("allowed_override_params"),
+        allowed_override_values=metadata.get("allowed_override_values"),
+        off_grid_params=metadata.get("off_grid_params"),
+        validation_override_reason=metadata.get("validation_override_reason"),
     )
 
 
@@ -282,6 +300,20 @@ def _make_invalid_spec(
         selection_score=metadata.get("selection_score"),
         source_proposal_id=metadata.get("source_proposal_id"),
         source_batch_id=metadata.get("source_batch_id"),
+        source_region_id=metadata.get("source_region_id"),
+        source_grid_search_id=metadata.get("source_grid_search_id"),
+        source_cells=metadata.get("source_cells"),
+        region_class=metadata.get("region_class"),
+        promotion_recommendation=metadata.get("promotion_recommendation"),
+        region_state=metadata.get("region_state"),
+        neighbor_of_cell=metadata.get("neighbor_of_cell"),
+        neighbor_generation_reason=metadata.get("neighbor_generation_reason"),
+        neighbor_grid_status=metadata.get("neighbor_grid_status"),
+        validator_mode=metadata.get("validator_mode"),
+        allowed_override_params=metadata.get("allowed_override_params"),
+        allowed_override_values=metadata.get("allowed_override_values"),
+        off_grid_params=metadata.get("off_grid_params"),
+        validation_override_reason=metadata.get("validation_override_reason"),
     )
 
 
@@ -294,6 +326,52 @@ def build_strategy_weights_for_experiment(
     if strategy.generate_signals_with_config is not None:
         return strategy.generate_signals_with_config(data, config)
     return strategy.generate_signals(data)
+
+
+def _validator_metadata_from_spec_or_idea(
+    spec: ExperimentSpec | None,
+    idea_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    metadata = dict(idea_metadata or {})
+    if spec is None:
+        return metadata
+    for key in (
+        "validator_mode",
+        "source_type",
+        "source_region_id",
+        "source_grid_search_id",
+        "source_cells",
+        "region_class",
+        "promotion_recommendation",
+        "region_state",
+        "neighbor_of_cell",
+        "neighbor_generation_reason",
+        "neighbor_grid_status",
+        "allowed_override_params",
+        "allowed_override_values",
+        "off_grid_params",
+        "validation_override_reason",
+    ):
+        value = getattr(spec, key, None)
+        if value is not None:
+            metadata[key] = value
+    metadata["ready_for_follow_up"] = metadata.get("ready_for_follow_up", True)
+    return metadata
+
+
+def _normalize_config_for_execution(
+    family: str,
+    config: dict[str, Any],
+    validator_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if validator_metadata.get("validator_mode") == VALIDATOR_MODE_PROMOTED_REGION:
+        normalized, _ = normalize_promoted_region_followup_config(
+            family.strip().lower(),
+            dict(config or {}),
+            validator_metadata,
+        )
+        return normalized
+    return normalize_experiment_config(family, config)
 
 
 def _result_from_loaded(payload: dict[str, Any], status: str) -> ExperimentResult:
@@ -331,6 +409,20 @@ def _result_from_loaded(payload: dict[str, Any], status: str) -> ExperimentResul
         selection_score=spec_dict.get("selection_score"),
         source_proposal_id=spec_dict.get("source_proposal_id"),
         source_batch_id=spec_dict.get("source_batch_id"),
+        source_region_id=spec_dict.get("source_region_id"),
+        source_grid_search_id=spec_dict.get("source_grid_search_id"),
+        source_cells=spec_dict.get("source_cells"),
+        region_class=spec_dict.get("region_class"),
+        promotion_recommendation=spec_dict.get("promotion_recommendation"),
+        region_state=spec_dict.get("region_state"),
+        neighbor_of_cell=spec_dict.get("neighbor_of_cell"),
+        neighbor_generation_reason=spec_dict.get("neighbor_generation_reason"),
+        neighbor_grid_status=spec_dict.get("neighbor_grid_status"),
+        validator_mode=spec_dict.get("validator_mode"),
+        allowed_override_params=spec_dict.get("allowed_override_params"),
+        allowed_override_values=spec_dict.get("allowed_override_values"),
+        off_grid_params=spec_dict.get("off_grid_params"),
+        validation_override_reason=spec_dict.get("validation_override_reason"),
     )
     return ExperimentResult(
         spec=result_spec,
@@ -359,9 +451,10 @@ def run_single_experiment(
 ) -> ExperimentResult:
     started = time.time()
     data = data or load_data()
+    validator_metadata = _validator_metadata_from_spec_or_idea(spec, idea_metadata)
 
     try:
-        normalized_config = normalize_experiment_config(family, config)
+        normalized_config = _normalize_config_for_execution(family, config, validator_metadata)
     except ValueError as exc:
         spec = _make_invalid_spec(
             family,
@@ -382,26 +475,27 @@ def run_single_experiment(
             runtime_seconds=round(time.time() - started, 6),
         )
 
-    valid, error_message = validate_experiment_config(family, config)
-    if not valid:
-        spec = _make_invalid_spec(
-            family,
-            normalized_config,
-            data,
-            experiment_id=experiment_id,
-            metadata=idea_metadata,
-        )
-        return ExperimentResult(
-            spec=spec,
-            status="invalid",
-            objective_score=None,
-            metrics={},
-            robustness={"viable": False, "negative_windows": 999},
-            artifacts={},
-            baseline_comparison=None,
-            error_message=error_message,
-            runtime_seconds=round(time.time() - started, 6),
-        )
+    if validator_metadata.get("validator_mode") != VALIDATOR_MODE_PROMOTED_REGION:
+        valid, error_message = validate_experiment_config(family, config)
+        if not valid:
+            spec = _make_invalid_spec(
+                family,
+                normalized_config,
+                data,
+                experiment_id=experiment_id,
+                metadata=idea_metadata,
+            )
+            return ExperimentResult(
+                spec=spec,
+                status="invalid",
+                objective_score=None,
+                metrics={},
+                robustness={"viable": False, "negative_windows": 999},
+                artifacts={},
+                baseline_comparison=None,
+                error_message=error_message,
+                runtime_seconds=round(time.time() - started, 6),
+            )
 
     spec = spec or _make_experiment_spec(
         family.strip().lower(),
@@ -410,6 +504,22 @@ def run_single_experiment(
         experiment_id=experiment_id,
         metadata=idea_metadata,
     )
+    if validator_metadata.get("validator_mode") == VALIDATOR_MODE_PROMOTED_REGION:
+        _, override_info = normalize_promoted_region_followup_config(
+            family.strip().lower(),
+            normalized_config,
+            validator_metadata,
+        )
+        spec = replace(
+            spec,
+            params=normalized_config,
+            config_hash=spec.config_hash or compute_config_hash(spec.family, normalized_config),
+            validator_mode=override_info["validator_mode"],
+            allowed_override_params=override_info["allowed_override_params"],
+            allowed_override_values=override_info["allowed_override_values"],
+            off_grid_params=override_info["off_grid_params"],
+            validation_override_reason=override_info["validation_override_reason"],
+        )
 
     if persist and has_experiment_result(spec.config_hash, family=spec.family, base_dir=base_dir):
         loaded = load_experiment_result(spec.config_hash, family=spec.family, base_dir=base_dir)

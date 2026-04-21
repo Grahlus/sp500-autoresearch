@@ -24,6 +24,10 @@ from experiment_spaces import list_searchable_families
 BASE_FAMILY_WEIGHTS = {
     "momentum": 0.65,
     "superstock": 0.20,
+    "fear_greed_contrarian_overlay": 0.04,
+    "momentum_fear_greed_overlay": 0.04,
+    "sector_breadth_overlay": 0.06,
+    "volatility_compression_expansion": 0.06,
     "ml_ranker": 0.10,
     "rl_bandit": 0.05,
 }
@@ -228,6 +232,10 @@ def _family_budget_plan(
         if cycle_mode == "stagnation_escape" and stagnation >= 50:
             weight *= 1.20
         weights[family] = max(weight, 0.01)
+        if family == "fear_greed_contrarian_overlay":
+            weights[family] = min(weights[family], 0.08)
+        if family == "momentum_fear_greed_overlay":
+            weights[family] = min(weights[family], 0.08)
         families_report[family] = {
             "base_weight": BASE_FAMILY_WEIGHTS.get(family, 0.05),
             "computed_weight": round(weights[family], 6),
@@ -251,6 +259,14 @@ def _family_budget_plan(
         families_report.setdefault(family, {})["budget"] = budget
         if family in {"rl_bandit", "ml_ranker"} and budget <= max(1, int(max_experiments * 0.15)):
             families_report[family]["reason"] = "retained with a controlled exploratory budget due to weaker evidence"
+        elif family == "fear_greed_contrarian_overlay":
+            families_report[family]["reason"] = (
+                "limited exploratory budget: diagnostics promoted Fear & Greed to a market exposure overlay"
+            )
+        elif family == "momentum_fear_greed_overlay":
+            families_report[family]["reason"] = (
+                "limited exploratory budget: tests Fear & Greed as a momentum sleeve exposure scaler"
+            )
         elif family == "momentum":
             families_report[family]["reason"] = "primary budget target when scorecard/viability evidence supports it"
         else:

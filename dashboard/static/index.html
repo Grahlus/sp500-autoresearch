@@ -1860,44 +1860,12 @@ function renderFamilyDiscovery(res) {
     return;
   }
   const s = res.scheduler || {};
-  const fast = res.fast || {};
-  const lastRun = (s.slow || {}).last_run_at ? s.slow.last_run_at.slice(0,19).replace('T',' ') : 'never';
-  const elapsed = (s.slow || {}).elapsed_hours != null ? ` (${(s.slow || {}).elapsed_hours.toFixed(1)}h ago)` : '';
+  const lastRun = s.last_run_at ? s.last_run_at.slice(0,19).replace('T',' ') : 'never';
+  const elapsed = s.elapsed_hours != null ? ` (${s.elapsed_hours.toFixed(1)}h ago)` : '';
   const q = res.queue || {};
-  const slots = res.probe_slots || {};
-  const active = slots.active != null ? slots.active : 0;
-  const cap = slots.cap || 6;
-  const waiting = slots.waiting != null ? slots.waiting : 0;
-  const free = slots.free_slots != null ? slots.free_slots : 0;
-  sched.innerHTML = `last run: <b>${lastRun}</b>${elapsed} &nbsp;|&nbsp; runs: ${(s.slow || {}).run_count||0} &nbsp;|&nbsp; probe_ideas: ${res.probe_ideas_queued||0} &nbsp;|&nbsp; ${active} active | ${waiting} waiting | ${free} free slots`;
-
-  // Probe slot pills
-  const controlledProbes = res.controlled_probes || [];
-  const slotCap = cap;
-  let pillsHtml = '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">';
-  for (let i = 0; i < slotCap; i++) {
-    const probe = controlledProbes[i] || null;
-    let ageHrs = null;
-    if (probe && probe.promoted_at) {
-      const then = new Date(probe.promoted_at);
-      ageHrs = (Date.now() - then) / 3600000;
-    }
-    const ageColor = ageHrs === null ? '#30363d' : ageHrs < 12 ? '#00e5a0' : ageHrs < 48 ? '#f0c020' : '#ff4d4d';
-    const label = probe ? (probe.family_name || '?').substring(0, 14) : 'empty';
-    const ageLabel = ageHrs !== null ? Math.round(ageHrs) + 'h' : '';
-    const bgColor = ageHrs === null ? '#21262d' : ageHrs < 12 ? '#0d2e20' : ageHrs < 48 ? '#2e2800' : '#2e0d0d';
-    pillsHtml += `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:${bgColor};color:${ageColor};border:1px solid ${ageColor}40;" title="${probe ? (probe.family_name||'') + ' — ' + ageLabel : 'slot '+(i+1)+' empty'}">${i+1}:${label}</span>`;
-  }
-  pillsHtml += '</div>';
-  sched.innerHTML += pillsHtml;
-
-  // Fast tick stats
-  const fCycle = fast.fast_tick_cycle_count != null ? fast.fast_tick_cycle_count : 0;
-  const fPromo = fast.total_fast_promotions != null ? fast.total_fast_promotions : 0;
-  const fRel   = fast.total_fast_slot_releases != null ? fast.total_fast_slot_releases : 0;
-  const fLast  = fast.elapsed_minutes != null ? fast.elapsed_minutes.toFixed(1) + 'm' : '?m';
-  sched.innerHTML += `<div style="margin-top:6px;font-size:10px;color:#8b949e;">fast tick: cycle=${fCycle} | promotions=${fPromo} | releases=${fRel} | last fast: ${fLast} ago</div>`;
-
+  const byStatus = q.by_status || {};
+  const statusStr = Object.entries(byStatus).map(([k,v])=>`${k}:${v}`).join(' | ') || 'empty';
+  sched.innerHTML = `last run: <b>${lastRun}</b>${elapsed} &nbsp;|&nbsp; runs: ${s.run_count||0} &nbsp;|&nbsp; probe_ideas: ${res.probe_ideas_queued||0} &nbsp;|&nbsp; queue: ${statusStr}`;
   const top = (q.top_candidates || []);
   if (!top.length) {
     tbody.innerHTML = '<tr><td colspan="4" style="color:var(--dim);text-align:center;padding:10px">No candidates yet</td></tr>';

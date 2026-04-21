@@ -12,7 +12,7 @@ import pandas as pd
 
 from experiment_dashboard import build_best_results_dashboard
 from experiment_idea_yield import build_family_idea_yield_guidance, load_latest_idea_yield_summary
-from experiment_lineage import build_lineage_summary
+from experiment_lineage import build_branch_budget_plan, build_lineage_summary
 from experiment_memory import (
     get_lineage_state_record,
     get_promotion_state_record,
@@ -22,13 +22,20 @@ from experiment_memory import (
     update_lineage_state_record,
     update_promotion_state_record,
 )
+from experiment_promoted_regions import active_promoted_regions, build_promoted_regions_report, compute_region_budget_feedback, load_promoted_regions
+from experiment_spaces import build_family_search_status_registry
 from experiment_validation_tags import summarize_holdout_checks
+from experiment_store import load_results_index
 from experiment_types import RuntimeDecision, RuntimeDecisionInput
 
 
 DEFAULT_BASE_FAMILY_WEIGHTS = {
     "momentum": 0.65,
     "superstock": 0.20,
+    "fear_greed_contrarian_overlay": 0.04,
+    "momentum_fear_greed_overlay": 0.04,
+    "sector_breadth_overlay": 0.06,
+    "volatility_compression_expansion": 0.06,
     "ml_ranker": 0.10,
     "rl_bandit": 0.05,
 }
@@ -631,6 +638,7 @@ def _overfitting_signals(
         "last_confirmation_cycle_id": last_confirmation_cycle_id,
         "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
         "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+        "overfit_risk_model": str(scorecard.get("overfit_risk_model") or "graded_v2"),
         "risk_score": round(risk, 6),
         "flags": flags,
         "reasons": reasons,
@@ -679,6 +687,7 @@ def _overfitting_signals(
             "last_confirmation_cycle_id": last_confirmation_cycle_id,
             "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
             "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+            "overfit_risk_model": str(scorecard.get("overfit_risk_model") or "graded_v2"),
         },
     }
 
@@ -1151,11 +1160,15 @@ def _targeted_follow_up_plan(
         follow_up_type = "mixed_regime_clarification"
         priority += 0.35
         reasons.append("regime evidence is mixed")
-    if weak_long:
+    if weak_long and weak_high_vol:
+        follow_up_type = follow_up_type or "long_horizon_high_volatility_confirmation"
+        priority += 0.40
+        reasons.append("both long-horizon and high-volatility validation are weak")
+    elif weak_long:
         follow_up_type = follow_up_type or "long_horizon_confirmation"
         priority += 0.30
         reasons.append("long-horizon validation is weak")
-    if weak_high_vol:
+    elif weak_high_vol:
         follow_up_type = follow_up_type or "high_volatility_confirmation"
         priority += 0.30
         reasons.append("high-volatility validation is weak")
@@ -1349,7 +1362,9 @@ def _confirmation_batch_plan(
     targeted_follow_up_batch_id = f"{decision_id}_followup_{winner_family}" if targeted_follow_up.get("targeted_follow_up_required") and winner_family else None
     planned_max_experiments = int(request.max_experiments)
     if confirmation_required:
-        planned_max_experiments = max(1, min(int(request.max_experiments), max(4, int(round(int(request.max_experiments) * 0.25)))))
+        # 0.35 fraction (was 0.25) gives ~12 experiments on a 36-batch vs ~6 on a 24-batch,
+        # raising throughput in confirmation mode without sacrificing safety guardrails.
+        planned_max_experiments = max(1, min(int(request.max_experiments), max(5, int(round(int(request.max_experiments) * 0.35)))))
     confirmation_reason = "; ".join(dict.fromkeys([reason for reason in confirmation_reason_parts if reason]))
     if not confirmation_reason and confirmation_required:
         confirmation_reason = "winner needs a confirmation batch before it becomes a dominant refinement target"
@@ -1407,7 +1422,11 @@ def _confirmation_batch_plan(
         "holdout_check_status": holdout.get("holdout_check_status"),
         "holdout_check_outcome": holdout.get("holdout_check_outcome"),
         "holdout_check_scope": holdout.get("holdout_check_scope"),
-        "holdout_check_batch_id": holdout.get("holdout_check_batch_id"),
+        "holdout_check_batch_id": (
+            f"{decision_id}_holdout_{winner_family}"
+            if holdout.get("holdout_check_required") and winner_family
+            else holdout.get("holdout_check_batch_id")
+        ),
         "holdout_horizon_tags": holdout.get("holdout_horizon_tags"),
         "holdout_regime_tags": holdout.get("holdout_regime_tags"),
         "validation_horizon_tags": validation_horizon_tags,
@@ -1429,10 +1448,39 @@ def _family_weight(
     overfit_signal: dict[str, Any] | None = None,
     promotion_policy: dict[str, Any] | None = None,
     idea_yield_feedback: dict[str, Any] | None = None,
+    search_status: dict[str, Any] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     weight = DEFAULT_BASE_FAMILY_WEIGHTS.get(family, 0.05)
     reasons: list[str] = [f"base={weight:.2f}"]
     budget_stance = "active"
+    search_status = dict(search_status or {})
+    family_search_status = str(
+        search_status.get("canonical_status")
+        or search_status.get("status")
+        or "active"
+    ).strip().lower() or "active"
+    search_lane = str(search_status.get("lane") or "primary")
+    searchable = bool(search_status.get("searchable", family_search_status in {"active", "controlled_candidate"}))
+    budget_scale = float(search_status.get("budget_scale") or (1.0 if family_search_status == "active" else 0.5 if family_search_status == "controlled_candidate" else 0.0))
+    if family_search_status == "retired_for_now":
+        weight *= 0.02
+        budget_stance = "paused"
+        reasons.append("search_status_retired_for_now")
+    elif family_search_status == "paused":
+        weight *= 0.05
+        budget_stance = "paused"
+        reasons.append("search_status_paused")
+    elif family_search_status == "redesign_candidate":
+        weight *= 0.12
+        budget_stance = "paused"
+        reasons.append("search_status_redesign_candidate")
+    elif family_search_status == "controlled_candidate":
+        weight *= 0.65
+        budget_stance = "controlled"
+        reasons.append("search_status_controlled_candidate")
+    weight *= max(0.0, budget_scale)
+    if not searchable:
+        budget_stance = "paused"
     robustness_score = float(scorecard.get("robustness_score") or 0.0)
     recent_robustness_trend = float(scorecard.get("recent_robustness_trend") or 0.0)
     overfit_risk = float(scorecard.get("overfit_risk") or max(0.0, 1.0 - robustness_score))
@@ -1473,6 +1521,54 @@ def _family_weight(
     structural_family_promotion_state = str((idea_yield_feedback or {}).get("structural_family_promotion_state") or "floor_protected").strip().lower() or "floor_protected"
     structural_family_transition_reason = str((idea_yield_feedback or {}).get("structural_family_transition_reason") or "").strip() or None
     structural_graduated_template_family = (idea_yield_feedback or {}).get("graduated_template_family")
+    idea_quality_score = _safe_float((idea_yield_feedback or {}).get("idea_quality_score"), 0.0)
+    focus_mode = "primary" if budget_stance == "primary" else "controlled" if budget_stance == "controlled" else "paused"
+    if family.startswith("ml_"):
+        focus_mode = f"ml_{'small_exploration' if budget_stance != 'paused' else 'rethink_probe'}"
+    elif family.startswith("rl_"):
+        focus_mode = f"rl_{'small_exploration' if budget_stance != 'paused' else 'rethink_probe'}"
+
+    if family in {
+        "amihud_illiquidity_premium",
+        "fear_greed_contrarian",
+        "fear_greed_contrarian_overlay",
+        "momentum_fear_greed_overlay",
+        "sector_breadth_overlay",
+        "volatility_compression_expansion",
+    }:
+        reason_map = {
+            "amihud_illiquidity_premium": "amihud_standalone_retired_after_diagnostics",
+            "fear_greed_contrarian": "fear_greed_stock_basket_retired_overlay_supersedes",
+            "fear_greed_contrarian_overlay": "fear_greed_overlay_redesign_after_sleeve_test",
+            "momentum_fear_greed_overlay": "momentum_fear_greed_overlay_no_momentum_improvement",
+            "sector_breadth_overlay": "sector_breadth_overlay_redesign_before_search",
+            "volatility_compression_expansion": "volatility_compression_retired_dormant_v1",
+        }
+        reason = reason_map[family]
+        return 0.01, {
+            "family": family,
+            "budget_stance": "paused",
+            "viable_rate": viable_rate,
+            "search_priority": search_priority,
+            "confidence": confidence,
+            "dead_zone_density": dead_zone_density,
+            "duplicate_saturation": duplicate_saturation,
+            "stagnation_experiments": stagnation,
+            "robustness_score": robustness_score,
+            "recent_robustness_trend": recent_robustness_trend,
+            "overfit_risk": overfit_risk,
+            "reasons": [reason],
+        }
+
+    if family == "fear_greed_contrarian_overlay":
+        weight = min(weight, 0.08)
+        budget_stance = "controlled"
+        reasons.append("fear_greed_overlay_v2_limited_exploration")
+
+    if family == "momentum_fear_greed_overlay":
+        weight = min(weight, 0.08)
+        budget_stance = "controlled"
+        reasons.append("fear_greed_overlay_sleeve_scaler_limited_exploration")
 
     if family == "momentum" and viable_rate > 0.05:
         weight += 0.10
@@ -1638,15 +1734,15 @@ def _family_weight(
             reasons.append("superstock_reduced_for_stability")
     if family in {"rl_bandit", "ml_ranker"}:
         if viable_rate <= 0.0 and overfit_risk >= 0.65 and robustness_score <= 0.45 and not scorecard.get("recovery_signal"):
-            weight *= 0.02
-            budget_stance = "paused"
-            reasons.append("family_paused_zero_viable_high_overfit")
+            weight *= 0.08
+            budget_stance = "controlled"
+            reasons.append("family_controlled_zero_viable_high_overfit")
         elif viable_rate <= 0.05 and overfit_risk >= 0.50:
-            weight *= 0.10
-            budget_stance = "paused"
-            reasons.append("family_paused_low_viability_high_overfit")
+            weight *= 0.20
+            budget_stance = "controlled"
+            reasons.append("family_controlled_low_viability_high_overfit")
         elif viable_rate <= 0.0 and dead_zone_density >= 0.50:
-            weight *= 0.25
+            weight *= 0.35
             budget_stance = "controlled"
             reasons.append("weak_exploratory_family")
     if promotion_state == "blocked_pending_new_evidence" or promotion_blocked_pending_new_evidence:
@@ -1701,6 +1797,11 @@ def _family_weight(
         reasons.append("overfit_risk_low")
     if overfit_flags and "lucky_spike_pattern" in overfit_flags:
         reasons.append("do_not_over_exploit_yet")
+    focus_mode = "primary" if budget_stance == "primary" else "controlled" if budget_stance == "controlled" else "paused"
+    if family.startswith("ml_"):
+        focus_mode = f"ml_{'small_exploration' if budget_stance != 'paused' else 'rethink_probe'}"
+    elif family.startswith("rl_"):
+        focus_mode = f"rl_{'small_exploration' if budget_stance != 'paused' else 'rethink_probe'}"
     return max(weight, 0.01), {
         "family": family,
         "budget_stance": budget_stance,
@@ -1726,6 +1827,12 @@ def _family_weight(
         "lineage_confirmation_descendant_count": lineage_confirmation_descendant_count,
         "lineage_holdout_descendant_count": lineage_holdout_descendant_count,
         "lineage_rejected_descendant_count": lineage_rejected_descendant_count,
+        "search_status": family_search_status,
+        "search_lane": search_lane,
+        "searchable": searchable,
+        "budget_scale": budget_scale,
+        "focus_mode": focus_mode,
+        "idea_quality_score": idea_quality_score,
         "promotion_state": promotion_state,
         "promotion_blocked_pending_new_evidence": promotion_blocked_pending_new_evidence,
         "confirmation_history_count": confirmation_history_count,
@@ -1735,6 +1842,7 @@ def _family_weight(
         "last_confirmation_cycle_id": last_confirmation_cycle_id,
         "last_failed_confirmation_timestamp_utc": last_failed_confirmation_timestamp_utc,
         "last_failed_confirmation_cycle_id": last_failed_confirmation_cycle_id,
+        "overfit_risk_model": str(scorecard.get("overfit_risk_model") or "graded_v2"),
         "reasons": reasons,
         "holdout_check_type": holdout_check_type,
         "holdout_check_status": holdout_check_status,
@@ -1742,6 +1850,7 @@ def _family_weight(
         "holdout_check_scope": holdout_check_scope,
         "holdout_horizon_tags": holdout_horizon_tags,
         "holdout_regime_tags": holdout_regime_tags,
+        "idea_state": structural_family_state,
         "structural_family_state": structural_family_state,
         "structural_family_state_previous": structural_family_state_previous,
         "structural_family_promotion_state": structural_family_promotion_state,
@@ -1909,6 +2018,14 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
     latest_non_empty_batch = dashboard.get("latest_non_empty_batch")
     lineage_summary = dashboard.get("lineage_summary") or {}
     latest_batch_overview = _latest_batch_overview(request.experiments_dir)
+    if not lineage_summary:
+        lineage_summary = build_lineage_summary(
+            load_results_index(request.experiments_dir),
+            persisted_records=load_lineage_state_records(request.experiments_dir),
+            latest_batch=latest_batch_overview,
+            include_histories=True,
+            include_records=True,
+        )
     idea_yield_summary = load_latest_idea_yield_summary(request.experiments_dir) or {}
     idea_yield_guidance = {
         family: _idea_yield_feedback_for_family(idea_yield_summary, family)
@@ -2080,6 +2197,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
     family_scores: dict[str, float] = {}
     family_budgets: dict[str, int] = {}
     families_report: dict[str, Any] = {}
+    family_search_registry = build_family_search_status_registry(selected_families)
     best_overall = (dashboard.get("top_overall") or [{}])[0] if dashboard.get("top_overall") else None
     best_viable = (dashboard.get("top_viable") or [{}])[0] if dashboard.get("top_viable") else None
     best_baseline = (dashboard.get("top_baseline_beating") or [{}])[0] if dashboard.get("top_baseline_beating") else None
@@ -2099,6 +2217,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             overfit_signal=family_risk_reports.get(family),
             promotion_policy=promotion_policy,
             idea_yield_feedback=idea_yield_feedback,
+            search_status=family_search_registry.get(family),
         )
         family_scores[family] = score
         families_report[family] = score_report | {
@@ -2106,6 +2225,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             "overfit_signal": family_risk_reports.get(family) or {},
             "selected": 0,
             "idea_yield_feedback": idea_yield_feedback,
+            "family_search_status": family_search_registry.get(family) or {},
         }
 
     total_weight = sum(family_scores.values()) or float(len(selected_families))
@@ -2137,6 +2257,15 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         donor = max(donor_candidates, key=lambda fam: (family_budgets.get(fam, 0), family_scores.get(fam, 0.0), fam))
         family_budgets[donor] -= 1
         total_assigned -= 1
+    branch_budgets, branch_budget_rationale = build_branch_budget_plan(
+        lineage_summary,
+        family_budgets,
+        cycle_mode=cycle_mode,
+        confirmation_family=winner_family,
+        confirmation_required=confirmation_required,
+        targeted_follow_up_required=bool(targeted_follow_up.get("targeted_follow_up_required")),
+        holdout_check_required=holdout_required,
+    )
     for family in selected_families:
         families_report.setdefault(family, {})["selected"] = family_budgets.get(family, 0)
         if family_budgets.get(family, 0) <= 0:
@@ -2219,8 +2348,143 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
             families_report[family]["budget_cap"] = max(1, family_budgets.get(family, 0))
         elif families_report[family].get("budget_stance") == "primary":
             families_report[family]["budget_cap"] = family_budgets.get(family, 0)
+        families_report[family]["branch_budgets"] = branch_budgets.get(family) or []
+        families_report[family]["branch_budget_rationale"] = (branch_budget_rationale.get("families") or {}).get(family, {})
 
     planned_max_experiments = int(confirmation_plan.get("planned_max_experiments") or request.max_experiments)
+    promoted_regions = active_promoted_regions(
+        workspace_root=request.workspace_root,
+        families=selected_families,
+        limit=3,
+    )
+    region_budget_feedback = compute_region_budget_feedback(
+        promoted_regions,
+        base_budget=max(1, int(round(planned_max_experiments * 0.10))),
+        max_boost=2,
+    )
+    promoted_region_followup_budget = int(region_budget_feedback.get("effective_budget") or 0)
+    validated_region_neighbor_budget = 0
+    validated_region_neighbor_reasons: list[str] = []
+    if promoted_regions:
+        validated_region_neighbor_budget = max(0, min(2, promoted_region_followup_budget // 2 or 1))
+        validated_region_neighbor_reasons.append("validated promoted regions are available")
+    structural_active = any(
+        str((families_report.get(family) or {}).get("structural_family_promotion_state") or "").strip().lower()
+        in {"yield_supported", "graduated_structural_family"}
+        for family in selected_families
+    )
+    backlog_pressure_state = "high" if (
+        int((latest_batch_overview or {}).get("shortfall") or 0) > 0
+        or int((latest_batch_overview or {}).get("requested_count") or 0) > int((latest_batch_overview or {}).get("executed_count") or 0)
+    ) else "normal"
+    confirmation_holdout_budget = 0
+    if confirmation_required or holdout_required:
+        confirmation_holdout_budget = planned_max_experiments
+    elif (
+        winner_validation_scope in {"narrow", "partial", "unknown"}
+        or "weak_long_horizon" in winner_validation_horizon_tags
+        or "weak_in_high_vol" in winner_validation_regime_tags
+        or "regime_mixed" in winner_validation_regime_tags
+        or winner_validation_confidence < 0.50
+        or winner_validation_coverage < 0.75
+        or (promotion_policy or {}).get("winner_promotion_status") == "hold_for_confirmation"
+        or holdout_outcome in {"pending", "provisional", "unproven"}
+    ):
+        confirmation_holdout_budget = max(1, int(round(planned_max_experiments * 0.20)))
+    structural_synthesis_budget = min(
+        planned_max_experiments,
+        max(1, int(round(planned_max_experiments * (0.22 if structural_active else 0.12)))),
+    )
+    routine_refinement_budget = min(
+        planned_max_experiments,
+        max(1, int(round(planned_max_experiments * (0.22 if cycle_mode in {"local_refinement", "confirmation"} else 0.18)))),
+    )
+    new_idea_budget = min(
+        planned_max_experiments,
+        max(1, int(round(planned_max_experiments * (0.28 if backlog_pressure_state == "high" else 0.22)))),
+    )
+    uncommon_idea_budget = min(
+        new_idea_budget,
+        max(1, int(round(new_idea_budget * (0.35 if structural_active else 0.25)))),
+    )
+    lane_budget_summary = {
+        "confirmation_holdout_budget": confirmation_holdout_budget,
+        "structural_synthesis_budget": structural_synthesis_budget,
+        "promoted_region_followup_budget": promoted_region_followup_budget,
+        "validated_region_neighbor_budget": validated_region_neighbor_budget,
+        "routine_refinement_budget": routine_refinement_budget,
+        "new_idea_budget": new_idea_budget,
+        "uncommon_idea_budget": uncommon_idea_budget,
+        "backlog_pressure_state": backlog_pressure_state,
+        "active_lanes": [
+            lane
+            for lane, active in [
+                ("confirmation_holdout", confirmation_holdout_budget > 0),
+                ("structural_synthesis", structural_active),
+                ("promoted_region_followup", promoted_region_followup_budget > 0),
+                ("validated_region_neighbor", validated_region_neighbor_budget > 0),
+                ("routine_refinement", routine_refinement_budget > 0),
+                ("new_idea", new_idea_budget > 0),
+                ("uncommon_idea", uncommon_idea_budget > 0),
+            ]
+            if active
+        ],
+        "throttled_lanes": [
+            lane
+            for lane, active in [
+                ("confirmation_holdout", confirmation_holdout_budget == 0),
+                ("structural_synthesis", not structural_active),
+                ("promoted_region_followup", promoted_region_followup_budget == 0),
+                ("validated_region_neighbor", validated_region_neighbor_budget == 0),
+                ("routine_refinement", routine_refinement_budget <= 1),
+            ]
+            if active
+        ],
+        "skipped_lanes": [
+            lane
+            for lane, active in [
+                ("confirmation_holdout", confirmation_holdout_budget == 0),
+                ("promoted_region_followup", promoted_region_followup_budget == 0),
+                ("validated_region_neighbor", validated_region_neighbor_budget == 0),
+            ]
+            if active
+        ],
+        "rationale": [
+            "confirmation/holdout keeps priority when required",
+            "structural synthesis grows only when yield-supported structural families exist",
+            "promoted-region follow-up is bounded by validated region health",
+            "routine refinement remains the default non-exception lane",
+            "new/uncommon ideas expand only when backlog and throughput justify them",
+        ],
+    }
+    novelty_policy = {
+        "structural_novelty_budget": structural_synthesis_budget,
+        "new_idea_budget": new_idea_budget,
+        "uncommon_idea_budget": uncommon_idea_budget,
+        "new_idea_quota": new_idea_budget,
+        "uncommon_idea_quota": uncommon_idea_budget,
+        "routine_refinement_budget": routine_refinement_budget,
+        "structural_novelty_threshold": 0.55,
+        "bias": "favor_structural_novelty_when_supported",
+    }
+    ml_rl_probe_policy = {
+        "active": any(family in {"ml_ranker", "rl_bandit"} for family in selected_families),
+        "allowed": any(
+            families_report.get(family, {}).get("budget_stance") != "paused"
+            for family in ("ml_ranker", "rl_bandit")
+        ),
+        "non_momentum_viable_progress": any(
+            family != "momentum" and families_report.get(family, {}).get("budget_stance") == "primary"
+            for family in selected_families
+        ),
+        "ml_ranker_budget": family_budgets.get("ml_ranker", 0),
+        "rl_bandit_budget": family_budgets.get("rl_bandit", 0),
+        "focus_mode": {
+            "ml_ranker": families_report.get("ml_ranker", {}).get("focus_mode"),
+            "rl_bandit": families_report.get("rl_bandit", {}).get("focus_mode"),
+        },
+        "reason": "keep ML/RL families in a small, explicit probe lane when they are not fully retired",
+    }
     large_search_mode = (
         cycle_mode in {"large-search", "stagnation_escape", "diagnostics"}
         or (int(request.max_experiments) >= int(request.large_search_threshold) and not confirmation_plan.get("confirmation_required"))
@@ -2275,6 +2539,11 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "dashboard_counts": dashboard.get("counts") or {},
         "mode_signals": mode_signals,
         "overfit_focus_families": focus_families,
+        "family_search_status_registry": family_search_registry,
+        "lane_budget_summary": lane_budget_summary,
+        "novelty_policy": novelty_policy,
+        "ml_rl_probe_policy": ml_rl_probe_policy,
+        "branch_budget_rationale": branch_budget_rationale,
         "lineage_summary": {
             "latest_batch_id": lineage_summary.get("latest_batch_id"),
             "lineage_status_counts": lineage_summary.get("lineage_status_counts"),
@@ -2345,6 +2614,7 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "idea_yield_guidance": idea_yield_guidance,
         "overfit_focus_families": focus_families,
         "winner_promotion_policy": promotion_policy,
+        "ml_rl_probe_policy": ml_rl_probe_policy,
         "winner_family": winner_family,
         "winner_source": winner_source,
         "winner_validation_horizon_tags": winner_validation_horizon_tags,
@@ -2375,7 +2645,34 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         "promotion_state_blocked_pending_new_evidence": promotion_state_blocked_pending_new_evidence,
         "promotion_state_changed_this_cycle": promotion_state_changed_this_cycle,
         "persisted_promotion_state": persisted_promotion_state,
+        "family_search_status_registry": family_search_registry,
+        "lane_budget_summary": lane_budget_summary,
+        "novelty_policy": novelty_policy,
+        "ml_rl_probe_policy": ml_rl_probe_policy,
+        "branch_budgets": branch_budgets,
+        "branch_budget_rationale": branch_budget_rationale,
     }
+    rationale["region_followup_lane"] = {
+        "active": bool(promoted_regions),
+        "regions_considered": len(promoted_regions),
+        "region_ids": [region.get("region_id") for region in promoted_regions],
+        "region_health_states": [
+            (region.get("region_health") or {}).get("region_health_state")
+            for region in promoted_regions
+        ],
+        "region_drift_scores": [
+            (region.get("region_health") or {}).get("region_drift_score")
+            for region in promoted_regions
+        ],
+        "budget_feedback": region_budget_feedback,
+        "rationale": (
+            "validated promoted regions are available as advisory planning inputs"
+            if promoted_regions
+            else "no validated promoted regions available"
+        ),
+    }
+    used_signals["promoted_regions"] = rationale["region_followup_lane"]
+    used_signals["promoted_region_budget_feedback"] = region_budget_feedback
 
     return RuntimeDecision(
         decision_id=decision_id,
@@ -2401,6 +2698,8 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         rationale=rationale,
         promotion_state=promotion_state,
         winner_family=winner_family,
+        winner_config_hash=winner_config_hash,
+        winner_experiment_id=winner_experiment_id,
         winner_promotion_status=str(promotion_policy.get("winner_promotion_status") or "not_promoted"),
         winner_exploitation_cap=_safe_float(promotion_policy.get("winner_exploitation_cap"), 0.35) if promotion_policy else None,
         winner_validation_horizon_tags=winner_validation_horizon_tags,
@@ -2431,6 +2730,17 @@ def build_runtime_decision(request: RuntimeDecisionInput) -> RuntimeDecision:
         confirmation_outcome=latest_confirmation_outcome,
         planned_max_experiments=planned_max_experiments,
         confirmation_family_budgets=confirmation_plan.get("confirmation_family_budgets"),
+        branch_budgets=branch_budgets,
+        branch_budget_rationale=branch_budget_rationale,
+        new_idea_budget=new_idea_budget,
+        refinement_budget=routine_refinement_budget,
+        confirmation_budget=confirmation_holdout_budget,
+        new_idea_quota=new_idea_budget,
+        uncommon_idea_quota=uncommon_idea_budget,
+        repeat_branch_cap=max(1, int(request.max_experiments // 6) if request.max_experiments else 1),
+        max_same_template_per_cycle=max(1, int(request.max_experiments // 5) if request.max_experiments else 1),
+        max_same_lineage_per_cycle=max(1, int(request.max_experiments // 5) if request.max_experiments else 1),
+        structural_novelty_budget=structural_synthesis_budget,
         promotion_state_record=promotion_state_record,
         promotion_state_blocked_pending_new_evidence=promotion_state_blocked_pending_new_evidence,
         promotion_state_changed_this_cycle=promotion_state_changed_this_cycle,
@@ -2508,4 +2818,155 @@ def save_runtime_decision(decision: RuntimeDecision, *, workspace_root: str = ".
     latest_path = reports_dir / "latest.json"
     _atomic_write_text(timestamped_path, json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
     _atomic_write_text(latest_path, json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+    research_readiness = build_research_readiness_report(
+        workspace_root=workspace_root,
+        experiments_dir=str(experiments_dir),
+        decision=decision,
+    )
+    save_research_readiness_report(research_readiness, workspace_root=workspace_root)
     return latest_path
+
+
+def build_research_readiness_report(
+    *,
+    workspace_root: str = ".",
+    experiments_dir: str = "experiments",
+    decision: RuntimeDecision | None = None,
+    workload_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from collections import Counter
+
+    from experiment_spaces import build_family_search_status_registry
+    from experiment_workload_policy import load_workload_state
+
+    search_registry = build_family_search_status_registry()
+    promoted_region_report = build_promoted_regions_report(workspace_root=workspace_root)
+    if workload_state is None:
+        workload_state = load_workload_state(workspace_root) or {}
+
+    family_rows = [
+        {
+            "family": family,
+            **entry,
+        }
+        for family, entry in search_registry.items()
+    ]
+    family_status_counts = Counter(entry.get("canonical_status") or entry.get("status") or "active" for entry in search_registry.values())
+    workload_label = str(workload_state.get("workload_state") or "unknown")
+    active_families = [
+        item["family"]
+        for item in family_rows
+        if item.get("canonical_status") == "active"
+    ]
+    controlled_families = [
+        item["family"]
+        for item in family_rows
+        if item.get("canonical_status") == "controlled_candidate"
+    ]
+    redesign_families = [
+        item["family"]
+        for item in family_rows
+        if item.get("canonical_status") == "redesign_candidate"
+    ]
+    retired_families = [
+        item["family"]
+        for item in family_rows
+        if item.get("canonical_status") == "retired_for_now"
+    ]
+    paused_families = [
+        item["family"]
+        for item in family_rows
+        if item.get("canonical_status") == "paused"
+    ]
+    status_mismatches = [
+        item["family"]
+        for item in family_rows
+        if item.get("status") != item.get("canonical_status")
+    ]
+    memory_pressure_state = str(workload_state.get("memory_pressure_state") or "unknown")
+    disk_pressure_state = str(workload_state.get("disk_pressure_state") or "unknown")
+    recent_rc_failures = int(workload_state.get("recent_rc_failures") or 0)
+    active_region_health = promoted_region_report.get("promoted_regions_by_health_state") or {}
+    fragile_regions = int(active_region_health.get("fragile", 0) or 0)
+    stable_regions = int(active_region_health.get("stable", 0) or 0)
+    strengthening_regions = int(active_region_health.get("strengthening", 0) or 0)
+    region_health_ok = fragile_regions < max(1, stable_regions + strengthening_regions)
+    workload_health_ok = (
+        workload_label == "healthy"
+        and memory_pressure_state not in {"critical"}
+        and disk_pressure_state not in {"critical"}
+        and recent_rc_failures == 0
+    )
+    status_policy_ok = not status_mismatches
+    ready_for_intensive_research = bool(
+        workload_health_ok
+        and status_policy_ok
+        and region_health_ok
+        and family_status_counts.get("active", 0) > 0
+    )
+    ready_for_unattended_research = bool(
+        ready_for_intensive_research
+        and not controlled_families
+        and not redesign_families
+        and not retired_families
+        and not paused_families
+    )
+    research_readiness_confirmed = ready_for_intensive_research
+    report = {
+        "generated_at_utc": datetime.now(UTC).isoformat(),
+        "workspace_root": str(workspace_root),
+        "experiments_dir": str(experiments_dir),
+        "research_readiness_confirmed": research_readiness_confirmed,
+        "ready_for_intensive_research": ready_for_intensive_research,
+        "ready_for_unattended_research": ready_for_unattended_research,
+        "research_readiness_state": (
+            "full_autonomous_research"
+            if ready_for_unattended_research
+            else "intensive_research"
+            if ready_for_intensive_research
+            else "hold"
+        ),
+        "family_status_counts": dict(family_status_counts),
+        "family_statuses": family_rows,
+        "family_policy": {
+            "active_families": active_families,
+            "controlled_families": controlled_families,
+            "redesign_families": redesign_families,
+            "retired_families": retired_families,
+            "paused_families": paused_families,
+            "status_mismatches": status_mismatches,
+        },
+        "promoted_regions": {
+            "by_state": promoted_region_report.get("promoted_regions_by_state") or {},
+            "by_health_state": promoted_region_report.get("promoted_regions_by_health_state") or {},
+            "active_followup": promoted_region_report.get("active_region_followup_workload") or [],
+            "validated_top": promoted_region_report.get("best_validated_regions") or [],
+            "rejected_fragile": promoted_region_report.get("rejected_fragile_regions") or [],
+        },
+        "workload": workload_state,
+        "lane_budget_summary": (decision.rationale or {}).get("lane_budget_summary") if decision else {},
+        "lane_rationale": (decision.rationale or {}).get("reason") if decision else None,
+        "selected_families": list(decision.selected_families) if decision else [],
+        "throttled_families": paused_families + redesign_families + retired_families,
+        "active_families": active_families,
+        "controlled_families": controlled_families,
+        "intensive_research_ready_reason": (
+            "healthy workload, canonical family statuses, and region health are aligned"
+            if ready_for_intensive_research
+            else "one or more canonical status, workload, or region-health checks failed"
+        ),
+        "full_autonomous_research_ready_reason": (
+            "all families are in active research; no bounded or suspended lanes remain"
+            if ready_for_unattended_research
+            else "controlled, redesign, retired, or paused families still need bounded handling"
+        ),
+    }
+    return _json_safe(report)
+
+
+def save_research_readiness_report(report: dict[str, Any], *, workspace_root: str = ".") -> Path:
+    reports_dir = Path(workspace_root) / "reports" / "runtime_decisions"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / "research_readiness.json"
+    _atomic_write_text(path, json.dumps(_json_safe(report), indent=2, sort_keys=True, allow_nan=False))
+    return path

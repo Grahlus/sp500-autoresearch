@@ -154,6 +154,41 @@ def load_idea_records(workspace_root: str = ".") -> list[dict[str, Any]]:
     return load_json_records(paths["ideas_dir"])
 
 
+# Active statuses: ideas that are eligible for scheduling
+IDEA_ACTIVE_STATUSES: frozenset[str] = frozenset({"new", "hot", "shortlisted"})
+# Terminal statuses: ideas that should not be re-scheduled
+IDEA_TERMINAL_STATUSES: frozenset[str] = frozenset({"archived", "retired", "merged"})
+
+
+def update_idea_record_status(
+    idea_id: str,
+    new_status: str,
+    workspace_root: str = ".",
+    *,
+    extra_updates: dict[str, Any] | None = None,
+) -> bool:
+    """Patch the status field of an idea record file in-place. Returns True on success."""
+    paths = ensure_helper_dirs(workspace_root)
+    path = paths["ideas_dir"] / f"{idea_id}.json"
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text())
+        payload["status"] = new_status
+        if extra_updates:
+            payload.update(extra_updates)
+        _atomic_write_json(path, payload)
+        return True
+    except Exception:
+        return False
+
+
+def load_active_idea_records(workspace_root: str = ".") -> list[dict[str, Any]]:
+    """Load only idea records whose status is active (not archived/retired/merged/executed)."""
+    all_records = load_idea_records(workspace_root)
+    return [r for r in all_records if r.get("status", "new") in IDEA_ACTIVE_STATUSES]
+
+
 def load_proposal_records(workspace_root: str = ".") -> list[dict[str, Any]]:
     paths = ensure_helper_dirs(workspace_root)
     return load_json_records(paths["proposals_dir"])
@@ -188,6 +223,92 @@ def update_proposal_record_status(
         payload.update(extra_updates)
     _atomic_write_json(path, payload)
     return path
+
+
+@dataclass(frozen=True)
+class FamilyCandidateRecord:
+    candidate_id: str
+    family_name: str
+    edge_source: str
+    why_it_should_exist: str
+    why_not_momentum: str
+    why_not_superstock: str
+    required_data: str
+    implementation_complexity: str
+    expected_holding_horizon: str
+    first_test_family_template: dict[str, Any]
+    novelty_reason: str
+    timestamp_utc: str
+    status: str = "new_family_candidate"
+    cluster_id: str | None = None
+    cluster_label: str | None = None
+    orthogonality_score: float | None = None
+    feasibility_score: float | None = None
+    expected_robustness: float | None = None
+    research_value: float | None = None
+    ranking_score: float | None = None
+    duplicate_of: str | None = None
+    is_best_in_cluster: bool = True
+    orthogonality_claim: str | None = None
+    expected_sharpe_range: str | None = None
+    failure_modes: str | None = None
+    discovery_batch_id: str | None = None
+    refinement_notes: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+# Valid statuses for family candidates
+FAMILY_CANDIDATE_STATUSES: frozenset[str] = frozenset({
+    "new_family_candidate",
+    "controlled_probe",
+    "redesign_candidate",
+    "retired_for_now",
+})
+
+FAMILY_CANDIDATE_ACTIVE_STATUSES: frozenset[str] = frozenset({
+    "new_family_candidate",
+    "controlled_probe",
+    "redesign_candidate",
+})
+
+
+def save_family_candidate(record: FamilyCandidateRecord, workspace_root: str = ".") -> Path:
+    candidates_dir = Path(workspace_root) / "queues" / "family_candidates"
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+    path = candidates_dir / f"{record.candidate_id}.json"
+    _atomic_write_json(path, asdict(record))
+    return path
+
+
+def load_family_candidates(workspace_root: str = ".") -> list[dict[str, Any]]:
+    candidates_dir = Path(workspace_root) / "queues" / "family_candidates"
+    return load_json_records(candidates_dir)
+
+
+def load_active_family_candidates(workspace_root: str = ".") -> list[dict[str, Any]]:
+    return [r for r in load_family_candidates(workspace_root) if r.get("status") in FAMILY_CANDIDATE_ACTIVE_STATUSES]
+
+
+def update_family_candidate_status(
+    candidate_id: str,
+    new_status: str,
+    workspace_root: str = ".",
+    *,
+    extra_updates: dict[str, Any] | None = None,
+) -> bool:
+    candidates_dir = Path(workspace_root) / "queues" / "family_candidates"
+    path = candidates_dir / f"{candidate_id}.json"
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text())
+        payload["status"] = new_status
+        if extra_updates:
+            payload.update(extra_updates)
+        _atomic_write_json(path, payload)
+        return True
+    except Exception:
+        return False
 
 
 def load_latest_analysis_report(workspace_root: str = ".") -> dict[str, Any] | None:

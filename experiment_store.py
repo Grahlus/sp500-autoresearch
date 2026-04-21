@@ -12,6 +12,8 @@ from typing import Any
 import fcntl
 import pandas as pd
 
+from proposal_artifacts import compact_proposal_for_disk, compact_summary_for_disk
+
 
 INDEX_COLUMNS = [
     "experiment_id",
@@ -56,6 +58,20 @@ INDEX_COLUMNS = [
     "near_duplicate_of",
     "dead_zone_flags",
     "source_proposal_id",
+    "source_region_id",
+    "source_grid_search_id",
+    "source_cells",
+    "region_class",
+    "promotion_recommendation",
+    "region_state",
+    "neighbor_of_cell",
+    "neighbor_generation_reason",
+    "neighbor_grid_status",
+    "validator_mode",
+    "allowed_override_params",
+    "allowed_override_values",
+    "off_grid_params",
+    "validation_override_reason",
     "source_idea_ids",
     "idea_id",
     "confirmation_state",
@@ -234,6 +250,20 @@ def _flatten_result(result: dict[str, Any], result_dir: Path) -> dict[str, Any]:
         "near_duplicate_of": spec.get("near_duplicate_of"),
         "dead_zone_flags": json.dumps(spec.get("dead_zone_flags")) if spec.get("dead_zone_flags") is not None else None,
         "source_proposal_id": spec.get("source_proposal_id"),
+        "source_region_id": spec.get("source_region_id"),
+        "source_grid_search_id": spec.get("source_grid_search_id"),
+        "source_cells": json.dumps(spec.get("source_cells")) if spec.get("source_cells") is not None else None,
+        "region_class": spec.get("region_class"),
+        "promotion_recommendation": spec.get("promotion_recommendation"),
+        "region_state": spec.get("region_state"),
+        "neighbor_of_cell": json.dumps(spec.get("neighbor_of_cell")) if spec.get("neighbor_of_cell") is not None else None,
+        "neighbor_generation_reason": spec.get("neighbor_generation_reason"),
+        "neighbor_grid_status": json.dumps(spec.get("neighbor_grid_status")) if spec.get("neighbor_grid_status") is not None else None,
+        "validator_mode": spec.get("validator_mode"),
+        "allowed_override_params": json.dumps(spec.get("allowed_override_params")) if spec.get("allowed_override_params") is not None else None,
+        "allowed_override_values": json.dumps(spec.get("allowed_override_values")) if spec.get("allowed_override_values") is not None else None,
+        "off_grid_params": json.dumps(spec.get("off_grid_params")) if spec.get("off_grid_params") is not None else None,
+        "validation_override_reason": spec.get("validation_override_reason"),
         "source_idea_ids": json.dumps(spec.get("source_idea_ids")) if spec.get("source_idea_ids") is not None else None,
         "idea_id": spec.get("idea_id"),
         "confirmation_state": spec.get("confirmation_state"),
@@ -392,10 +422,12 @@ def save_proposal_result_atomic(proposal: dict[str, Any], base_dir: str = "exper
     candidates_path = proposal_dir / "candidate_configs.json"
 
     with _locked_store(base_dir):
-        _atomic_write_text(proposal_path, json.dumps(proposal, indent=2, sort_keys=True, default=_to_jsonable))
+        disk_proposal = compact_proposal_for_disk(proposal)
+        disk_summary = compact_summary_for_disk(proposal.get("reasoning_summary", {}), proposal)
+        _atomic_write_text(proposal_path, json.dumps(disk_proposal, indent=2, sort_keys=True, default=_to_jsonable))
         _atomic_write_text(
             summary_path,
-            json.dumps(proposal.get("reasoning_summary", {}), indent=2, sort_keys=True, default=_to_jsonable),
+            json.dumps(disk_summary, indent=2, sort_keys=True, default=_to_jsonable),
         )
         _atomic_write_text(
             candidates_path,

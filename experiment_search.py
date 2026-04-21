@@ -35,6 +35,28 @@ from experiment_store import compute_config_hash
 # For families without a defined policy falls back to the full choice set.
 
 _STEP_SETS: dict[str, dict[str, dict[str, list[Any]]]] = {
+    "amihud_illiquidity_premium": {
+        "coarse": {
+            "lookback_days":           [40, 90],
+            "rebalance_days":          [21, 42],
+            "max_positions":           [5, 20],
+            "min_dollar_volume":       [5_000_000.0, 10_000_000.0],
+            "price_min":               [5.0, 10.0],
+            "max_dollar_volume_rank":  [250, 500],
+            "max_daily_volatility":    [0.035, 0.05],
+            "max_abs_open_gap":        [0.15, 0.20],
+        },
+        "fine": {
+            "lookback_days":           [40, 60, 90],
+            "rebalance_days":          [21, 42],
+            "max_positions":           [5, 10, 20],
+            "min_dollar_volume":       [2_000_000.0, 5_000_000.0, 10_000_000.0],
+            "price_min":               [5.0, 10.0],
+            "max_dollar_volume_rank":  [250, 500, None],
+            "max_daily_volatility":    [0.035, 0.05, None],
+            "max_abs_open_gap":        [0.15, 0.20, None],
+        },
+    },
 
     # ── Momentum ──────────────────────────────────────────────────────────────
     "momentum": {
@@ -230,6 +252,110 @@ _STEP_SETS: dict[str, dict[str, dict[str, list[Any]]]] = {
             "use_fear_greed_gate":  [False, True],
         },
     },
+    "fear_greed_contrarian": {
+        "coarse": {
+            "fear_entry":          [20.0, 35.0],
+            "greed_exit":          [50.0, 70.0],
+            "confirmation_days":   [1, 3],
+            "rebalance_days":      [10, 42],
+            "max_positions":       [15, 50],
+            "min_dollar_volume":   [2_000_000.0, 5_000_000.0],
+            "exposure":            [0.50, 1.00],
+        },
+        "fine": {
+            "fear_entry":          [20.0, 25.0, 35.0],
+            "greed_exit":          [50.0, 55.0, 70.0],
+            "confirmation_days":   [1, 2, 3],
+            "rebalance_days":      [10, 21, 42],
+            "max_positions":       [15, 25, 50],
+            "min_dollar_volume":   [1_000_000.0, 2_000_000.0, 5_000_000.0],
+            "exposure":            [0.50, 0.75, 1.00],
+        },
+    },
+    "fear_greed_contrarian_overlay": {
+        "coarse": {
+            "entry_threshold":     [20.0, 35.0],
+            "exit_threshold":      [50.0, 70.0],
+            "exposure":            [0.50, 0.75],
+            "confirmation_days":   [1, 2],
+            "market_symbol":       ["SPY"],
+        },
+        "fine": {
+            "entry_threshold":     [20.0, 25.0, 35.0],
+            "exit_threshold":      [50.0, 55.0, 70.0],
+            "exposure":            [0.50, 0.75],
+            "confirmation_days":   [1, 2, 3],
+            "market_symbol":       ["SPY"],
+        },
+    },
+    "momentum_fear_greed_overlay": {
+        "coarse": {
+            "entry_threshold":     [20.0, 35.0],
+            "exit_threshold":      [50.0, 70.0],
+            "greed_threshold":     [75.0],
+            "fear_exposure":       [0.50, 1.00],
+            "normal_exposure":     [1.00],
+            "greed_exposure":      [0.50, 0.75],
+            "confirmation_days":   [1, 3],
+        },
+        "fine": {
+            "entry_threshold":     [20.0, 25.0, 35.0],
+            "exit_threshold":      [50.0, 55.0, 70.0],
+            "greed_threshold":     [65.0, 75.0, 85.0],
+            "fear_exposure":       [0.50, 0.75, 1.00],
+            "normal_exposure":     [0.75, 1.00],
+            "greed_exposure":      [0.50, 0.75, 1.00],
+            "confirmation_days":   [1, 2, 3],
+        },
+    },
+    "sector_breadth_overlay": {
+        "coarse": {
+            "breadth_window":          [80, 150],
+            "sector_on_threshold":     [0.50, 0.60],
+            "sector_off_threshold":    [0.40, 0.50],
+            "broad_sector_fraction":   [0.50, 0.65],
+            "risk_on_exposure":        [0.50, 0.75],
+            "selective_exposure":      [0.35, 0.50],
+            "defensive_exposure":      [0.25, 0.35],
+            "min_selective_sectors":   [2, 4],
+            "market_symbol":           ["SPY"],
+        },
+        "fine": {
+            "breadth_window":          [80, 100, 150],
+            "sector_on_threshold":     [0.50, 0.55, 0.60],
+            "sector_off_threshold":    [0.40, 0.45, 0.50],
+            "broad_sector_fraction":   [0.50, 0.55, 0.65],
+            "risk_on_exposure":        [0.50, 0.75],
+            "selective_exposure":      [0.35, 0.50],
+            "defensive_exposure":      [0.25, 0.35],
+            "min_selective_sectors":   [2, 3, 4],
+            "market_symbol":           ["SPY"],
+        },
+    },
+    "volatility_compression_expansion": {
+        "coarse": {
+            "compression_window":    [15, 30],
+            "baseline_window":       [80, 150],
+            "breakout_window":       [15, 30],
+            "compression_ratio":     [0.60, 0.80],
+            "expansion_mult":        [1.10, 1.40],
+            "exit_expansion_mult":   [1.30, 1.80],
+            "exposure":              [0.35, 0.75],
+            "compression_lookback":  [5, 15],
+            "market_symbol":         ["SPY"],
+        },
+        "fine": {
+            "compression_window":    [15, 20, 30],
+            "baseline_window":       [80, 100, 150],
+            "breakout_window":       [15, 20, 30],
+            "compression_ratio":     [0.60, 0.70, 0.80],
+            "expansion_mult":        [1.10, 1.20, 1.40],
+            "exit_expansion_mult":   [1.30, 1.50, 1.80],
+            "exposure":              [0.35, 0.50, 0.75],
+            "compression_lookback":  [5, 10, 15],
+            "market_symbol":         ["SPY"],
+        },
+    },
 }
 
 
@@ -257,8 +383,7 @@ _CONDITIONAL_PARAMS: dict[str, dict[str, dict[str, Any]]] = {
         # UCB confidence bonus only applies to UCB policy
         "ucb_bonus":  {"active_when": {"policy_type": {"ucb"}}},
     },
-    # ml_ranker and superstock have no strong conditional dependencies
-    # (superstock thresholds are independent axes of a screening template)
+    # Other families have no strong conditional dependencies.
 }
 
 
@@ -274,6 +399,14 @@ _CONDITIONAL_PARAMS: dict[str, dict[str, dict[str, Any]]] = {
 # "default_step_policy":     step resolution for default method
 
 _SEARCH_PROFILES: dict[str, dict[str, Any]] = {
+    "amihud_illiquidity_premium": {
+        "early_history_threshold": 15,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["max_dollar_volume_rank", "max_daily_volatility"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
     "momentum": {
         "early_history_threshold": 50,
         "stagnation_threshold":    3,
@@ -305,6 +438,46 @@ _SEARCH_PROFILES: dict[str, dict[str, Any]] = {
         "early_history_threshold": 15,
         "stagnation_threshold":    2,
         "architecture_params":     ["policy_type"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
+    "fear_greed_contrarian": {
+        "early_history_threshold": 15,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["fear_entry", "confirmation_days", "exposure"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
+    "fear_greed_contrarian_overlay": {
+        "early_history_threshold": 10,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["entry_threshold", "exposure"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
+    "momentum_fear_greed_overlay": {
+        "early_history_threshold": 10,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["entry_threshold", "fear_exposure", "greed_exposure"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
+    "sector_breadth_overlay": {
+        "early_history_threshold": 10,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["broad_sector_fraction", "min_selective_sectors"],
+        "prefer_lhc":              False,
+        "default_method":          "hybrid",
+        "default_step_policy":     "fine",
+    },
+    "volatility_compression_expansion": {
+        "early_history_threshold": 10,
+        "stagnation_threshold":    2,
+        "architecture_params":     ["compression_ratio", "expansion_mult", "exposure"],
         "prefer_lhc":              False,
         "default_method":          "hybrid",
         "default_step_policy":     "fine",

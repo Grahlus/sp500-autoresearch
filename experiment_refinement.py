@@ -11,7 +11,8 @@ from typing import Any
 
 import pandas as pd
 
-from agents.schemas import load_idea_records, load_latest_analysis_report
+from agents.schemas import load_idea_records, load_latest_analysis_report, update_idea_record_status, IDEA_ACTIVE_STATUSES
+from experiment_idea_manager import select_hot_representatives
 from experiment_batch import DEFAULT_BASELINES
 from experiment_lineage import build_branch_budget_plan, build_lineage_summary
 from experiment_idea_library import build_template_payload, expand_template_candidates, list_idea_templates, load_external_idea_seeds
@@ -210,12 +211,16 @@ def _load_helper_ideas(
         return []
     workspace_root = _helper_workspace_root(base_dir)
     records = load_idea_records(workspace_root)
+    # Accept active statuses only (excludes archived/retired/merged/executed)
     filtered = [
         record
         for record in records
-        if record.get("status", "new") == "new"
+        if record.get("status", "new") in IDEA_ACTIVE_STATUSES
         and (record.get("family") in request.strategy_families or record.get("family") is None)
     ]
+    # Apply cluster-representative selection so that near-duplicate ideas do not
+    # all compete equally; each cluster sends at most max_per_cluster representatives.
+    filtered = select_hot_representatives(filtered)
     filtered.sort(
         key=lambda record: (
             -float(record.get("priority") or 0.0),
@@ -225,6 +230,11 @@ def _load_helper_ideas(
             str(record.get("idea_id") or ""),
         )
     )
+    # Mark selected ideas as shortlisted so lifecycle tracking is accurate.
+    for record in filtered:
+        idea_id = str(record.get("idea_id") or "")
+        if idea_id and record.get("status", "new") == "new":
+            update_idea_record_status(idea_id, "shortlisted", workspace_root)
     return filtered
 
 
@@ -344,7 +354,7 @@ def _synthesized_structural_config(family: str, idea: dict[str, Any], idea_yield
     else:
         overrides = {}
 
-    if state == "promising":
+    if state == "promising" and family in {"ml_ranker", "rl_bandit"}:
         overrides["rebalance_days"] = overrides.get("rebalance_days", config.get("rebalance_days", 5))
     elif state == "retired":
         if "use_fear_greed_gate" in config:
@@ -1603,6 +1613,48 @@ def _template_payloads_for_family(
     return payloads[:limit]
 
 
+# Per-synth-class override variants for the fd-probe floor.
+# Each list entry is a dict of overrides on top of the synth-class default config.
+# The floor tries variants in order until one passes deterministic safety checks.
+# Only valid choices from the momentum/superstock/etc. search space are listed.
+_FD_PROBE_VARIANT_OVERRIDES: dict[str, list[dict[str, Any]]] = {
+    "ranking_rethink": [
+        {},
+        {"REBAL_WEEKS": 2, "MIN_HOLD_DAYS": 15},
+        {"MA_WEEKS": 24, "FG_MIN": 22.0},
+        {"REBAL_WEEKS": 2, "MIN_HOLD_DAYS": 10, "SKIP_WEEKS": 2},
+        {"LOOKBACK_WEEKS": 26, "TOP_PCT": 0.015, "EXIT_PCT_RANK": 0.95},
+    ],
+    "regime_filter": [
+        {},
+        {"MA_WEEKS": 24, "STOP_TYPE": "fixed", "STOP_LOSS_PCT": 0.15},
+        {"TOP_PCT": 0.015, "REBAL_WEEKS": 2, "MIN_HOLD_DAYS": 10},
+        {"LOOKBACK_WEEKS": 39, "FG_MIN": 22.0, "MA_WEEKS": 24},
+        {"SKIP_WEEKS": 3, "FG_MIN": 30.0, "LOOKBACK_WEEKS": 39},
+    ],
+    "breadth_filter": [
+        {},
+        {"MA_WEEKS": 24, "REBAL_WEEKS": 2},
+        {"TOP_PCT": 0.015, "FG_MIN": 30.0},
+    ],
+    "state_model": [
+        {},
+        {"MA_WEEKS": 24, "REBAL_WEEKS": 2},
+        {"TOP_PCT": 0.015, "EXIT_PCT_RANK": 0.95, "RANK_EXIT_CONFIRM": 1},
+    ],
+    "cross_family_mechanism": [
+        {},
+        {"REBAL_WEEKS": 2, "MA_WEEKS": 24},
+        {"LOOKBACK_WEEKS": 26, "FG_MIN": 22.0},
+    ],
+    "portfolio_overlay": [
+        {},
+        {"STOP_LOSS_PCT": 0.15, "MA_WEEKS": 24},
+        {"TOP_PCT": 0.015, "REBAL_WEEKS": 2},
+    ],
+}
+
+
 def generate_next_round_proposal(
     request: ProposalRequest,
     *,
@@ -2042,6 +2094,11 @@ def generate_next_round_proposal(
             if bool(record.get("is_structurally_novel"))
             or bool(record.get("is_out_of_box"))
             or bool(record.get("is_uncommon_idea"))
+        ]
+        # Family-discovery probe ideas get a guaranteed floor budget even in confirmation mode.
+        fd_probe_ideas = [
+            r for r in structural_family_ideas
+            if r.get("idea_source") == "family_discovery"
         ]
         routine_family_ideas = [record for record in family_ideas if record not in structural_family_ideas]
         structural_yield_records = [
@@ -2564,6 +2621,103 @@ def generate_next_round_proposal(
                     novelty_floor_override=0.0,
                 )
 
+        # ── Family-discovery probe guaranteed floor ──────────────────────────
+        # Reserved BEFORE confirmation candidates so that 1-2 fd-probe direct-synthesis
+        # slots are always available even in confirmation-dominant modes.
+        # Hard cap: _FD_PROBE_CONFIRMATION_BUDGET (=2); only fires when:
+        #   - family-discovery probe ideas exist (idea_source=="family_discovery")
+        #   - structural execution lane is enabled
+        #   - pool has remaining capacity
+        # Uses allow_near_duplicate=False to preserve deterministic safety.
+        _FD_PROBE_CONFIRMATION_BUDGET = 2
+        _fd_probe_budget_used = 0
+        _fd_probe_lane_entries: list[dict[str, Any]] = []
+
+        if fd_probe_ideas and structural_execution_lane_enabled and len(selection_pool) < budget:
+            _fd_synth_candidates = _synthesized_structural_candidates(
+                family=family,
+                ideas=fd_probe_ideas,
+                idea_yield=_fam_yield,
+                recent_idea_signatures=set(),
+                limit=_FD_PROBE_CONFIRMATION_BUDGET * 3,  # request more; many may be blocked
+            )
+            for _fd_payload in _fd_synth_candidates:
+                if _fd_probe_budget_used >= _FD_PROBE_CONFIRMATION_BUDGET:
+                    break
+                if len(selection_pool) >= budget:
+                    break
+                _fd_meta = _fd_payload["metadata"]
+                _fd_idea = _fd_payload.get("idea") or {}
+                _fd_idea_id = str(_fd_meta.get("idea_id") or "")
+                _fd_candidate_id = str((_fd_idea.get("metadata") or {}).get("family_candidate_id") or "")
+                _fd_family_name = str(
+                    (_fd_idea.get("metadata") or {}).get("discovery_family_name")
+                    or (_fd_idea.get("suggested_config") or {}).get("family_discovery_candidate")
+                    or _fd_idea_id
+                )
+                _fd_synth_class = str(_fd_meta.get("synthesized_template_family") or "structural_extension")
+                _fd_tmpl_class = str(_fd_idea.get("template_similarity_class") or _fd_synth_class)
+                # Try the base config plus each variant override until one passes.
+                # This avoids being permanently blocked by an already-executed baseline config.
+                _fd_base_config = _fd_payload["config"]
+                _fd_variant_overrides = _FD_PROBE_VARIANT_OVERRIDES.get(_fd_synth_class, [{}])
+                _fd_added = False
+                for _fd_variant_idx, _fd_override in enumerate(_fd_variant_overrides):
+                    _fd_cfg = {**_fd_base_config, **_fd_override} if _fd_override else _fd_base_config
+                    _fd_added = _try_add_candidate(
+                        _fd_cfg,
+                        source_type="family_discovery_direct_synthesis",
+                        strategy_type=_fd_meta.get("strategy_type") or _family_strategy_type(family),
+                        template_id=_fd_meta.get("template_id"),
+                        hypothesis=_fd_meta.get("hypothesis"),
+                        reason_selected=(
+                            f"fd_probe_floor: family={_fd_family_name}; "
+                            f"candidate_id={_fd_candidate_id}; "
+                            f"synth_class={_fd_synth_class}; "
+                            f"template_class={_fd_tmpl_class}; "
+                            f"idea_id={_fd_idea_id}; "
+                            f"variant={_fd_variant_idx}; "
+                            f"confirmation_mode_reserved={family_confirmation_mode}"
+                        ),
+                        exploration_mode="family_discovery_probe",
+                        proposal_role="explore",
+                        region_label=f"fd_probe_{_fd_family_name[:24]}",
+                        source_idea_ids=[_fd_idea_id] if _fd_idea_id else [],
+                        idea_id=_fd_idea_id,
+                        idea_source=_fd_idea.get("idea_source") or "family_discovery",
+                        idea_kind=_fd_idea.get("idea_kind") or "new_family_discovery_probe",
+                        template_tags=list(_fd_meta.get("template_tags") or []),
+                        template_counts=family_analysis.get("template_counts", {}),
+                        structural_novelty_threshold=request.structural_novelty_threshold,
+                        uncommon_template_bonus=request.uncommon_template_bonus,
+                        synthesized_template_family=_fd_synth_class,
+                        synthesis_rationale=(
+                            f"family_discovery_direct_synthesis: "
+                            f"family={_fd_family_name}; "
+                            f"candidate_id={_fd_candidate_id}; "
+                            f"template_class={_fd_tmpl_class}; "
+                            f"synth_family={_fd_synth_class}; "
+                            f"idea_source=family_discovery; "
+                            f"variant={_fd_variant_idx}; "
+                            f"confirmation_mode_reserved={family_confirmation_mode}"
+                        ),
+                        allow_near_duplicate=False,
+                        novelty_floor_override=0.0,
+                    )
+                    if _fd_added:
+                        break
+                if _fd_added:
+                    _fd_probe_budget_used += 1
+                    _fd_probe_lane_entries.append({
+                        "idea_id": _fd_idea_id,
+                        "family_name": _fd_family_name,
+                        "candidate_id": _fd_candidate_id,
+                        "synth_class": _fd_synth_class,
+                        "template_class": _fd_tmpl_class,
+                        "is_confirmation_reserved": family_confirmation_mode,
+                        "variant_index": _fd_variant_idx,
+                    })
+
         if family_confirmation_mode and not history.empty:
             _append_confirmation_reproduction(top.iloc[0])
             _append_confirmation_neighborhood(top.iloc[0])
@@ -2676,6 +2830,24 @@ def generate_next_round_proposal(
             structural_lane_state["reason"] = (
                 "structural lane disabled by plan or no structural-synthesis candidates were available"
             )
+
+        # Build fd probe lane state for reporting
+        fd_probe_lane_state: dict[str, Any] = {
+            "enabled": bool(fd_probe_ideas and structural_execution_lane_enabled),
+            "available_ideas": len(fd_probe_ideas),
+            "reservation_budget": _FD_PROBE_CONFIRMATION_BUDGET,
+            "executed_count": _fd_probe_budget_used,
+            "confirmation_mode": family_confirmation_mode,
+            "entries": _fd_probe_lane_entries,
+            "skipped": _fd_probe_budget_used == 0,
+            "skip_reason": (
+                "no_fd_probe_ideas" if not fd_probe_ideas
+                else "structural_lane_disabled" if not structural_execution_lane_enabled
+                else "pool_full_before_fd_floor" if len(selection_pool) <= 0
+                else "no_safe_candidate_passed" if _fd_probe_budget_used == 0
+                else None
+            ),
+        }
 
         if family_branch_budget_entries and not confirmation_mode:
             for branch_entry in family_branch_budget_entries:
@@ -3169,6 +3341,9 @@ def generate_next_round_proposal(
             "structural_successful_families": sorted(structural_successful_families),
             "structural_family_targets": dict(structural_family_targets),
             "structural_execution_lane": structural_lane_state,
+            "fd_probe_lane": fd_probe_lane_state,
+            "fd_probe_executed_count": _fd_probe_budget_used,
+            "fd_probe_confirmation_reserved": family_confirmation_mode and _fd_probe_budget_used > 0,
             "structural_execution_lane_active_recent_cycles": bool(structural_lane_state.get("recent_active")),
             "structural_execution_lane_planner_requested": bool(structural_lane_state.get("planner_requested")),
             "structural_execution_lane_received_candidates": int(structural_lane_state.get("candidate_count") or 0),

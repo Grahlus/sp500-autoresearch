@@ -8,12 +8,12 @@ from __future__ import annotations
 from typing import Any
 
 from family_candidate_store import family_candidate_summary, get_controlled_probes
-from family_discovery_scheduler import get_scheduler_status
+from family_discovery_scheduler import get_discovery_status
 
 
 def build_health_report(workspace_root: str = ".") -> dict[str, Any]:
     """Aggregate all discovery pipeline state into one dict."""
-    sched = get_scheduler_status(workspace_root)
+    sched = get_discovery_status(workspace_root)
     queue = family_candidate_summary(workspace_root)
 
     # Count probe ideas in queues/ideas/
@@ -31,7 +31,6 @@ def build_health_report(workspace_root: str = ".") -> dict[str, Any]:
         "probe_ideas_queued": probe_ideas,
         "probe_experiments_run": probe_experiments,
         "funnel": funnel,
-        "controlled_probes": get_controlled_probes(workspace_root),
     }
 
 
@@ -44,22 +43,15 @@ def print_health_report(workspace_root: str = ".") -> None:
     print("FAMILY DISCOVERY HEALTH")
     print("=" * 56)
 
-    # Scheduler state — nested under sched["slow"] / sched["fast"]
-    slow = sched.get("slow") or {}
-    fast = sched.get("fast") or {}
-    last = slow.get("last_run_at") or "never"
-    n_runs = slow.get("run_count", 0)
-    elapsed = slow.get("elapsed_hours")
+    # Scheduler state
+    last = sched.get("last_run_at") or "never"
+    n_runs = sched.get("run_count", 0)
+    elapsed = sched.get("elapsed_hours")
     elapsed_str = f"{elapsed:.1f}h ago" if elapsed is not None else "n/a"
     print(f"  last_run        : {last}  ({elapsed_str})")
     print(f"  total_runs      : {n_runs}")
-    print(f"  cycles_since    : {slow.get('cycles_since_last_run', 0)}")
-    print(f"  trigger_reason  : {slow.get('last_trigger_reason', 'n/a')}")
-    last_fast = fast.get("last_fast_tick_at") or "never"
-    fast_elapsed = fast.get("elapsed_minutes")
-    fast_elapsed_str = f"{fast_elapsed:.1f}min ago" if fast_elapsed is not None else "n/a"
-    print(f"  last_fast_tick  : {last_fast}  ({fast_elapsed_str})")
-    print(f"  fast_promotions : {fast.get('total_fast_promotions', 0)}")
+    print(f"  cycles_since    : {sched.get('cycles_since_last_run', 0)}")
+    print(f"  trigger_reason  : {sched.get('last_trigger_reason', 'n/a')}")
 
     # Queue stats
     total = queue.get("total", 0)
@@ -155,9 +147,8 @@ def _count_probe_experiments(workspace_root: str) -> int:
         with open(index_path, newline="") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
-                source_type = row.get("source_type", "") or ""
-                exploration_mode = row.get("exploration_mode", "") or ""
-                if "family_discovery" in source_type or "family_discovery" in exploration_mode:
+                notes = row.get("notes", "") or ""
+                if "family_discovery" in notes or "family_probe" in notes:
                     count += 1
     except Exception:
         pass

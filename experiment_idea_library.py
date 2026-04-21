@@ -22,6 +22,455 @@ class IdeaTemplate:
 
 def _templates() -> dict[str, list[IdeaTemplate]]:
     return {
+        "amihud_illiquidity_premium": [
+            IdeaTemplate(
+                family="amihud_illiquidity_premium",
+                template_id="amihud_illiquidity_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Monthly Amihud illiquidity premium: rank tradable stocks by 60-day "
+                    "average abs(return) / dollar volume, apply $5M avg dollar-volume, "
+                    "$10 price, top-500 dollar-volume, 3.5% daily-volatility, and "
+                    "20% OHLC execution-sanity guards, and hold the top 10 equally weighted "
+                    "on a two-month rebalance."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Edge source is compensated illiquidity "
+                    "within a tradable universe, not momentum, breakout, or superstock behavior."
+                ),
+                config={
+                    "lookback_days": 60,
+                    "rebalance_days": 42,
+                    "max_positions": 10,
+                    "min_dollar_volume": 5_000_000.0,
+                    "price_min": 10.0,
+                    "max_dollar_volume_rank": 500,
+                    "max_daily_volatility": 0.035,
+                    "max_abs_open_gap": 0.20,
+                },
+                exploration_mode="template_expansion",
+                tags=("amihud", "illiquidity", "retired", "debug-only"),
+            ),
+            IdeaTemplate(
+                family="amihud_illiquidity_premium",
+                template_id="amihud_illiquidity_quality_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Illiquidity premium with volatility quality guard: monthly Amihud rank "
+                    "among stocks above $2M avg dollar volume and below 3.5% daily volatility."
+                ),
+                reason_selected=(
+                    "Keeps the illiquidity signal while testing whether a simple risk-quality "
+                    "guard reduces cost and drawdown sensitivity."
+                ),
+                config={
+                    "lookback_days": 60,
+                    "rebalance_days": 21,
+                    "max_positions": 20,
+                    "min_dollar_volume": 2_000_000.0,
+                    "price_min": 5.0,
+                    "max_dollar_volume_rank": None,
+                    "max_daily_volatility": 0.035,
+                    "max_abs_open_gap": 0.20,
+                },
+                exploration_mode="template_expansion",
+                tags=("amihud", "illiquidity", "retired", "debug-only"),
+            ),
+            IdeaTemplate(
+                family="amihud_illiquidity_premium",
+                template_id="amihud_illiquidity_largecap_safe_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Large-cap-safe illiquidity: rank by Amihud only within the top 250 stocks "
+                    "by average dollar volume, with $5M liquidity and $10 price floors."
+                ),
+                reason_selected=(
+                    "Explicitly tests whether an illiquidity premium remains in highly tradable "
+                    "large-cap names after conservative cost controls."
+                ),
+                config={
+                    "lookback_days": 90,
+                    "rebalance_days": 21,
+                    "max_positions": 10,
+                    "min_dollar_volume": 5_000_000.0,
+                    "price_min": 10.0,
+                    "max_dollar_volume_rank": 250,
+                    "max_daily_volatility": 0.035,
+                    "max_abs_open_gap": 0.15,
+                },
+                exploration_mode="template_expansion",
+                tags=("amihud", "illiquidity", "retired", "debug-only"),
+            ),
+        ],
+        "breadth_timing_overlay": [
+            IdeaTemplate(
+                family="breadth_timing_overlay",
+                template_id="breadth_timing_overlay_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Market-level breadth timing: long top-100 liquid stocks when >55% of "
+                    "universe is above 200-day MA; cash when <45%. Hysteresis prevents whipsaw."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Edge source is market participation rate, "
+                    "not stock return rank. Fully distinct from momentum and superstock."
+                ),
+                config={
+                    "breadth_window": 200,
+                    "entry_threshold": 0.55,
+                    "exit_threshold": 0.45,
+                    "top_n": 100,
+                },
+                exploration_mode="template_expansion",
+                tags=("breadth", "market-timing", "orthogonal"),
+            ),
+            IdeaTemplate(
+                family="breadth_timing_overlay",
+                template_id="breadth_timing_fast_signal",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Faster breadth signal using 100-day MA with wider stock selection. "
+                    "Tests whether shorter breadth window improves regime detection speed."
+                ),
+                reason_selected=(
+                    "Explores shorter breadth lookback for earlier regime transitions."
+                ),
+                config={
+                    "breadth_window": 100,
+                    "entry_threshold": 0.55,
+                    "exit_threshold": 0.45,
+                    "top_n": 200,
+                },
+                exploration_mode="template_expansion",
+                tags=("breadth", "market-timing", "fast"),
+            ),
+            IdeaTemplate(
+                family="breadth_timing_overlay",
+                template_id="breadth_timing_selective",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Stricter breadth gate (>60% above MA to enter, <40% to exit) with "
+                    "concentrated top-50 position. Tests whether higher conviction reduces whipsaw."
+                ),
+                reason_selected=(
+                    "Tighter entry/exit thresholds may improve regime quality at cost of fewer signals."
+                ),
+                config={
+                    "breadth_window": 200,
+                    "entry_threshold": 0.60,
+                    "exit_threshold": 0.40,
+                    "top_n": 50,
+                },
+                exploration_mode="template_expansion",
+                tags=("breadth", "market-timing", "selective"),
+            ),
+        ],
+        "mean_reversion": [
+            IdeaTemplate(
+                family="mean_reversion",
+                template_id="mr_sector_neutral_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Sector-relative mean reversion: long 30 stocks with the worst 5-day "
+                    "return relative to their GICS sector. Liquidity-filtered (>$1M avg daily "
+                    "dollar vol). VIX gate at 40. Rebalances every 5 days."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Edge source is short-horizon idiosyncratic "
+                    "overreaction reversal — explicitly trades against return rank within sectors. "
+                    "Not momentum, not superstock."
+                ),
+                config={
+                    "lookback_days": 5,
+                    "rebal_days": 5,
+                    "max_positions": 30,
+                    "min_dollar_volume": 1_000_000.0,
+                    "vix_gate": 40.0,
+                },
+                exploration_mode="template_expansion",
+                tags=("mean-reversion", "sector-neutral", "orthogonal"),
+            ),
+            IdeaTemplate(
+                family="mean_reversion",
+                template_id="mr_sector_neutral_fast",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Faster mean reversion using 3-day return dislocation and 3-day hold. "
+                    "Tests whether very short-term sector overreaction is tradeable after costs."
+                ),
+                reason_selected=(
+                    "Probes the cost boundary of mean reversion — shorter horizon = stronger signal, "
+                    "higher turnover."
+                ),
+                config={
+                    "lookback_days": 3,
+                    "rebal_days": 3,
+                    "max_positions": 20,
+                    "min_dollar_volume": 2_000_000.0,
+                    "vix_gate": 35.0,
+                },
+                exploration_mode="template_expansion",
+                tags=("mean-reversion", "fast", "high-liquidity"),
+            ),
+            IdeaTemplate(
+                family="mean_reversion",
+                template_id="mr_sector_neutral_broad",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Broader 10-day lookback with 50 positions. Tests whether medium-horizon "
+                    "sector dislocation (not noise, not momentum) captures a reversal premium."
+                ),
+                reason_selected=(
+                    "10-day horizon reduces noise and turnover; 50 positions improves diversification."
+                ),
+                config={
+                    "lookback_days": 10,
+                    "rebal_days": 10,
+                    "max_positions": 50,
+                    "min_dollar_volume": 500_000.0,
+                    "vix_gate": 40.0,
+                },
+                exploration_mode="template_expansion",
+                tags=("mean-reversion", "medium-horizon", "diversified"),
+            ),
+        ],
+        "fear_greed_contrarian": [
+            IdeaTemplate(
+                family="fear_greed_contrarian",
+                template_id="fear_greed_contrarian_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Fear & Greed contrarian: enter a 75% gross liquid-stock basket when "
+                    "Fear & Greed is <=25, exit to cash when it reaches >=55. Rebalance monthly."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Edge source is sentiment capitulation and "
+                    "mean reversion in risk appetite, not return momentum or superstock screening."
+                ),
+                config={
+                    "fear_entry": 25.0,
+                    "greed_exit": 55.0,
+                    "confirmation_days": 1,
+                    "rebalance_days": 21,
+                    "max_positions": 25,
+                    "min_dollar_volume": 2_000_000.0,
+                    "exposure": 0.75,
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "stock-basket", "retired", "debug-only"),
+            ),
+            IdeaTemplate(
+                family="fear_greed_contrarian",
+                template_id="fear_greed_contrarian_defensive_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Defensive sentiment contrarian: require confirmed extreme fear <=20, "
+                    "hold 50% gross across 50 liquid stocks, and exit when sentiment normalizes."
+                ),
+                reason_selected=(
+                    "Tests the conservative version of the same sentiment edge with lower exposure "
+                    "and broader diversification."
+                ),
+                config={
+                    "fear_entry": 20.0,
+                    "greed_exit": 50.0,
+                    "confirmation_days": 2,
+                    "rebalance_days": 21,
+                    "max_positions": 50,
+                    "min_dollar_volume": 5_000_000.0,
+                    "exposure": 0.50,
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "stock-basket", "retired", "debug-only"),
+            ),
+            IdeaTemplate(
+                family="fear_greed_contrarian",
+                template_id="fear_greed_contrarian_aggressive_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Aggressive sentiment contrarian: enter earlier when Fear & Greed <=35, "
+                    "hold 100% gross across 15 liquid stocks, and exit only at greed >=70."
+                ),
+                reason_selected=(
+                    "Tests whether a wider sentiment contrarian regime captures more rebound while "
+                    "remaining distinct from stock momentum ranks."
+                ),
+                config={
+                    "fear_entry": 35.0,
+                    "greed_exit": 70.0,
+                    "confirmation_days": 1,
+                    "rebalance_days": 10,
+                    "max_positions": 15,
+                    "min_dollar_volume": 1_000_000.0,
+                    "exposure": 1.00,
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "stock-basket", "retired", "debug-only"),
+            ),
+        ],
+        "fear_greed_contrarian_overlay": [
+            IdeaTemplate(
+                family="fear_greed_contrarian_overlay",
+                template_id="fear_greed_contrarian_overlay_v2",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Fear & Greed overlay v2: enter 75% SPY exposure when sentiment "
+                    "falls to <=25, exit to cash at >=55. No stock ranking or basket "
+                    "selection; regime transitions drive allocation."
+                ),
+                reason_selected=(
+                    "Promoted from diagnostics: Fear & Greed worked cleaner as a low-turnover "
+                    "market exposure overlay than as a stock-selection family."
+                ),
+                config={
+                    "entry_threshold": 25.0,
+                    "exit_threshold": 55.0,
+                    "exposure": 0.75,
+                    "confirmation_days": 1,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "overlay", "v2", "redesign-only"),
+            ),
+            IdeaTemplate(
+                family="fear_greed_contrarian_overlay",
+                template_id="fear_greed_contrarian_overlay_defensive_v2",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Defensive Fear & Greed overlay: require confirmed extreme fear <=20 "
+                    "and hold 50% SPY exposure until sentiment normalizes at >=50."
+                ),
+                reason_selected=(
+                    "Tests lower exposure and confirmation while preserving the diagnostic "
+                    "finding that this should be an overlay, not a stock selector."
+                ),
+                config={
+                    "entry_threshold": 20.0,
+                    "exit_threshold": 50.0,
+                    "exposure": 0.50,
+                    "confirmation_days": 2,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "overlay", "defensive", "v2", "redesign-only"),
+            ),
+            IdeaTemplate(
+                family="fear_greed_contrarian_overlay",
+                template_id="fear_greed_contrarian_overlay_partial_v2",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Partial Fear & Greed overlay: enter earlier at <=35 with 50% SPY "
+                    "exposure and exit at greed >=70. Keeps risk low while testing wider "
+                    "sentiment regimes."
+                ),
+                reason_selected=(
+                    "Limited v2 exploration of threshold breadth and partial exposure only; "
+                    "not an optimization pass."
+                ),
+                config={
+                    "entry_threshold": 35.0,
+                    "exit_threshold": 70.0,
+                    "exposure": 0.50,
+                    "confirmation_days": 1,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("fear-greed", "sentiment", "overlay", "partial", "v2", "redesign-only"),
+            ),
+        ],
+        "momentum_fear_greed_overlay": [
+            IdeaTemplate(
+                family="momentum_fear_greed_overlay",
+                template_id="momentum_fear_greed_overlay_partial_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Momentum plus Fear & Greed partial overlay: preserve momentum "
+                    "stock selection, but scale sleeve exposure to 75% during fear "
+                    "and greed regimes."
+                ),
+                reason_selected=(
+                    "Tests whether sentiment improves an existing strong sleeve as "
+                    "an exposure modifier rather than standalone alpha."
+                ),
+                config={
+                    "entry_threshold": 25.0,
+                    "exit_threshold": 55.0,
+                    "greed_threshold": 75.0,
+                    "fear_exposure": 0.75,
+                    "normal_exposure": 1.00,
+                    "greed_exposure": 0.75,
+                    "confirmation_days": 2,
+                },
+                exploration_mode="template_expansion",
+                tags=("momentum", "fear-greed", "sleeve-overlay", "redesign-only"),
+            ),
+            IdeaTemplate(
+                family="momentum_fear_greed_overlay",
+                template_id="momentum_fear_greed_overlay_defensive_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Defensive momentum plus Fear & Greed overlay: require confirmed "
+                    "extreme fear and cut exposure to 50% in fear or greed regimes."
+                ),
+                reason_selected=(
+                    "First-test risk-control variant with slower transitions and no "
+                    "change to momentum ranking."
+                ),
+                config={
+                    "entry_threshold": 20.0,
+                    "exit_threshold": 50.0,
+                    "greed_threshold": 75.0,
+                    "fear_exposure": 0.50,
+                    "normal_exposure": 1.00,
+                    "greed_exposure": 0.50,
+                    "confirmation_days": 3,
+                },
+                exploration_mode="template_expansion",
+                tags=("momentum", "fear-greed", "sleeve-overlay", "defensive", "redesign-only"),
+            ),
+            IdeaTemplate(
+                family="momentum_fear_greed_overlay",
+                template_id="momentum_fear_greed_overlay_asymmetric_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Asymmetric momentum plus Fear & Greed overlay: keep full exposure "
+                    "after fear capitulation, but reduce exposure during greed."
+                ),
+                reason_selected=(
+                    "Tests whether the useful signal is mainly avoiding euphoric regimes "
+                    "instead of buying fear as a standalone sleeve."
+                ),
+                config={
+                    "entry_threshold": 25.0,
+                    "exit_threshold": 55.0,
+                    "greed_threshold": 75.0,
+                    "fear_exposure": 1.00,
+                    "normal_exposure": 1.00,
+                    "greed_exposure": 0.50,
+                    "confirmation_days": 2,
+                },
+                exploration_mode="template_expansion",
+                tags=("momentum", "fear-greed", "sleeve-overlay", "asymmetric", "redesign-only"),
+            ),
+        ],
         "momentum": [
             IdeaTemplate(
                 family="momentum",
@@ -437,6 +886,244 @@ def _templates() -> dict[str, list[IdeaTemplate]]:
                 tags=("ml", "short-horizon"),
             ),
         ],
+        "vix_regime_sector_tilt": [
+            IdeaTemplate(
+                family="vix_regime_sector_tilt",
+                template_id="vix_regime_sector_tilt_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "VIX regime sector rotation: cyclicals (Tech/Discretionary/Industrials) "
+                    "when VIX < 18, defensives (Utilities/Staples/Health Care) when VIX > 28, "
+                    "all sectors equal-weight in between. VIX smoothed 5-day. "
+                    "Edge source: volatility regime, not return rank."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Stock selection is driven by VIX level + "
+                    "GICS sector tag only — no return rank, no quality filter. "
+                    "Fully distinct from momentum and superstock."
+                ),
+                config={
+                    "low_vix_threshold": 18.0,
+                    "high_vix_threshold": 28.0,
+                    "vix_smooth_days": 5,
+                    "cyclical_sectors_mode": "narrow",
+                },
+                exploration_mode="template_expansion",
+                tags=("vix-regime", "sector-rotation", "orthogonal"),
+            ),
+            IdeaTemplate(
+                family="vix_regime_sector_tilt",
+                template_id="vix_regime_broad_cyclicals",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Broad cyclicals mode: includes Financials and Communication Services "
+                    "in the risk-on basket. Tests whether wider cyclical exposure improves "
+                    "low-VIX returns."
+                ),
+                reason_selected=(
+                    "Tests whether adding Financials/Comm Services to cyclicals improves coverage."
+                ),
+                config={
+                    "low_vix_threshold": 18.0,
+                    "high_vix_threshold": 28.0,
+                    "vix_smooth_days": 5,
+                    "cyclical_sectors_mode": "broad",
+                },
+                exploration_mode="template_expansion",
+                tags=("vix-regime", "sector-rotation", "broad-cyclicals"),
+            ),
+            IdeaTemplate(
+                family="vix_regime_sector_tilt",
+                template_id="vix_regime_tight_bands",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Tighter VIX bands (15/25) with 10-day smoothing. Tests whether "
+                    "more sensitive regime detection with slower signal improves stability."
+                ),
+                reason_selected=(
+                    "Tighter thresholds detect regime shifts earlier; smoothing prevents whipsaw."
+                ),
+                config={
+                    "low_vix_threshold": 15.0,
+                    "high_vix_threshold": 25.0,
+                    "vix_smooth_days": 10,
+                    "cyclical_sectors_mode": "narrow",
+                },
+                exploration_mode="template_expansion",
+                tags=("vix-regime", "sector-rotation", "tight-bands"),
+            ),
+        ],
+        "sector_breadth_overlay": [
+            IdeaTemplate(
+                family="sector_breadth_overlay",
+                template_id="sector_breadth_overlay_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Sector breadth overlay: use 100-day sector participation to choose "
+                    "between 75% SPY risk-on, 50% selective-on SPY exposure, "
+                    "35% defensive SPY exposure, or cash. No stock return ranking."
+                ),
+                reason_selected=(
+                    "First-test orthogonal overlay. Edge source is sector internal breadth "
+                    "and participation, not momentum or superstock stock selection."
+                ),
+                config={
+                    "breadth_window": 100,
+                    "sector_on_threshold": 0.55,
+                    "sector_off_threshold": 0.45,
+                    "broad_sector_fraction": 0.55,
+                    "risk_on_exposure": 0.75,
+                    "selective_exposure": 0.50,
+                    "defensive_exposure": 0.35,
+                    "min_selective_sectors": 3,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("sector-breadth", "overlay", "redesign-only", "v1"),
+            ),
+            IdeaTemplate(
+                family="sector_breadth_overlay",
+                template_id="sector_breadth_overlay_defensive_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Defensive sector breadth overlay: require broader sector confirmation "
+                    "for SPY risk-on and keep lower selective/defensive SPY exposure."
+                ),
+                reason_selected=(
+                    "Tests a conservative version of sector participation timing without "
+                    "expanding into stock picking."
+                ),
+                config={
+                    "breadth_window": 150,
+                    "sector_on_threshold": 0.60,
+                    "sector_off_threshold": 0.45,
+                    "broad_sector_fraction": 0.65,
+                    "risk_on_exposure": 0.50,
+                    "selective_exposure": 0.35,
+                    "defensive_exposure": 0.25,
+                    "min_selective_sectors": 4,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("sector-breadth", "overlay", "defensive", "redesign-only", "v1"),
+            ),
+            IdeaTemplate(
+                family="sector_breadth_overlay",
+                template_id="sector_breadth_overlay_partial_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Partial sector breadth overlay: shorter breadth window with earlier "
+                    "sector-on threshold and partial exposure. Tests responsiveness while "
+                    "keeping overlay construction simple."
+                ),
+                reason_selected=(
+                    "Limited first-test variation around sector breadth responsiveness; "
+                    "not a parameter optimization pass."
+                ),
+                config={
+                    "breadth_window": 80,
+                    "sector_on_threshold": 0.50,
+                    "sector_off_threshold": 0.40,
+                    "broad_sector_fraction": 0.50,
+                    "risk_on_exposure": 0.50,
+                    "selective_exposure": 0.50,
+                    "defensive_exposure": 0.35,
+                    "min_selective_sectors": 2,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("sector-breadth", "overlay", "partial", "redesign-only", "v1"),
+            ),
+        ],
+        "volatility_compression_expansion": [
+            IdeaTemplate(
+                family="volatility_compression_expansion",
+                template_id="volatility_compression_expansion_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Volatility compression/expansion overlay: enter 50% SPY exposure "
+                    "when an upside range expansion follows recent ATR compression; exit "
+                    "on downside expansion or volatility re-expansion. OHLCV-only, no stock ranking."
+                ),
+                reason_selected=(
+                    "First-test orthogonal prototype. Edge source is volatility state transition "
+                    "after compression, not momentum rank or superstock breakout screening."
+                ),
+                config={
+                    "compression_window": 20,
+                    "baseline_window": 100,
+                    "breakout_window": 20,
+                    "compression_ratio": 0.70,
+                    "expansion_mult": 1.20,
+                    "exit_expansion_mult": 1.50,
+                    "exposure": 0.50,
+                    "compression_lookback": 10,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("volatility-compression", "expansion", "overlay", "retire-for-now", "v1"),
+            ),
+            IdeaTemplate(
+                family="volatility_compression_expansion",
+                template_id="volatility_compression_expansion_defensive_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Defensive compression/expansion overlay: require tighter compression and "
+                    "larger expansion trigger, then hold only 35% SPY exposure."
+                ),
+                reason_selected=(
+                    "Tests a lower-risk first-test version while keeping the same simple "
+                    "OHLCV-only overlay construction."
+                ),
+                config={
+                    "compression_window": 20,
+                    "baseline_window": 100,
+                    "breakout_window": 30,
+                    "compression_ratio": 0.60,
+                    "expansion_mult": 1.40,
+                    "exit_expansion_mult": 1.30,
+                    "exposure": 0.35,
+                    "compression_lookback": 10,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("volatility-compression", "expansion", "overlay", "defensive", "retire-for-now", "v1"),
+            ),
+            IdeaTemplate(
+                family="volatility_compression_expansion",
+                template_id="volatility_compression_expansion_partial_v1",
+                strategy_type="classical",
+                source_type="template_expansion",
+                hypothesis=(
+                    "Partial compression/expansion overlay: shorter compression window and "
+                    "partial 50% SPY exposure to test a more responsive volatility transition."
+                ),
+                reason_selected=(
+                    "Limited first-test responsiveness variant; not a broad parameter search."
+                ),
+                config={
+                    "compression_window": 15,
+                    "baseline_window": 80,
+                    "breakout_window": 15,
+                    "compression_ratio": 0.80,
+                    "expansion_mult": 1.10,
+                    "exit_expansion_mult": 1.50,
+                    "exposure": 0.50,
+                    "compression_lookback": 5,
+                    "market_symbol": "SPY",
+                },
+                exploration_mode="template_expansion",
+                tags=("volatility-compression", "expansion", "overlay", "partial", "retire-for-now", "v1"),
+            ),
+        ],
         "rl_bandit": [
             IdeaTemplate(
                 family="rl_bandit",
@@ -487,12 +1174,23 @@ def _templates() -> dict[str, list[IdeaTemplate]]:
 
 
 def list_idea_families() -> list[str]:
-    return sorted(_templates())
+    return sorted(
+        family
+        for family in _templates()
+        if list_idea_templates(family)
+    )
 
 
-def list_idea_templates(family: str) -> list[IdeaTemplate]:
+def list_idea_templates(family: str, *, include_retired: bool = False) -> list[IdeaTemplate]:
     normalized = family.strip().lower()
-    return list(_templates().get(normalized, []))
+    templates = list(_templates().get(normalized, []))
+    if include_retired:
+        return templates
+    return [
+        template
+        for template in templates
+        if not ({"retired", "debug-only", "redesign-only", "retire-for-now"} & set(template.tags))
+    ]
 
 
 def materialize_template(family: str, template: IdeaTemplate) -> dict[str, Any]:

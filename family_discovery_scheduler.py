@@ -51,11 +51,6 @@ def _load_state(workspace_root: str) -> dict[str, Any]:
         "cycles_since_last_fast_tick": 0,
         "fast_tick_promotions": 0,
         "fast_tick_slot_releases": 0,
-        "consecutive_failures": 0,
-        "last_attempt_ts": 0.0,
-        "last_attempt_at": None,
-        "total_attempts": 0,
-        "total_failures": 0,
     }
 
 
@@ -91,21 +86,15 @@ def should_run_discovery(
     now = time.time()
     elapsed_hours = (now - state["last_run_ts"]) / 3600.0
 
-    if state["last_run_ts"] == 0.0 and state.get("last_attempt_ts", 0.0) == 0.0:
+    if state["last_run_ts"] == 0.0:
         return True, "never_run"
 
     if elapsed_hours >= interval_hours:
         return True, f"interval_elapsed_{elapsed_hours:.1f}h"
 
-    # Apply backoff when discovery has been failing: multiply cycle threshold by 2^min(failures,3)
-    consecutive_failures = int(state.get("consecutive_failures", 0))
-    effective_every_n = every_n_cycles
-    if consecutive_failures >= 3:
-        effective_every_n = every_n_cycles * min(8, 2 ** (consecutive_failures - 2))
-
     cycles_since = state.get("cycles_since_last_run", 0)
-    if effective_every_n > 0 and cycles_since >= effective_every_n:
-        return True, f"cycle_trigger_{cycles_since}_cycles_backoff={effective_every_n}"
+    if every_n_cycles > 0 and cycles_since >= every_n_cycles:
+        return True, f"cycle_trigger_{cycles_since}_cycles"
 
     try:
         from family_candidate_store import get_controlled_probes, get_new_family_candidates
@@ -157,7 +146,7 @@ def run_fast_scheduler_tick(
     workspace_root: str = ".",
     *,
     auto_promote_top: int = 3,
-    probe_budget: int = 3,
+    probe_budget: int = 2,
     max_active_probes: int = 6,
     stale_cycles: int = _DEFAULT_STALE_CYCLES,
     stale_minutes: float = _DEFAULT_STALE_MINUTES,
@@ -208,11 +197,10 @@ def run_fast_scheduler_tick(
     waiting = get_new_family_candidates(workspace_root)
     tick_report["waiting_before"] = len(waiting)
 
-    newly_promoted: list[dict] = []
     if free_slots > 0 and waiting:
         to_promote = sorted(
             waiting,
-            key=lambda c: (c.get("ranking_score") or 0.0, c.get("candidate_id") or ""),
+            key=lambda c: c.get("ranking_score") or 0.0,
             reverse=True,
         )[: min(free_slots, auto_promote_top, len(waiting))]
 
@@ -231,73 +219,9 @@ def run_fast_scheduler_tick(
                 "ranking_score": rec.get("ranking_score"),
             })
             tick_report["new_promotions"] += 1
-            newly_promoted.append(rec)
 
     tick_report["slot_usage_after"] = len(get_controlled_probes(workspace_root))
     tick_report["waiting_after"] = len(get_new_family_candidates(workspace_root))
-
-    # Seed ideas for promoted-but-unseeded controlled_probe candidates.
-    # This covers two cases: newly promoted above + candidates that were promoted
-    # in prior runs (slow or fast) but missed idea seeding due to probe_budget limits.
-    tick_report["ideas_seeded"] = 0
-    try:
-        from agents.family_discovery_agent import _seed_idea_from_candidate
-        from agents.schemas import save_idea_record, FamilyCandidateRecord, update_family_candidate_status as _update_status
-        import json as _json
-        from pathlib import Path as _Path
-
-        ideas_dir = _Path(workspace_root) / "queues" / "ideas"
-        # Build set of family names already seeded
-        seeded_families: set[str] = set()
-        if ideas_dir.exists():
-            for p in ideas_dir.glob("idea_family_discovery_*.json"):
-                try:
-                    d = _json.loads(p.read_text())
-                    disc_fam = (d.get("metadata") or {}).get("discovery_family_name")
-                    if disc_fam:
-                        seeded_families.add(disc_fam)
-                except Exception:
-                    pass
-
-        all_probes = get_controlled_probes(workspace_root)
-        unseeded = [
-            c for c in all_probes
-            if c.get("family_name") and c.get("family_name") not in seeded_families
-        ]
-        seeds_this_tick = 0
-        for c in unseeded[:probe_budget]:
-            try:
-                # Build a FamilyCandidateRecord only from known fields, supplying
-                # safe defaults for fields the JSON may be missing.
-                known_fields = FamilyCandidateRecord.__dataclass_fields__
-                kwargs = {k: c[k] for k in known_fields if k in c}
-                for req in ("why_it_should_exist", "why_not_momentum", "why_not_superstock",
-                            "required_data", "implementation_complexity", "expected_holding_horizon",
-                            "novelty_reason", "timestamp_utc", "edge_source", "first_test_family_template"):
-                    if req not in kwargs:
-                        kwargs[req] = {} if req == "first_test_family_template" else ""
-                rec = FamilyCandidateRecord(**kwargs)
-                idea = _seed_idea_from_candidate(rec, workspace_root)
-                if idea is not None:
-                    save_idea_record(idea, workspace_root=workspace_root)
-                    _update_status(
-                        c.get("candidate_id", ""),
-                        "controlled_probe",
-                        workspace_root,
-                        extra_updates={"probe_idea_id": idea.idea_id},
-                    )
-                    seeds_this_tick += 1
-                    seeded_families.add(c.get("family_name", ""))
-                    print(
-                        f"[fast_scheduler] seeded idea {idea.idea_id} for "
-                        f"unseeded probe {c.get('family_name')}",
-                        flush=True,
-                    )
-            except Exception as _exc:
-                print(f"[fast_scheduler] seeding failed for {c.get('family_name')}: {_exc}", flush=True)
-        tick_report["ideas_seeded"] = seeds_this_tick
-    except Exception as _exc:
-        tick_report["ideas_seeded_error"] = str(_exc)
 
     state["last_fast_tick_ts"] = now
     state["last_fast_tick_at"] = utc_now_iso()
@@ -318,45 +242,16 @@ def record_discovery_run(
     n_promoted: int = 0,
     trigger_reason: str = "manual",
 ) -> None:
-    """Update state after a completed (successful) discovery run."""
+    """Update state after a completed discovery run (slow tick)."""
     state = _load_state(workspace_root)
-    now = time.time()
     state.update({
-        "last_run_ts": now,
+        "last_run_ts": time.time(),
         "last_run_at": utc_now_iso(),
         "run_count": state.get("run_count", 0) + 1,
         "cycles_since_last_run": 0,
         "last_batch_id": batch_id,
         "last_n_candidates": n_candidates,
         "last_n_promoted": n_promoted,
-        "last_trigger_reason": trigger_reason,
-        "last_attempt_ts": now,
-        "last_attempt_at": utc_now_iso(),
-        "total_attempts": state.get("total_attempts", 0) + 1,
-        "consecutive_failures": 0,
-    })
-    _save_state(workspace_root, state)
-
-
-def record_discovery_attempt(
-    workspace_root: str = ".",
-    *,
-    error: str | None = None,
-    trigger_reason: str = "auto",
-) -> None:
-    """Record a failed discovery attempt; resets the cycle counter to prevent
-    every-cycle retries. Consecutive failures increase backoff in should_run_discovery."""
-    state = _load_state(workspace_root)
-    now = time.time()
-    consecutive = state.get("consecutive_failures", 0) + 1
-    state.update({
-        "last_attempt_ts": now,
-        "last_attempt_at": utc_now_iso(),
-        "cycles_since_last_run": 0,
-        "total_attempts": state.get("total_attempts", 0) + 1,
-        "total_failures": state.get("total_failures", 0) + 1,
-        "consecutive_failures": consecutive,
-        "last_failure_reason": error or "unknown",
         "last_trigger_reason": trigger_reason,
     })
     _save_state(workspace_root, state)
