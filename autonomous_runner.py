@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import asdict, replace as dc_replace
 from pathlib import Path
 from typing import Any
 
-from agents.schemas import load_latest_pending_proposal_record, update_proposal_record_status
+from agents.schemas import load_latest_pending_proposal_record, update_proposal_record_status, update_idea_record_status
 
 from experiment_batch import (
     build_batch_leaderboard,
@@ -15,10 +16,21 @@ from experiment_batch import (
     run_batch_experiments,
 )
 from experiment_memory_guard import current_process_memory_kb
+from experiment_promoted_regions import (
+    active_promoted_regions,
+    build_promoted_regions_report,
+    compute_region_budget_feedback,
+    generate_region_followup_candidates,
+    generate_validated_region_neighborhood_candidates,
+    record_region_followup_proposal,
+    refresh_promoted_region_states,
+)
 from experiment_refinement import build_proposal_request, generate_next_round_proposal
-from experiment_runtime_decision import build_runtime_decision
+from experiment_runtime_decision import build_research_readiness_report, build_runtime_decision, save_research_readiness_report
 from experiment_spaces import list_searchable_families
 from experiment_types import ProposalRequest, ProposalResult, RuntimeDecision, RuntimeDecisionInput
+from experiment_workload_policy import assess_workload, save_workload_state
+from proposal_artifacts import compact_proposal_for_disk, compact_summary_for_disk
 
 # RSS thresholds for memory pressure caps
 _RSS_ELEVATED_KB = 12_000_000  # 12 GB
@@ -174,6 +186,53 @@ def _format_reasoning_summary(summary: Any) -> str:
                 "]"
             )
 
+    region_lane = summary.get("region_followup_lane")
+    if isinstance(region_lane, dict):
+        parts.append(
+            "region_followup_lane["
+            f"active={region_lane.get('active')} "
+            f"regions={region_lane.get('regions_considered')} "
+            f"candidates={region_lane.get('candidate_count')} "
+            f"budget={region_lane.get('region_followup_budget')} "
+            f"effective_budget={region_lane.get('effective_region_followup_budget')} "
+            f"max_candidates={region_lane.get('max_region_followup_candidates')} "
+            f"repeat_cap={region_lane.get('region_followup_repeat_cap')} "
+            f"budget_feedback={_format_compact_scalar((region_lane.get('budget_feedback') or {}).get('rationale'))} "
+            f"reason={_format_compact_scalar(region_lane.get('rationale'))}"
+            "]"
+        )
+
+    neighbor_lane = summary.get("validated_region_neighborhood_lane")
+    if isinstance(neighbor_lane, dict):
+        parts.append(
+            "validated_region_neighborhood_lane["
+            f"active={neighbor_lane.get('active')} "
+            f"regions={neighbor_lane.get('regions_considered')} "
+            f"candidates={neighbor_lane.get('candidate_count')} "
+            f"budget={neighbor_lane.get('validated_region_neighbor_budget')} "
+            f"radius={neighbor_lane.get('validated_region_neighbor_radius')} "
+            f"max_neighbors={neighbor_lane.get('max_validated_region_neighbors')} "
+            f"reason={_format_compact_scalar(neighbor_lane.get('rationale'))}"
+            "]"
+        )
+
+    lane_budget_summary = summary.get("lane_budget_summary")
+    if isinstance(lane_budget_summary, dict):
+        parts.append(
+            "lane_budget_summary["
+            f"confirmation_holdout={lane_budget_summary.get('confirmation_holdout_budget')} "
+            f"structural_synthesis={lane_budget_summary.get('structural_synthesis_budget')} "
+            f"promoted_followup={lane_budget_summary.get('promoted_region_followup_budget')} "
+            f"validated_neighbor={lane_budget_summary.get('validated_region_neighbor_budget')} "
+            f"routine_refinement={lane_budget_summary.get('routine_refinement_budget')} "
+            f"new_idea={lane_budget_summary.get('new_idea_budget')} "
+            f"uncommon_idea={lane_budget_summary.get('uncommon_idea_budget')} "
+            f"active={_format_compact_list(lane_budget_summary.get('active_lanes'))} "
+            f"throttled={_format_compact_list(lane_budget_summary.get('throttled_lanes'))} "
+            f"skipped={_format_compact_list(lane_budget_summary.get('skipped_lanes'))}"
+            "]"
+        )
+
     analysis_provenance = summary.get("analysis_provenance")
     if isinstance(analysis_provenance, dict):
         batch_ids = analysis_provenance.get("batch_ids") or []
@@ -197,6 +256,72 @@ def _format_reasoning_summary(summary: Any) -> str:
     if not parts:
         return _format_compact_dict(summary)
     return " | ".join(parts)
+
+
+def _format_research_readiness_report(report: dict[str, Any]) -> str:
+    if not isinstance(report, dict):
+        return _format_compact_value(report)
+
+    parts = [
+        "research_readiness["
+        f"confirmed={report.get('research_readiness_confirmed')} "
+        f"intensive={report.get('ready_for_intensive_research')} "
+        f"unattended={report.get('ready_for_unattended_research')} "
+        f"state={_format_compact_scalar(report.get('research_readiness_state'))} "
+        f"families_active={len(report.get('active_families') or [])} "
+        f"families_controlled={len(report.get('controlled_families') or [])} "
+        f"families_throttled={len(report.get('throttled_families') or [])} "
+        f"workload={_format_compact_scalar((report.get('workload') or {}).get('workload_state'))} "
+        f"backlog={_format_compact_scalar((report.get('workload') or {}).get('backlog_pressure_state'))}"
+        "]"
+    ]
+
+    family_status_counts = report.get("family_status_counts")
+    if isinstance(family_status_counts, dict):
+        parts.append(f"family_status_counts={_format_compact_dict(family_status_counts)}")
+
+    family_policy = report.get("family_policy")
+    if isinstance(family_policy, dict):
+        parts.append(
+            "family_policy["
+            f"active={len(family_policy.get('active_families') or [])} "
+            f"controlled={len(family_policy.get('controlled_families') or [])} "
+            f"redesign={len(family_policy.get('redesign_families') or [])} "
+            f"retired={len(family_policy.get('retired_families') or [])} "
+            f"paused={len(family_policy.get('paused_families') or [])}"
+            "]"
+        )
+
+    promoted_regions = report.get("promoted_regions")
+    if isinstance(promoted_regions, dict):
+        parts.append(
+            "promoted_regions["
+            f"by_state={_format_compact_dict(promoted_regions.get('by_state'))} "
+            f"by_health={_format_compact_dict(promoted_regions.get('by_health_state'))} "
+            f"active_followup={len(promoted_regions.get('active_followup') or [])} "
+            f"validated_top={len(promoted_regions.get('validated_top') or [])} "
+            f"rejected_fragile={len(promoted_regions.get('rejected_fragile') or [])}"
+            "]"
+        )
+
+    lane_budget_summary = report.get("lane_budget_summary")
+    if isinstance(lane_budget_summary, dict) and lane_budget_summary:
+        parts.append(
+            "lane_budget_summary["
+            f"confirmation_holdout={lane_budget_summary.get('confirmation_holdout_budget')} "
+            f"structural_synthesis={lane_budget_summary.get('structural_synthesis_budget')} "
+            f"promoted_followup={lane_budget_summary.get('promoted_region_followup_budget')} "
+            f"validated_neighbor={lane_budget_summary.get('validated_region_neighbor_budget')} "
+            f"routine_refinement={lane_budget_summary.get('routine_refinement_budget')} "
+            f"new_idea={lane_budget_summary.get('new_idea_budget')} "
+            f"uncommon_idea={lane_budget_summary.get('uncommon_idea_budget')}"
+            "]"
+        )
+    return " ".join(parts)
+
+
+def _print_research_readiness_report(report: dict[str, Any]) -> None:
+    print(f"research_readiness_report={_format_research_readiness_report(report)}")
 
 
 def _format_leaderboard_preview(leaderboard: Any, *, max_rows: int = 5) -> str:
@@ -255,6 +380,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=3,
         help="Widen exploration if no improvement occurs for this many batches",
     )
+    parser.add_argument("--run-family-discovery", action="store_true", help="Run the family discovery agent to propose new strategy families via MiniMax")
+    parser.add_argument("--no-inline-family-discovery", action="store_true", help="Defer auto family discovery to an external sidecar instead of running inline")
+    parser.add_argument("--family-discovery-n-ideas", type=int, default=20, help="Number of family ideas to generate (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-top-k", type=int, default=12, help="Number of top family candidates to select (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-auto-promote", type=int, default=5, help="Number of top candidates to auto-promote to controlled_probe (used with --run-family-discovery)")
+    parser.add_argument("--family-discovery-temperature", type=float, default=0.75, help="LLM generation temperature (used with --run-family-discovery)")
+    # Auto-scheduling controls
+    parser.add_argument("--family-discovery-enabled", action="store_true", default=True, help="Enable periodic automatic family discovery (default: on)")
+    parser.add_argument("--no-family-discovery", dest="family_discovery_enabled", action="store_false", help="Disable periodic automatic family discovery")
+    parser.add_argument("--family-discovery-interval-hours", type=float, default=24.0, help="Min hours between auto-discovery runs (default: 24)")
+    parser.add_argument("--family-discovery-every-n-cycles", type=int, default=8, help="Also trigger after every N autonomous cycles (default: 8)")
+    parser.add_argument("--family-discovery-min-queue", type=int, default=3, help="Auto-trigger when active probe count falls below this (default: 3)")
+    parser.add_argument("--family-discovery-trigger-on-stagnation", action="store_true", default=True, help="Auto-trigger discovery when loop is stagnating (default: on)")
+    # Fast scheduler tick controls
+    parser.add_argument("--family-scheduler-fast-tick-enabled", action="store_true", default=True, help="Enable fast scheduler tick for queue management (default: on)")
+    parser.add_argument("--family-scheduler-fast-tick-every-n-cycles", type=int, default=1, help="Fast tick runs every N cycles (default: 1)")
+    parser.add_argument("--family-scheduler-fast-tick-interval-minutes", type=float, default=10.0, help="Fast tick minimum interval in minutes (default: 10.0)")
+    # Budget controls
+    parser.add_argument("--new-family-probe-budget", type=int, default=4, help="Max new probe IdeaRecords seeded per discovery run (default: 4)")
+    parser.add_argument("--max-active-family-probes", type=int, default=10, help="Max concurrent controlled_probe candidates (default: 10)")
+    parser.add_argument("--family-probe-repeat-cap", type=int, default=2, help="Max times the same family probe can appear in proposals (default: 2)")
+    parser.add_argument("--family-discovery-web-mode", default="arxiv", choices=["none", "arxiv", "hybrid"],
+                        help="Web research mode for family discovery (default: arxiv)")
+    parser.add_argument("--family-discovery-max-web-queries", type=int, default=5,
+                        help="Max arXiv queries per discovery run (default: 5)")
     parser.add_argument("--no-helper-ideas", action="store_true", help="Ignore queued helper ideas during proposal generation")
     parser.add_argument("--no-analysis-guidance", action="store_true", help="Ignore helper analysis guidance during proposal generation")
     parser.add_argument("--allow-external-seeds", action="store_true", help="Allow external idea seeds if wired")
@@ -262,6 +412,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-viable-candidates", type=int, default=None, help="Absolute minimum proposal candidates before execution")
     parser.add_argument("--min-large-search-candidates", type=int, default=48, help="Minimum candidates for large search proposals")
     parser.add_argument("--disable-proposal-quality-gate", action="store_true", help="Do not block underfilled proposals")
+    parser.add_argument("--disable-region-followup", action="store_true", help="Disable promoted-region follow-up lane")
+    parser.add_argument("--region-followup-budget", type=int, default=4, help="Max promoted-region follow-up candidates per proposal")
+    parser.add_argument("--max-region-followup-candidates", type=int, default=6, help="Hard cap for promoted-region candidates")
+    parser.add_argument("--max-active-promoted-regions", type=int, default=2, help="Max promoted regions considered per proposal")
+    parser.add_argument("--region-followup-repeat-cap", type=int, default=1, help="Exact top-cell repeats per promoted region")
+    parser.add_argument("--disable-region-third-param", action="store_true", help="Disable bounded third-parameter promoted-region expansion")
+    parser.add_argument("--disable-validated-region-neighborhood", action="store_true", help="Disable validated-region neighborhood lane")
+    parser.add_argument("--validated-region-neighbor-budget", type=int, default=2, help="Max validated-region neighborhood candidates")
+    parser.add_argument("--validated-region-neighbor-radius", type=int, default=1, help="Index radius within promoted region values")
+    parser.add_argument("--max-validated-region-neighbors", type=int, default=4, help="Hard cap for validated-region neighborhood candidates")
+    parser.add_argument("--validated-region-repeat-cap", type=int, default=2, help="Validated plateau cells considered for neighborhood expansion")
     return parser.parse_args(argv)
 
 
@@ -456,6 +617,146 @@ def _proposal_execution_allowed(proposal: ProposalResult) -> bool:
     return bool(quality.get("execution_allowed", True))
 
 
+def _apply_region_followup_lane(
+    proposal: ProposalResult,
+    *,
+    workspace_root: str,
+    base_dir: str,
+    selected_families: list[str],
+    budget: int,
+    max_candidates: int,
+    max_active_regions: int,
+    repeat_cap: int,
+    enable_third_parameter: bool,
+    enable_validated_neighborhood: bool,
+    validated_neighbor_budget: int,
+    validated_neighbor_radius: int,
+    max_validated_neighbors: int,
+    validated_repeat_cap: int,
+) -> ProposalResult:
+    refresh_promoted_region_states(workspace_root=workspace_root, base_dir=base_dir)
+    regions = active_promoted_regions(
+        workspace_root=workspace_root,
+        families=selected_families,
+        limit=max_active_regions,
+    )
+    budget_feedback = compute_region_budget_feedback(regions, base_budget=budget, max_boost=2)
+    configs, metadata, lane_summary = generate_region_followup_candidates(
+        regions,
+        budget=budget_feedback["effective_budget"],
+        max_candidates=max_candidates,
+        repeat_cap=repeat_cap,
+        enable_third_parameter=enable_third_parameter,
+    )
+    lane_summary = {
+        **lane_summary,
+        "region_followup_budget": budget,
+        "effective_region_followup_budget": budget_feedback["effective_budget"],
+        "budget_feedback": budget_feedback,
+        "max_region_followup_candidates": max_candidates,
+        "max_active_promoted_regions": max_active_regions,
+        "region_followup_repeat_cap": repeat_cap,
+    }
+    neighbor_configs: dict[str, list[dict[str, Any]]] = {}
+    neighbor_metadata: dict[str, list[dict[str, Any]]] = {}
+    neighbor_summary: dict[str, Any] = {
+        "active": False,
+        "lane": "validated_region_neighborhood",
+        "regions_considered": 0,
+        "candidate_count": 0,
+        "rationale": "validated-region neighborhood lane disabled",
+    }
+    if enable_validated_neighborhood:
+        existing_configs = {family: list(values) for family, values in (proposal.candidate_configs or {}).items()}
+        for family, values in configs.items():
+            existing_configs.setdefault(family, []).extend(values)
+        neighbor_configs, neighbor_metadata, neighbor_summary = generate_validated_region_neighborhood_candidates(
+            regions,
+            budget=validated_neighbor_budget,
+            neighbor_radius=validated_neighbor_radius,
+            max_neighbors=max_validated_neighbors,
+            repeat_cap=validated_repeat_cap,
+            enable_third_parameter=enable_third_parameter,
+            existing_configs_by_family=existing_configs,
+        )
+    neighbor_summary = {
+        **neighbor_summary,
+        "validated_region_neighbor_budget": validated_neighbor_budget,
+        "validated_region_neighbor_radius": validated_neighbor_radius,
+        "max_validated_region_neighbors": max_validated_neighbors,
+        "validated_region_repeat_cap": validated_repeat_cap,
+    }
+    build_promoted_regions_report(workspace_root=workspace_root)
+    if not any(configs.values()) and not any(neighbor_configs.values()):
+        enriched = dict(proposal.reasoning_summary or {})
+        enriched["region_followup_lane"] = lane_summary
+        enriched["validated_region_neighborhood_lane"] = neighbor_summary
+        return dc_replace(proposal, reasoning_summary=enriched)
+
+    merged_configs = {family: list(values) for family, values in (proposal.candidate_configs or {}).items()}
+    merged_metadata = {family: list(values) for family, values in (proposal.candidate_metadata or {}).items()}
+    for family, region_configs in neighbor_configs.items():
+        merged_configs[family] = list(region_configs) + merged_configs.get(family, [])
+        merged_metadata[family] = list(neighbor_metadata.get(family, [])) + merged_metadata.get(family, [])
+    for family, region_configs in configs.items():
+        merged_configs[family] = list(region_configs) + merged_configs.get(family, [])
+        merged_metadata[family] = list(metadata.get(family, [])) + merged_metadata.get(family, [])
+
+    families = list(dict.fromkeys([*configs.keys(), *neighbor_configs.keys(), *proposal.request.strategy_families]))
+    request = dc_replace(proposal.request, strategy_families=families)
+    enriched = dict(proposal.reasoning_summary or {})
+    updated_regions = record_region_followup_proposal(
+        workspace_root=workspace_root,
+        proposal_id=proposal.request.proposal_id,
+        lane_summary=lane_summary,
+    )
+    if updated_regions:
+        lane_summary = {
+            **lane_summary,
+            "proposal_state_updates": [
+                {
+                    "region_id": region.get("region_id"),
+                    "state": region.get("state"),
+                    "evidence": region.get("evidence") or {},
+                    "budget_feedback": region.get("budget_feedback") or {},
+                }
+                for region in updated_regions
+            ],
+        }
+    enriched["region_followup_lane"] = lane_summary
+    enriched["validated_region_neighborhood_lane"] = neighbor_summary
+    enriched["planning_rationale"] = [
+        *(enriched.get("planning_rationale") or [] if isinstance(enriched.get("planning_rationale"), list) else []),
+        "promoted stable grid-search region triggered bounded region_followup lane",
+        "validated promoted region triggered bounded neighborhood search lane"
+        if any(neighbor_configs.values())
+        else "validated promoted region neighborhood lane produced no candidates",
+    ]
+    return dc_replace(
+        proposal,
+        request=request,
+        candidate_configs=merged_configs,
+        candidate_metadata=merged_metadata,
+        reasoning_summary=enriched,
+    )
+
+
+def _write_updated_proposal_artifacts(proposal: ProposalResult) -> None:
+    if not proposal.proposal_path:
+        return
+    proposal_path = Path(proposal.proposal_path)
+    if not proposal_path.exists():
+        return
+    payload = asdict(proposal)
+    proposal_path.write_text(json.dumps(compact_proposal_for_disk(payload), indent=2, sort_keys=True, default=str))
+    if proposal.summary_path:
+        Path(proposal.summary_path).write_text(
+            json.dumps(compact_summary_for_disk(proposal.reasoning_summary or {}, payload), indent=2, sort_keys=True, default=str)
+        )
+    candidate_path = proposal_path.parent / "candidate_configs.json"
+    candidate_path.write_text(json.dumps(proposal.candidate_configs or {}, indent=2, sort_keys=True, default=str))
+
+
 def _print_proposal_quality(proposal: ProposalResult) -> None:
     quality = (proposal.reasoning_summary or {}).get("proposal_quality") or {}
     if not quality:
@@ -475,6 +776,35 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     families = _families_from_arg(args.family)
     workspace_root = _workspace_root_from_base_dir(args.base_dir)
+    decision: RuntimeDecision | None = None
+
+    # Consult adaptive workload policy to adjust effective n and workers.
+    # The policy is advisory: CLI args remain the hard upper bound.
+    try:
+        _wl = assess_workload(
+            workspace_root=workspace_root,
+            base_dir=args.base_dir,
+            target_batch_size=args.n,
+            target_max_workers=args.max_workers,
+        )
+        save_workload_state(_wl, workspace_root)
+        if _wl.recommended_batch_size != args.n or _wl.recommended_max_workers != args.max_workers:
+            print(
+                f"workload_policy: state={_wl.workload_state} "
+                f"batch={args.n}->{_wl.recommended_batch_size} "
+                f"workers={args.max_workers}->{_wl.recommended_max_workers} "
+                f"reason={_wl.throughput_reason}"
+            )
+            args.n = _wl.recommended_batch_size
+            args.max_workers = _wl.recommended_max_workers
+        else:
+            print(
+                f"workload_policy: state={_wl.workload_state} "
+                f"batch={args.n} workers={args.max_workers} "
+                f"reason={_wl.throughput_reason}"
+            )
+    except Exception as _wl_err:
+        print(f"workload_policy: skipped err={_wl_err}")
 
     # Load Layer 2 plan (advisory only, always fails gracefully)
     layer2_plan, plan_reason = _load_layer2_plan()
@@ -482,6 +812,145 @@ def main(argv: list[str] | None = None) -> int:
         print(f"layer2_plan_loaded: plan_id={layer2_plan.plan_id} valid_until={layer2_plan.valid_until}")
     else:
         print(f"layer2_plan: {plan_reason}")
+
+    # --- Family discovery (manual trigger or periodic auto-trigger) ---
+    _fd_manual = getattr(args, "run_family_discovery", False)
+    _fd_enabled = getattr(args, "family_discovery_enabled", True)
+    _fd_auto_trigger = False
+    _fd_trigger_reason = "manual" if _fd_manual else "not_triggered"
+
+    if not _fd_manual and _fd_enabled and args.proposal_next:
+        try:
+            from family_discovery_scheduler import (
+                should_run_discovery,
+                should_run_fast_tick,
+                run_fast_scheduler_tick,
+                increment_cycle_counter,
+            )
+            _stagnation_batches = 0
+            try:
+                import experiment_runtime_decision as _erd
+                _rt = _erd.build_runtime_decision(_erd.RuntimeDecisionInput(
+                    workspace_root=workspace_root,
+                    experiments_dir=args.base_dir,
+                    strategy_families=families,
+                    max_experiments=args.n,
+                    seed=args.seed,
+                    exploration_fraction=args.exploration_fraction,
+                    exploitation_fraction=args.exploration_fraction,
+                    stagnation_escape_batches=args.stagnation_escape_batches,
+                    min_large_search_candidates=args.min_large_search_candidates,
+                ))
+                _stagnation_batches = getattr(_rt, "stagnation_batches", 0) or 0
+            except Exception:
+                pass
+            increment_cycle_counter(workspace_root)
+
+            _fd_run_fast, _fast_reason = should_run_fast_tick(
+                workspace_root,
+                enabled=getattr(args, "family_scheduler_fast_tick_enabled", True),
+                every_n_cycles=getattr(args, "family_scheduler_fast_tick_every_n_cycles", 1),
+                interval_minutes=getattr(args, "family_scheduler_fast_tick_interval_minutes", 10.0),
+            )
+            if _fd_run_fast:
+                _fast_report = run_fast_scheduler_tick(
+                    workspace_root,
+                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
+                    probe_budget=getattr(args, "new_family_probe_budget", 2),
+                    max_active_probes=getattr(args, "max_active_family_probes", 6),
+                )
+                if _fast_report["new_promotions"] > 0:
+                    print(f"[fast_scheduler] promoted {_fast_report['new_promotions']} candidates, "
+                          f"recycled {_fast_report['recycled_slots']} slots, "
+                          f"waiting now={_fast_report['waiting_after']}", flush=True)
+                elif _fast_report["recycled_slots"] > 0:
+                    print(f"[fast_scheduler] recycled {_fast_report['recycled_slots']} stale slots", flush=True)
+
+            _fd_auto_trigger, _fd_trigger_reason = should_run_discovery(
+                workspace_root,
+                enabled=_fd_enabled,
+                interval_hours=getattr(args, "family_discovery_interval_hours", 24.0),
+                every_n_cycles=getattr(args, "family_discovery_every_n_cycles", 8),
+                min_queue=getattr(args, "family_discovery_min_queue", 3),
+                trigger_on_stagnation=getattr(args, "family_discovery_trigger_on_stagnation", True),
+                stagnation_batches=_stagnation_batches,
+            )
+        except Exception as _sched_err:
+            print(f"family_discovery_scheduler: skipped err={_sched_err}")
+
+    if _fd_manual or _fd_auto_trigger:
+        trigger_label = "manual" if _fd_manual else f"auto({_fd_trigger_reason})"
+        if _fd_auto_trigger and getattr(args, "no_inline_family_discovery", False) and not _fd_manual:
+            _request_path = Path(workspace_root) / "run" / "family_discovery_request.txt"
+            _request_path.parent.mkdir(parents=True, exist_ok=True)
+            _request_path.write_text(f"{trigger_label}\n", encoding="utf-8")
+            print(f"family_discovery: deferred trigger={trigger_label} request={_request_path}", flush=True)
+        else:
+            print(f"family_discovery: trigger={trigger_label}", flush=True)
+            try:
+                from family_candidate_store import recycle_stale_probe_slots, get_dynamic_probe_cap
+                _releases = recycle_stale_probe_slots(workspace_root)
+                if _releases:
+                    print(f"family_discovery: recycled {len(_releases)} stale probe slots", flush=True)
+                _effective_cap = getattr(args, "max_active_family_probes", 6)
+                if not getattr(args, "max_active_family_probes", None):
+                    _effective_cap = get_dynamic_probe_cap(workspace_root)
+                    print(f"family_discovery: dynamic cap={_effective_cap}", flush=True)
+            except Exception as _recycle_err:
+                print(f"family_discovery: recycle step skipped err={_recycle_err}", flush=True)
+            try:
+                from agents.family_discovery_agent import discover_and_rank_families, print_discovery_report
+                from family_discovery_scheduler import record_discovery_run, record_discovery_attempt
+                _fd_report = discover_and_rank_families(
+                    workspace_root=workspace_root,
+                    n_ideas=getattr(args, "family_discovery_n_ideas", 20),
+                    top_k=getattr(args, "family_discovery_top_k", 12),
+                    auto_promote_top=getattr(args, "family_discovery_auto_promote", 5),
+                    seed_ideas_for_probe=True,
+                    temperature=getattr(args, "family_discovery_temperature", 0.75),
+                    max_active_probes=_effective_cap,
+                    probe_budget=getattr(args, "new_family_probe_budget", 4),
+                    web_mode=getattr(args, "family_discovery_web_mode", "arxiv"),
+                    max_web_queries=getattr(args, "family_discovery_max_web_queries", 5),
+                )
+                print_discovery_report(_fd_report)
+                record_discovery_run(
+                    workspace_root,
+                    batch_id=_fd_report.get("batch_id"),
+                    n_candidates=len(_fd_report.get("candidates", [])),
+                    n_promoted=_fd_report.get("n_promoted", 0),
+                    trigger_reason=_fd_trigger_reason,
+                )
+                try:
+                    from agents.family_discovery_agent import generate_probe_mutation_ideas
+                    _fd_mutation_report = generate_probe_mutation_ideas(
+                        workspace_root=workspace_root,
+                        experiments_dir=args.base_dir,
+                        max_targets=1,
+                        mutations_per_target=2,
+                    )
+                    print(
+                        "family_discovery_mutations: "
+                        f"status={_fd_mutation_report.get('status')} "
+                        f"targets={_fd_mutation_report.get('target_count', 0)} "
+                        f"saved={len(_fd_mutation_report.get('saved_idea_ids') or [])} "
+                        f"report={_fd_mutation_report.get('report_path')}",
+                        flush=True,
+                    )
+                except Exception as _fd_mut_err:
+                    print(f"family_discovery_mutations: skipped err={_fd_mut_err}", flush=True)
+            except Exception as _fd_err:
+                print(f"family_discovery: failed err={_fd_err}", flush=True)
+                # Always reset cycle counter even on failure; consecutive_failures drives backoff
+                # in should_run_discovery so we don't hammer the API every cycle on hard errors.
+                try:
+                    from family_discovery_scheduler import record_discovery_attempt
+                    record_discovery_attempt(workspace_root, error=str(_fd_err), trigger_reason=_fd_trigger_reason)
+                except Exception:
+                    pass
+        # Manual-only invocation exits early; auto-trigger continues the normal loop
+        if _fd_manual and not args.run_proposal and not args.proposal_next:
+            return 0
 
     queued_record = None
     consumed_proposal_id: str | None = None
@@ -575,6 +1044,14 @@ def main(argv: list[str] | None = None) -> int:
                 history_limit_per_family=planned_n,
             ))
             print(f"runtime_decision: confirmation_required batch_id={decision.confirmation_batch_id}")
+            current_novelty_floor = float(proposal_kwargs.get("novelty_floor") or 0.0)
+            if current_novelty_floor > 0.05:
+                proposal_kwargs["novelty_floor"] = 0.05
+                print(
+                    "runtime_decision: confirmation_required "
+                    f"novelty_floor={current_novelty_floor:.2f}->0.05 "
+                    "to reduce underfilled validation batches"
+                )
 
         # Handle targeted follow-up
         if decision.targeted_follow_up_required:
@@ -605,6 +1082,23 @@ def main(argv: list[str] | None = None) -> int:
 
         proposal_request = build_proposal_request(**proposal_kwargs)
         proposal = generate_next_round_proposal(proposal_request, base_dir=args.base_dir)
+        if not args.disable_region_followup:
+            proposal = _apply_region_followup_lane(
+                proposal,
+                workspace_root=workspace_root,
+                base_dir=args.base_dir,
+                selected_families=decision.selected_families,
+                budget=args.region_followup_budget,
+                max_candidates=args.max_region_followup_candidates,
+                max_active_regions=args.max_active_promoted_regions,
+                repeat_cap=args.region_followup_repeat_cap,
+                enable_third_parameter=not args.disable_region_third_param,
+                enable_validated_neighborhood=not args.disable_validated_region_neighborhood,
+                validated_neighbor_budget=args.validated_region_neighbor_budget,
+                validated_neighbor_radius=args.validated_region_neighbor_radius,
+                max_validated_neighbors=args.max_validated_region_neighbors,
+                validated_repeat_cap=args.validated_region_repeat_cap,
+            )
 
         # Enrich reasoning summary with runtime decision (for batch metadata lineage)
         enriched_summary = dict(proposal.reasoning_summary or {})
@@ -621,6 +1115,7 @@ def main(argv: list[str] | None = None) -> int:
                 "source_idea_ids": list(layer2_plan.source_idea_ids or []),
             }
         proposal = dc_replace(proposal, reasoning_summary=enriched_summary)
+        _write_updated_proposal_artifacts(proposal)
 
         print(f"proposal_id={proposal.request.proposal_id}")
         print(f"proposal_status={proposal.status}")
@@ -691,6 +1186,24 @@ def main(argv: list[str] | None = None) -> int:
             quality_gate=not args.disable_proposal_quality_gate,
         )
         proposal = generate_next_round_proposal(proposal_request, base_dir=args.base_dir)
+        if not args.disable_region_followup:
+            proposal = _apply_region_followup_lane(
+                proposal,
+                workspace_root=workspace_root,
+                base_dir=args.base_dir,
+                selected_families=families,
+                budget=args.region_followup_budget,
+                max_candidates=args.max_region_followup_candidates,
+                max_active_regions=args.max_active_promoted_regions,
+                repeat_cap=args.region_followup_repeat_cap,
+                enable_third_parameter=not args.disable_region_third_param,
+                enable_validated_neighborhood=not args.disable_validated_region_neighborhood,
+                validated_neighbor_budget=args.validated_region_neighbor_budget,
+                validated_neighbor_radius=args.validated_region_neighbor_radius,
+                max_validated_neighbors=args.max_validated_region_neighbors,
+                validated_repeat_cap=args.validated_region_repeat_cap,
+            )
+        _write_updated_proposal_artifacts(proposal)
         print(f"proposal_id={proposal.request.proposal_id}")
         print(f"proposal_status={proposal.status}")
         print(f"proposal_reasoning={_format_reasoning_summary(proposal.reasoning_summary)}")
@@ -722,12 +1235,33 @@ def main(argv: list[str] | None = None) -> int:
 
     batch_result = run_batch_experiments(request, base_dir=args.base_dir)
 
+    try:
+        research_readiness_report = build_research_readiness_report(
+            workspace_root=workspace_root,
+            experiments_dir=args.base_dir,
+            decision=decision,
+        )
+        _print_research_readiness_report(research_readiness_report)
+        save_research_readiness_report(research_readiness_report, workspace_root=workspace_root)
+    except Exception as research_readiness_err:
+        print(f"research_readiness_report: skipped err={research_readiness_err}")
+
     if consumed_proposal_id:
         update_proposal_record_status(
             consumed_proposal_id,
             status="consumed",
             workspace_root=workspace_root,
         )
+
+    # Mark source ideas as executed so they leave the active scheduling queue.
+    _source_idea_ids = list(getattr(request, "source_idea_ids", None) or [])
+    if _source_idea_ids and workspace_root:
+        _marked = 0
+        for _iid in _source_idea_ids:
+            if update_idea_record_status(str(_iid), "executed", workspace_root):
+                _marked += 1
+        if _marked > 0:
+            print(f"idea_lifecycle: marked {_marked} ideas as executed")
 
     print(f"batch_id={batch_result.request.batch_id}")
     print(

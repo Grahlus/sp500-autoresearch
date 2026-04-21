@@ -889,6 +889,11 @@
     </div>
     <div class="hdr-sep"></div>
     <div class="hdr-metric">
+      <div class="hdr-label">IDEA BACKLOG</div>
+      <div class="hdr-value" id="hdr-idea-backlog">—</div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-metric">
       <div class="hdr-label">STATUS</div>
       <div class="hdr-value" id="hdr-status">—</div>
     </div>
@@ -1054,6 +1059,25 @@
       </div>
     </div>
 
+    <!-- Family Discovery panel -->
+    <div class="panel" id="family-discovery-panel">
+      <div class="panel-head">Family Discovery</div>
+      <div class="panel-body">
+        <div id="fd-scheduler" style="color:var(--dim);font-size:0.85em;margin-bottom:8px">Loading...</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Family</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Orth</th>
+            </tr>
+          </thead>
+          <tbody id="fd-tbody"><tr><td colspan="4" style="color:var(--dim);text-align:center;padding:10px">No candidates yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- /col-main -->
 
   <!-- RIGHT COL -->
@@ -1129,8 +1153,7 @@
 <script>
 // ── state ────────────────────────────────────────────────────────────────────
 let knownExperiments = new Set();
-let championSharpe = -Infinity;
-let championExpId = '';
+let championExpId = localStorage.getItem('otto_champion_exp_id') || '';
 let autoScroll = true;
 let allExperiments = [];  // buffered for filtering
 
@@ -1553,7 +1576,7 @@ let familyChart = null;
 
 async function refresh() {
   try {
-    const [sysRes, expRes, bestRes, famRes, logRes, holdRes, ideasRes, activityRes, discRes] = await Promise.all([
+    const [sysRes, expRes, bestRes, famRes, logRes, holdRes, ideasRes, activityRes, discRes, fdRes] = await Promise.all([
       fetch('/api/system-summary').then(r=>r.json()),
       fetch('/api/experiments?limit=100').then(r=>r.json()),
       fetch('/api/best?limit=10').then(r=>r.json()),
@@ -1563,6 +1586,7 @@ async function refresh() {
       fetch('/api/current-ideas').then(r=>r.json()),
       fetch('/api/activity').then(r=>r.json()),
       fetch('/api/discoveries').then(r=>r.json()),
+      fetch('/api/family-discovery').then(r=>r.json()).catch(()=>({})),
     ]);
 
     renderHeader(sysRes);
@@ -1574,6 +1598,7 @@ async function refresh() {
     renderLogs(logRes);
     renderHoldout(holdRes);
     renderIdeas(ideasRes);
+    renderFamilyDiscovery(fdRes);
 
     document.getElementById('last-refresh').textContent =
       new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';
@@ -1604,6 +1629,11 @@ function renderHeader(sys) {
   document.getElementById('hdr-ideas').textContent = sys.total_ideas_tested
     ? Number(sys.total_ideas_tested).toLocaleString()
     : '—';
+
+  // Idea Backlog
+  document.getElementById('hdr-idea-backlog').textContent = sys.idea_backlog
+    ? Number(sys.idea_backlog).toLocaleString()
+    : '0';
 
   // Status
   const statusEl = document.getElementById('hdr-status');
@@ -1682,20 +1712,12 @@ function renderDiscoveries(disc) {
   }
 
   const champ = disc.champion;
-  const champSharpe = parseFloat(champ.sharpe || -Infinity);
+  const champExpId = champ.experiment_id || '';
 
-  if (champSharpe > championSharpe && championSharpe !== -Infinity) {
-    // New champion!
-    championSharpe = champSharpe;
-    championExpId  = champ.experiment_id;
-    banner.classList.add('show');
-    document.getElementById('disc-sharpe').textContent  = fmt(champ.sharpe);
-    document.getElementById('disc-family').textContent  = champ.strategy_family || '—';
-    document.getElementById('disc-exp').textContent      = shortId(champ.experiment_id);
-  } else if (championSharpe === -Infinity) {
-    // First load — show champion banner and update DOM
-    championSharpe = champSharpe;
-    championExpId  = champ.experiment_id;
+  if (champExpId && champExpId !== championExpId) {
+    // New champion — first time or changed
+    championExpId = champExpId;
+    localStorage.setItem('otto_champion_exp_id', champExpId);
     banner.classList.add('show');
     document.getElementById('disc-sharpe').textContent  = fmt(champ.sharpe);
     document.getElementById('disc-family').textContent  = champ.strategy_family || '—';
@@ -1828,6 +1850,70 @@ function renderLogs(res) {
   if (autoScroll) {
     el.scrollTop = el.scrollHeight;
   }
+}
+
+function renderFamilyDiscovery(res) {
+  const sched = document.getElementById('fd-scheduler');
+  const tbody = document.getElementById('fd-tbody');
+  if (!res || res.error) {
+    sched.textContent = res && res.error ? res.error : 'unavailable';
+    return;
+  }
+  const s = res.scheduler || {};
+  const fast = res.fast || {};
+  const lastRun = (s.slow || {}).last_run_at ? s.slow.last_run_at.slice(0,19).replace('T',' ') : 'never';
+  const elapsed = (s.slow || {}).elapsed_hours != null ? ` (${(s.slow || {}).elapsed_hours.toFixed(1)}h ago)` : '';
+  const q = res.queue || {};
+  const slots = res.probe_slots || {};
+  const active = slots.active != null ? slots.active : 0;
+  const cap = slots.cap || 6;
+  const waiting = slots.waiting != null ? slots.waiting : 0;
+  const free = slots.free_slots != null ? slots.free_slots : 0;
+  sched.innerHTML = `last run: <b>${lastRun}</b>${elapsed} &nbsp;|&nbsp; runs: ${(s.slow || {}).run_count||0} &nbsp;|&nbsp; probe_ideas: ${res.probe_ideas_queued||0} &nbsp;|&nbsp; ${active} active | ${waiting} waiting | ${free} free slots`;
+
+  // Probe slot pills
+  const controlledProbes = res.controlled_probes || [];
+  const slotCap = cap;
+  let pillsHtml = '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">';
+  for (let i = 0; i < slotCap; i++) {
+    const probe = controlledProbes[i] || null;
+    let ageHrs = null;
+    if (probe && probe.promoted_at) {
+      const then = new Date(probe.promoted_at);
+      ageHrs = (Date.now() - then) / 3600000;
+    }
+    const ageColor = ageHrs === null ? '#30363d' : ageHrs < 12 ? '#00e5a0' : ageHrs < 48 ? '#f0c020' : '#ff4d4d';
+    const label = probe ? (probe.family_name || '?').substring(0, 14) : 'empty';
+    const ageLabel = ageHrs !== null ? Math.round(ageHrs) + 'h' : '';
+    const bgColor = ageHrs === null ? '#21262d' : ageHrs < 12 ? '#0d2e20' : ageHrs < 48 ? '#2e2800' : '#2e0d0d';
+    pillsHtml += `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:${bgColor};color:${ageColor};border:1px solid ${ageColor}40;" title="${probe ? (probe.family_name||'') + ' — ' + ageLabel : 'slot '+(i+1)+' empty'}">${i+1}:${label}</span>`;
+  }
+  pillsHtml += '</div>';
+  sched.innerHTML += pillsHtml;
+
+  // Fast tick stats
+  const fCycle = fast.fast_tick_cycle_count != null ? fast.fast_tick_cycle_count : 0;
+  const fPromo = fast.total_fast_promotions != null ? fast.total_fast_promotions : 0;
+  const fRel   = fast.total_fast_slot_releases != null ? fast.total_fast_slot_releases : 0;
+  const fLast  = fast.elapsed_minutes != null ? fast.elapsed_minutes.toFixed(1) + 'm' : '?m';
+  sched.innerHTML += `<div style="margin-top:6px;font-size:10px;color:#8b949e;">fast tick: cycle=${fCycle} | promotions=${fPromo} | releases=${fRel} | last fast: ${fLast} ago</div>`;
+
+  const top = (q.top_candidates || []);
+  if (!top.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--dim);text-align:center;padding:10px">No candidates yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = top.map(c => {
+    const score = c.ranking_score != null ? c.ranking_score.toFixed(3) : '—';
+    const orth  = c.orthogonality_score != null ? c.orthogonality_score.toFixed(2) : '—';
+    const statusColor = c.status === 'controlled_probe' ? 'var(--green)' : c.status === 'retired_for_now' ? 'var(--dim)' : 'var(--yellow)';
+    return `<tr>
+      <td class="mono" style="font-size:11px">${c.family_name||'?'}</td>
+      <td style="color:${statusColor};font-size:11px">${c.status||'?'}</td>
+      <td class="mono">${score}</td>
+      <td class="mono">${orth}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderHoldout(res) {
